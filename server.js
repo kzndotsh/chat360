@@ -7,16 +7,17 @@ const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    // Allow connections from the Netlify frontend
-    origin: process.env.NODE_ENV === 'production' 
-      ? ["https://your-netlify-app.netlify.app"]
-      : "*",
+    origin: "*", // Allow all origins for now since we don't know the final frontend URL
     methods: ["GET", "POST"]
-  }
+  },
+  pingTimeout: 60000,
+  pingInterval: 25000
 });
 
-// Serve static files from the 'out' directory
-app.use(express.static(join(__dirname, 'out')));
+// Basic health check endpoint
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok' });
+});
 
 // Store active rooms and their participants
 const rooms = new Map();
