@@ -1,17 +1,48 @@
 {
-  "name": "partychat",
-  "version": "1.0.0",
+  "name": "chat360",
+  "version": "0.1.0",
   "private": true,
   "scripts": {
-    "start": "node server.js"
+    "dev": "concurrently \"npm run token-server\" \"next dev\"",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "token-server": "node token-server/server.js"
   },
   "dependencies": {
-    "bufferutil": "^4.0.9",
-    "express": "^4.18.3",
-    "socket.io": "^4.7.4",
-    "utf-8-validate": "^6.0.5"
+    "@netlify/functions": "^2.4.1",
+    "@radix-ui/react-alert-dialog": "^1.0.5",
+    "@radix-ui/react-slider": "^1.1.2",
+    "@radix-ui/react-slot": "^1.0.2",
+    "@radix-ui/react-toast": "^1.1.5",
+    "@radix-ui/react-tooltip": "^1.0.7",
+    "agora-access-token": "^2.0.4",
+    "agora-rtc-sdk-ng": "^4.19.3",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.1.0",
+    "concurrently": "^8.2.2",
+    "cors": "^2.8.5",
+    "critters": "^0.0.20",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "lucide-react": "^0.294.0",
+    "next": "13.5.1",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "tailwind-merge": "^2.1.0",
+    "tailwindcss-animate": "^1.0.7"
   },
-  "engines": {
-    "node": ">=18.0.0"
+  "devDependencies": {
+    "@types/node": "20.6.2",
+    "@types/react": "18.2.22",
+    "@types/react-dom": "18.2.7",
+    "autoprefixer": "10.4.15",
+    "cssnano": "^6.1.2",
+    "cssnano-preset-advanced": "^6.0.3",
+    "eslint": "8.49.0",
+    "eslint-config-next": "13.5.1",
+    "postcss": "^8.4.31",
+    "tailwindcss": "3.3.3",
+    "typescript": "5.2.2"
   }
 }
