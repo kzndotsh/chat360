@@ -11,7 +11,7 @@
 
 [functions]
   node_bundler = "esbuild"
-  external_node_modules = ["agora-access-token"]
+  external_node_modules = ["agora-token"]
   directory = "netlify/functions"
 
 [build.environment]

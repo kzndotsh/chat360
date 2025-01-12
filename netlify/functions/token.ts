@@ -69,7 +69,9 @@ export const handler: Handler = async (event) => {
     const currentTimestamp = Math.floor(Date.now() / 1000);
     const privilegeExpiredTs = currentTimestamp + expirationTimeInSeconds;
 
-    const token = RtcTokenBuilder.build(
+    //     export function buildTokenWithUid(appId: string, appCertificate: string, channelName: string, uid: string | number, role: number,  token_expire: number, privilege_expire: number): string;
+
+    const token = RtcTokenBuilder.buildTokenWithUid(
       APP_ID,
       APP_CERTIFICATE,
       channelName,
