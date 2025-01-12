@@ -229,7 +229,7 @@ export const JoinPartyModal = React.memo(function JoinPartyModal({
               </div>
               <span className={cn(
                 'text-[#161718]',
-                canCancel ? 'group-hover:text-white' : 'text-gray-400'
+                canCancel ? 'group-hover:text-white' : 'text-gray-400' 
               )}>
                 Cancel
               </span>

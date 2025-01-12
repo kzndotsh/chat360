@@ -1,5 +1,7 @@
 'use client';
 
+import { useState } from 'react';
+
 interface PartyControlsProps {
   currentUser: any;
   storedAvatar: string | null;
@@ -25,8 +27,21 @@ export function PartyControls({
   micPermissionDenied = false,
   onRequestMicrophonePermission,
 }: PartyControlsProps) {
+  const [isLeaving, setIsLeaving] = useState(false);
+
   const handleMicrophoneRequest = async () => {
     await onRequestMicrophonePermission();
+  };
+
+  const handleLeave = async () => {
+    if (isLeaving || !currentUser?.isActive) return; // Prevent multiple clicks and check active status
+    
+    try {
+      setIsLeaving(true);
+      await onLeave();
+    } finally {
+      setIsLeaving(false);
+    }
   };
 
   return (
@@ -46,26 +61,28 @@ export function PartyControls({
           <span className='text-white ml-[-3px]'>Join Party</span>
         </button>
         <button
-          onClick={onLeave}
+          onClick={handleLeave}
           className={`flex items-center gap-0 sm:gap-2 transition-opacity ${
-            !currentUser
+            !currentUser?.isActive || isLeaving
               ? 'opacity-50 cursor-not-allowed'
               : 'hover:opacity-80'
           }`}
-          disabled={!currentUser}>
+          disabled={!currentUser?.isActive || isLeaving}>
           <div className='w-3 h-3 sm:w-4 sm:h-4 rounded-full bg-[#ae1228] flex items-center justify-center text-white font-bold text-[8px] sm:text-[10px]'>
             B
           </div>
-          <span className='text-white ml-[-3px]'>Leave Party</span>
+          <span className='text-white ml-[-3px]'>
+            {isLeaving ? 'Leaving...' : 'Leave Party'}
+          </span>
         </button>
         <button
           onClick={onToggleMute}
           className={`flex items-center gap-0 sm:gap-2 transition-opacity ${
-            !currentUser
+            !currentUser?.isActive
               ? 'opacity-50 cursor-not-allowed'
               : 'hover:opacity-80'
           }`}
-          disabled={!currentUser}>
+          disabled={!currentUser?.isActive}>
           <div className='w-3 h-3 sm:w-4 sm:h-4 rounded-full bg-[#0c71ba] flex items-center justify-center text-white font-bold text-[8px] sm:text-[10px]'>
             X
           </div>

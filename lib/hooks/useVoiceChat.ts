@@ -1,5 +1,3 @@
-'use client';
-
 import { useEffect, useRef, useState, useCallback } from 'react';
 import AgoraRTC, {
   IAgoraRTCClient,
@@ -9,13 +7,11 @@ import AgoraRTC, {
 } from 'agora-rtc-sdk-ng';
 import { useToast } from './useToast';
 
-// Development fallback values
 const FALLBACK_APP_ID = 'b692145dadfd4f2b9bd3c0e9e5ecaab8';
-const FALLBACK_TOKEN = '007eJxTYDi1cvr+ILcFWvNsdQwSo+9LsETYJts8n7I3UEK8+PiMK5UKDElmlkaGJqYpiSlpKSZpRkmWSSnGyQaplqmmqcmJiUkW/n7N6Q2BjAw/f85jYmSAQBCfhSE3MTOPgQEADh4frg==';
+const FALLBACK_TOKEN =
+  '007eJxTYDi1cvr+ILcFWvNsdQwSo+9LsETYJts8n7I3UEK8+PiMK5UKDElmlkaGJqYpiSlpKSZpRkmWSSnGyQaplqmmqcmJiUkW/n7N6Q2BjAw/f85jYmSAQBCfhSE3MTOPgQEADh4frg==';
 
 const AGORA_APP_ID = process.env.NEXT_PUBLIC_AGORA_APP_ID || FALLBACK_APP_ID;
-const TOKEN_SERVER_URL = process.env.NEXT_PUBLIC_TOKEN_SERVER_URL;
-
 const CHANNEL_NAME = 'main';
 
 const clientConfig: ClientConfig = {
@@ -24,6 +20,8 @@ const clientConfig: ClientConfig = {
 };
 
 AgoraRTC.setLogLevel(4);
+
+const STORAGE_KEY = 'agora_uid';
 
 export function useVoiceChat() {
   const logPrefix = '[VoiceChat]';
@@ -43,63 +41,69 @@ export function useVoiceChat() {
   const clientRef = useRef<IAgoraRTCClient | null>(null);
   const localTrackRef = useRef<IMicrophoneAudioTrack | null>(null);
   const volumeIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const uidRef = useRef<number>(Math.floor(Math.random() * 1000000));
+  const uidRef = useRef<number>(0);
+  const isLeavingRef = useRef(false);
+  const joinAttemptRef = useRef<AbortController | null>(null);
+
+  // Load or generate persistent UID
+  useEffect(() => {
+    const storedUid = localStorage.getItem(STORAGE_KEY);
+    if (storedUid) {
+      uidRef.current = parseInt(storedUid, 10);
+    } else {
+      const newUid = Math.floor(Math.random() * 1000000);
+      uidRef.current = newUid;
+      localStorage.setItem(STORAGE_KEY, newUid.toString());
+    }
+  }, []);
 
   const cleanup = useCallback(async () => {
+    // Cancel any ongoing join attempt
+    if (joinAttemptRef.current) {
+      joinAttemptRef.current.abort();
+      joinAttemptRef.current = null;
+    }
+
     if (volumeIntervalRef.current) {
       clearInterval(volumeIntervalRef.current);
+      volumeIntervalRef.current = null;
     }
 
     if (localTrackRef.current) {
-      localTrackRef.current.stop();
-      await localTrackRef.current.close();
+      try {
+        localTrackRef.current.stop();
+        await localTrackRef.current.close();
+      } catch (error) {
+        console.error(`${logPrefix} Error closing local track:`, error);
+      }
       localTrackRef.current = null;
     }
 
     if (clientRef.current) {
-      await clientRef.current.leave();
+      try {
+        await clientRef.current.leave();
+      } catch (error) {
+        console.error(`${logPrefix} Error during leave:`, error);
+      }
       clientRef.current.removeAllListeners();
+      clientRef.current = null;
     }
 
     setIsJoined(false);
     setRemoteUsers([]);
     setUserCount(0);
     setVolumeLevel(0);
+    setIsConnected(false);
+    setIsConnecting(false);
+    setIsMuted(false);
   }, []);
 
   const fetchToken = async () => {
-    if (!TOKEN_SERVER_URL) {
-      console.log(`${logPrefix} No token server URL, using fallback token`);
-      return FALLBACK_TOKEN;
-    }
-
     try {
-      console.log(`${logPrefix} Fetching token from server`);
-      const response = await fetch(`${TOKEN_SERVER_URL}/token`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          channelName: CHANNEL_NAME,
-          uid: uidRef.current,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Token server returned ${response.status}`);
-      }
-
-      const data = await response.json();
-      if (!data.token) {
-        throw new Error('No token in response');
-      }
-
-      console.log(`${logPrefix} Successfully retrieved token from server`);
-      return data.token;
-    } catch (error) {
-      console.warn(`${logPrefix} Failed to fetch token from server, using fallback:`, error);
       return FALLBACK_TOKEN;
+    } catch (error) {
+      console.error('Token fetch error:', error);
+      throw error;
     }
   };
 
@@ -112,7 +116,7 @@ export function useVoiceChat() {
         console.log(`${logPrefix} Remote user joined:`, user.uid);
         setUserCount((prev) => prev + 1);
         setRemoteUsers((prev) => {
-          if (!prev.find(u => u.uid === user.uid)) {
+          if (!prev.find((u) => u.uid === user.uid)) {
             return [...prev, user];
           }
           return prev;
@@ -126,12 +130,17 @@ export function useVoiceChat() {
       });
 
       clientRef.current.on('user-published', async (user, mediaType) => {
-        console.log(`${logPrefix} User published:`, user.uid, 'mediaType:', mediaType);
+        console.log(
+          `${logPrefix} User published:`,
+          user.uid,
+          'mediaType:',
+          mediaType,
+        );
         await clientRef.current?.subscribe(user, mediaType);
         if (mediaType === 'audio') {
           user.audioTrack?.play();
           setRemoteUsers((prev) => {
-            if (!prev.find(u => u.uid === user.uid)) {
+            if (!prev.find((u) => u.uid === user.uid)) {
               return [...prev, user];
             }
             return prev;
@@ -141,8 +150,8 @@ export function useVoiceChat() {
 
       clientRef.current.on('user-unpublished', (user) => {
         console.log(`${logPrefix} User unpublished:`, user.uid);
-        setRemoteUsers((prev) => 
-          prev.map((u) => u.uid === user.uid ? { ...u, hasAudio: false } : u)
+        setRemoteUsers((prev) =>
+          prev.map((u) => (u.uid === user.uid ? { ...u, hasAudio: false } : u)),
         );
       });
 
@@ -150,10 +159,10 @@ export function useVoiceChat() {
         console.log(`${logPrefix} Connection state changed to:`, state);
         setIsConnected(state === 'CONNECTED');
         setIsConnecting(state === 'CONNECTING');
-        
+
         if (state === 'CONNECTED') {
           const users = clientRef.current?.remoteUsers || [];
-          setUserCount(users.length + 1); // Include local user
+          setUserCount(users.length + 1);
           setRemoteUsers(users);
         }
       });
@@ -161,8 +170,19 @@ export function useVoiceChat() {
   }, []);
 
   const joinRoom = useCallback(async () => {
-    if (isJoined) {
-      console.log(`${logPrefix} Already joined, cleaning up before rejoining`);
+    // Cancel any previous join attempt
+    if (joinAttemptRef.current) {
+      joinAttemptRef.current.abort();
+    }
+
+    // Create new abort controller for this attempt
+    joinAttemptRef.current = new AbortController();
+    const signal = joinAttemptRef.current.signal;
+
+    if (isJoined || isConnecting) {
+      console.log(
+        `${logPrefix} Already joined or connecting, cleaning up before rejoining`,
+      );
       await cleanup();
     }
 
@@ -180,16 +200,31 @@ export function useVoiceChat() {
       console.log(`${logPrefix} Attempting to join room`);
       setIsConnecting(true);
 
+      // Check if the operation was aborted
+      if (signal.aborted) {
+        throw new Error('Operation aborted');
+      }
+
       if (!clientRef.current) {
         initializeClient();
       }
 
       const token = await fetchToken();
 
+      // Check again for abort
+      if (signal.aborted) {
+        throw new Error('Operation aborted');
+      }
+
       if (!localTrackRef.current) {
         console.log(`${logPrefix} Creating microphone audio track`);
         const audioTrack = await AgoraRTC.createMicrophoneAudioTrack();
         localTrackRef.current = audioTrack;
+      }
+
+      // Final abort check before joining
+      if (signal.aborted) {
+        throw new Error('Operation aborted');
       }
 
       console.log(`${logPrefix} Joining channel:`, CHANNEL_NAME);
@@ -206,7 +241,7 @@ export function useVoiceChat() {
 
         const users = clientRef.current.remoteUsers;
         setRemoteUsers(users);
-        setUserCount(users.length + 1); // Include local user
+        setUserCount(users.length + 1);
         setIsJoined(true);
         setMicPermissionDenied(false);
 
@@ -216,8 +251,14 @@ export function useVoiceChat() {
         });
       }
     } catch (error) {
+      if (error instanceof Error && error.message === 'Operation aborted') {
+        console.log(`${logPrefix} Join operation was aborted`);
+        return;
+      }
+
       console.error(`${logPrefix} Error joining room:`, error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
 
       if (errorMessage.includes('Permission denied')) {
         setMicPermissionDenied(true);
@@ -232,11 +273,18 @@ export function useVoiceChat() {
       await cleanup();
     } finally {
       setIsConnecting(false);
+      joinAttemptRef.current = null;
     }
-  }, [cleanup, initializeClient, toast]);
+  }, [toast, initializeClient, cleanup, isJoined, isConnecting]);
 
   const leaveRoom = useCallback(async () => {
+    if (isLeavingRef.current) {
+      console.log(`${logPrefix} Already leaving room`);
+      return;
+    }
+
     try {
+      isLeavingRef.current = true;
       console.log(`${logPrefix} Leaving room`);
       await cleanup();
       toast({
@@ -245,12 +293,15 @@ export function useVoiceChat() {
       });
     } catch (error) {
       console.error('Error leaving room:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
       toast({
         title: 'Error',
         description: `Failed to leave room: ${errorMessage}`,
         variant: 'destructive',
       });
+    } finally {
+      isLeavingRef.current = false;
     }
   }, [cleanup, toast]);
 
@@ -272,7 +323,9 @@ export function useVoiceChat() {
         return isMuted;
       }
     }
-    console.warn(`${logPrefix} Cannot toggle mute - Voice chat not initialized or not joined`);
+    console.warn(
+      `${logPrefix} Cannot toggle mute - Voice chat not initialized or not joined`,
+    );
     return isMuted;
   }, [isJoined, isMuted, toast]);
 
@@ -307,7 +360,8 @@ export function useVoiceChat() {
       setMicPermissionDenied(true);
       toast({
         title: 'Error',
-        description: 'Microphone access denied. Please check your browser settings.',
+        description:
+          'Microphone access denied. Please check your browser settings.',
         variant: 'destructive',
       });
       return false;
@@ -315,9 +369,10 @@ export function useVoiceChat() {
   }, [toast]);
 
   useEffect(() => {
-    navigator.mediaDevices.getUserMedia({ audio: true })
-      .then(stream => {
-        stream.getTracks().forEach(track => track.stop());
+    navigator.mediaDevices
+      .getUserMedia({ audio: true })
+      .then((stream) => {
+        stream.getTracks().forEach((track) => track.stop());
         setMicPermissionDenied(false);
       })
       .catch(() => {
@@ -358,6 +413,7 @@ export function useVoiceChat() {
     localVolume,
     volumeLevel,
     remoteUsers,
+    currentUid: uidRef.current,
     joinRoom,
     leaveRoom,
     toggleMute,

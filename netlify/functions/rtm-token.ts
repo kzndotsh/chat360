@@ -1,5 +1,5 @@
 import { Handler } from '@netlify/functions';
-import { RtcTokenBuilder, Role as RtcRole } from 'agora-token';
+import { RtmTokenBuilder, Role as RtmRole } from 'agora-token';
 
 const APP_ID = process.env.NEXT_PUBLIC_AGORA_APP_ID;
 const APP_CERTIFICATE = process.env.AGORA_APP_CERTIFICATE;
@@ -53,29 +53,27 @@ export const handler: Handler = async (event) => {
       throw new Error('Request body is required');
     }
 
-    const { channelName, uid } = JSON.parse(event.body);
+    const { uid } = JSON.parse(event.body);
 
-    if (!channelName) {
+    if (!uid) {
       return {
         statusCode: 400,
         headers,
-        body: JSON.stringify({ error: 'Channel name is required' }),
+        body: JSON.stringify({ error: 'User ID is required' }),
       };
     }
 
     // Generate token
-    const role = RtcRole.PUBLISHER;
+    const role = RtmRole.Rtm_User;
     const expirationTimeInSeconds = 3600;
     const currentTimestamp = Math.floor(Date.now() / 1000);
     const privilegeExpiredTs = currentTimestamp + expirationTimeInSeconds;
 
-    const token = RtcTokenBuilder.build(
+    const token = RtmTokenBuilder.buildToken(
       APP_ID,
       APP_CERTIFICATE,
-      channelName,
-      uid || 0,
+      uid,
       role,
-      privilegeExpiredTs,
       privilegeExpiredTs,
     );
 

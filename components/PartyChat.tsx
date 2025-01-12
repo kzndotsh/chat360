@@ -1,5 +1,3 @@
-'use client';
-
 import Image from 'next/image';
 import { useState, useEffect } from 'react';
 import { Clipboard } from 'lucide-react';
@@ -13,9 +11,13 @@ import { useCurrentTime } from '@/lib/hooks/useCurrentTime';
 import { useVoiceChat } from '@/lib/hooks/useVoiceChat';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 
+// Define the video URL as a constant
+const BACKGROUND_VIDEO_URL = 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/bg%20vid-IrN6ZDtoQMHnThmO35MvmafQ4ccLAo.mp4';
+
 export default function PartyChat() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
+  const [videoError, setVideoError] = useState(false);
   const {
     members,
     currentUser,
@@ -26,41 +28,27 @@ export default function PartyChat() {
     joinParty,
     editProfile,
     leaveParty,
+    isConnected,
+    initialize
   } = usePartyState();
 
   const { micPermissionDenied, requestMicrophonePermission } = useVoiceChat();
   const currentTime = useCurrentTime();
 
-  // Check for stored user data on mount
+  // Initialize party state on mount
   useEffect(() => {
-    const storedUser = localStorage.getItem('currentUser');
-    if (!storedUser) {
+    initialize().catch(error => {
+      console.error('Failed to initialize party state:', error);
       setShowJoinModal(true);
-    }
-  }, []);
+    });
+  }, [initialize]);
 
   const handleJoinParty = async (username: string, avatar: string, status: string) => {
     try {
       await joinParty(username, avatar, status);
+      setShowJoinModal(false);
     } catch (error) {
       console.error('Failed to join party:', error);
-      return;
-    }
-    setShowJoinModal(false);
-  };
-
-  const handleJoinClick = async () => {
-    const storedUser = localStorage.getItem('currentUser');
-    if (storedUser) {
-      try {
-        const user = JSON.parse(storedUser);
-        await joinParty(user.name, user.avatar, user.game);
-      } catch (error) {
-        console.error('Failed to join with stored data:', error);
-        setShowJoinModal(true);
-      }
-    } else {
-      setShowJoinModal(true);
     }
   };
 
@@ -105,18 +93,23 @@ export default function PartyChat() {
       <div className='min-h-screen relative flex items-center justify-center bg-black tracking-wide overflow-hidden'>
         {/* Video Background */}
         <div className='absolute inset-0 z-0'>
-          <video
-            autoPlay
-            loop
-            muted
-            playsInline
-            className='absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 min-w-full min-h-full w-auto h-auto object-cover'
-            style={{ filter: 'blur(6px)' }}>
-            <source
-              src='https://hebbkx1anhila5yf.public.blob.vercel-storage.com/bg%20vid-IrN6ZDtoQMHnThmO35MvmafQ4ccLAo.mp4'
-              type='video/mp4'
-            />
-          </video>
+          {!videoError ? (
+            <video
+              autoPlay
+              loop
+              muted
+              playsInline
+              onError={() => setVideoError(true)}
+              className='absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 min-w-full min-h-full w-auto h-auto object-cover'
+              style={{ filter: 'blur(6px)' }}>
+              <source
+                src={BACKGROUND_VIDEO_URL}
+                type='video/mp4'
+              />
+            </video>
+          ) : (
+            <div className="absolute inset-0 bg-gradient-to-b from-gray-900 to-black" />
+          )}
         </div>
 
         <div className='absolute inset-0 bg-black opacity-55 z-10' />
@@ -175,7 +168,7 @@ export default function PartyChat() {
           <PartyControls
             currentUser={currentUser}
             storedAvatar={storedAvatar}
-            onJoin={handleJoinClick}
+            onJoin={() => setShowJoinModal(true)}
             onLeave={handleLeaveParty}
             onToggleMute={handleToggleMute}
             onEdit={() => setShowEditModal(true)}
@@ -183,6 +176,7 @@ export default function PartyChat() {
             micPermissionDenied={micPermissionDenied}
             onRequestMicrophonePermission={requestMicrophonePermission}
             isMuted={isMuted}
+            isConnected={isConnected}
           />
         </div>
       </div>
