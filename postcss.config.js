@@ -6,15 +6,15 @@ module.exports = {
       flexbox: 'no-2009',
       grid: 'autoplace'
     },
-    ...(process.env.NODE_ENV === 'production' ? {
+    ...( process.env.NODE_ENV === 'production' ? {
       cssnano: {
-        preset: ['default', {
+        preset: [ 'default', {
           discardComments: {
             removeAll: true,
           },
           normalizeWhitespace: false,
-        }]
+        } ]
       }
-    } : {})
+    } : {} )
   }
 };

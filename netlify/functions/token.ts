@@ -1,5 +1,5 @@
 import { Handler } from '@netlify/functions';
-import { RtcTokenBuilder, Role as RtcRole } from 'agora-token';
+import { RtcTokenBuilder, RtcRole as RtcRole } from 'agora-token';
 
 const APP_ID = process.env.NEXT_PUBLIC_AGORA_APP_ID;
 const APP_CERTIFICATE = process.env.AGORA_APP_CERTIFICATE;

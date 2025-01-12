@@ -1,6 +1,6 @@
 const express = require( 'express' );
 const cors = require( 'cors' );
-const { RtcTokenBuilder, Role as RtcRole } = require( 'agora-token' );
+const { RtcTokenBuilder, RtcRole } = require( 'agora-token' );
 require( 'dotenv' ).config();
 
 const app = express();
