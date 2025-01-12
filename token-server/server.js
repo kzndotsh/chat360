@@ -1,6 +1,6 @@
 const express = require( 'express' );
 const cors = require( 'cors' );
-const { RtcTokenBuilder, RtcRole } = require( 'agora-access-token' );
+const { RtcTokenBuilder, Role as RtcRole } = require( 'agora-token' );
 require( 'dotenv' ).config();
 
 const app = express();
@@ -29,12 +29,13 @@ app.post( '/token', ( req, res ) => {
     const currentTimestamp = Math.floor( Date.now() / 1000 );
     const privilegeExpiredTs = currentTimestamp + expirationTimeInSeconds;
 
-    const token = RtcTokenBuilder.buildTokenWithUid(
+    const token = RtcTokenBuilder.build(
       APP_ID,
       APP_CERTIFICATE,
       channelName,
       uid || 0,
       role,
+      privilegeExpiredTs,
       privilegeExpiredTs
     );
 
