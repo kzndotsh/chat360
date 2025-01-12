@@ -38,25 +38,31 @@ export function usePartyState() {
           schema: 'public',
           table: 'party_members',
         },
-        async (payload) => {
-          // Fetch latest active members
-          const { data: members } = await supabase
-            .from('party_members')
-            .select('*')
-            .eq('is_active', true)
-            .order('created_at', { ascending: true });
+        async () => {
+          try {
+            // Fetch latest active members
+            const { data: members, error } = await supabase
+              .from('party_members')
+              .select('*')
+              .eq('is_active', true)
+              .order('created_at', { ascending: true });
 
-          if (members) {
-            setMembers(
-              members.map((m) => ({
-                id: m.id,
-                name: m.name,
-                game: m.game,
-                muted: m.muted,
-                avatar: m.avatar,
-                isActive: m.is_active,
-              })),
-            );
+            if (error) throw error;
+
+            if (members) {
+              setMembers(
+                members.map((m) => ({
+                  id: m.id,
+                  name: m.name,
+                  game: m.game,
+                  muted: m.muted,
+                  avatar: m.avatar,
+                  isActive: m.is_active,
+                })),
+              );
+            }
+          } catch (error) {
+            console.error(`${logPrefix} Failed to fetch members:`, error);
           }
         },
       )
@@ -111,21 +117,16 @@ export function usePartyState() {
         // Then update the member state
         const { error: updateError } = await supabase
           .from('party_members')
-          .upsert(
-            {
-              id: member.id,
-              name: member.name,
-              avatar: member.avatar,
-              game: member.game,
-              muted: member.muted,
-              is_active: member.isActive,
-              agora_uid: member.isActive ? currentUid : null,
-              last_seen: new Date().toISOString(),
-            },
-            {
-              onConflict: 'id',
-            },
-          );
+          .upsert({
+            id: member.id,
+            name: member.name,
+            avatar: member.avatar,
+            game: member.game,
+            muted: member.muted,
+            is_active: member.isActive,
+            agora_uid: member.isActive ? currentUid : null,
+            last_seen: new Date().toISOString(),
+          });
 
         if (updateError) throw updateError;
 
@@ -284,11 +285,13 @@ export function usePartyState() {
       setStoredUser(user);
 
       // Fetch initial members list
-      const { data: members } = await supabase
+      const { data: members, error } = await supabase
         .from('party_members')
         .select('*')
         .eq('is_active', true)
         .order('created_at', { ascending: true });
+
+      if (error) throw error;
 
       if (members) {
         setMembers(
