@@ -3,8 +3,13 @@
   publish = "out"
 
 [[redirects]]
-  from = "/api/*"
-  to = "/.netlify/functions/:splat"
+  from = "/api/rtm-token"
+  to = "/.netlify/functions/rtm-token"
+  status = 200
+
+[[redirects]]
+  from = "/api/token"
+  to = "/.netlify/functions/token"
   status = 200
 
 [[redirects]]

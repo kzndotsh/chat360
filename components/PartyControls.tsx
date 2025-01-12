@@ -13,6 +13,7 @@ interface PartyControlsProps {
   isMuted: boolean;
   micPermissionDenied: boolean;
   onRequestMicrophonePermission: () => Promise<boolean>;
+  isConnected?: boolean;
 }
 
 export function PartyControls({

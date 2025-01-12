@@ -5,7 +5,7 @@ import { Volume, Volume1, Volume2, VolumeX } from 'lucide-react';
 interface MemberListProps {
   members: PartyMember[];
   toggleMute: (id: string) => void;
-  volumeLevel?: number;
+  volumeLevels?: Record<string, number>;
   currentUserId?: string;
 }
 
@@ -29,13 +29,13 @@ const MuteIcon = ({ muted, volumeLevel = 0 }: { muted: boolean; volumeLevel?: nu
   );
 };
 
-const MemberList = ({ members, toggleMute, volumeLevel = 0, currentUserId }: MemberListProps) => (
+const MemberList = ({ members, toggleMute, volumeLevels = {}, currentUserId }: MemberListProps) => (
   <div className="max-h-[381px] overflow-y-auto">
     {members.map((member, index) => {
       const isNonEmpty = !member.id.startsWith('empty');
       const shouldDisplayBorder = isNonEmpty && index !== 0;
       const isCurrentUser = member.id === currentUserId;
-      const showVolumeLevel = isCurrentUser && !member.muted;
+      const memberVolumeLevel = volumeLevels[member.id] || 0;
 
       return (
         <div 
@@ -53,7 +53,7 @@ const MemberList = ({ members, toggleMute, volumeLevel = 0, currentUserId }: Mem
               aria-label={member.muted ? "Unmute" : "Mute"}
               disabled={!isCurrentUser}
             >
-              {isNonEmpty && <MuteIcon muted={member.muted} volumeLevel={showVolumeLevel ? volumeLevel : 0} />}
+              {isNonEmpty && <MuteIcon muted={member.muted} volumeLevel={memberVolumeLevel} />}
             </button>
             {isNonEmpty ? (
               <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-none relative overflow-hidden shadow-[inset_0_2px_4px_rgba(0,0,0,0.5),_0_0_2px_rgba(255,255,255,0.5)] bg-gray-200 ml-1">
@@ -75,13 +75,13 @@ const MemberList = ({ members, toggleMute, volumeLevel = 0, currentUserId }: Mem
           <div className="flex items-center justify-center w-[23px] ml-[-55px] sm:ml-[-50px] tracking-normal">
             {isNonEmpty && (
               <div className="flex items-center gap-2">
-              <Image 
-                src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/green%20icon-XjjUFdqXahFTv2EYOcDDsGu3PO5Ol6.png"
-                alt="Online Status"
-                width={18}
-                height={18}
-                className="sm:w-6 sm:h-6"
-              />
+                <Image 
+                  src="https://i.imgur.com/LCycgcq.png"
+                  alt="Online Status"
+                  width={18}
+                  height={18}
+                  className="sm:w-6 sm:h-6"
+                />
               </div>
             )}
           </div>

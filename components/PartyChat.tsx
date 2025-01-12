@@ -1,5 +1,5 @@
 import Image from 'next/image';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Clipboard } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { JoinPartyModal } from '@/components/JoinPartyModal';
@@ -37,20 +37,34 @@ export default function PartyChat() {
 
   // Initialize party state on mount
   useEffect(() => {
-    initialize().catch(error => {
-      console.error('Failed to initialize party state:', error);
-      setShowJoinModal(true);
-    });
+    let mounted = true;
+
+    const init = async () => {
+      try {
+        await initialize();
+      } catch (error) {
+        console.error('Failed to initialize party state:', error);
+        if (mounted) {
+          setShowJoinModal(true);
+        }
+      }
+    };
+
+    init();
+
+    return () => {
+      mounted = false;
+    };
   }, [initialize]);
 
-  const handleJoinParty = async (username: string, avatar: string, status: string) => {
+  const handleJoinParty = useCallback(async (username: string, avatar: string, status: string) => {
     try {
       await joinParty(username, avatar, status);
       setShowJoinModal(false);
     } catch (error) {
       console.error('Failed to join party:', error);
     }
-  };
+  }, [joinParty]);
 
   const handleEditProfile = (username: string, avatar: string, status: string) => {
     editProfile(username, avatar, status);
@@ -180,7 +194,7 @@ export default function PartyChat() {
           />
         </div>
       </div>
-      
+      qqqqqqqqq
       {showJoinModal && (
         <JoinPartyModal
           onJoin={handleJoinParty}

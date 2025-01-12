@@ -170,19 +170,8 @@ export function useVoiceChat() {
   }, []);
 
   const joinRoom = useCallback(async () => {
-    // Cancel any previous join attempt
-    if (joinAttemptRef.current) {
-      joinAttemptRef.current.abort();
-    }
-
-    // Create new abort controller for this attempt
-    joinAttemptRef.current = new AbortController();
-    const signal = joinAttemptRef.current.signal;
-
-    if (isJoined || isConnecting) {
-      console.log(
-        `${logPrefix} Already joined or connecting, cleaning up before rejoining`,
-      );
+    if (isJoined) {
+      console.log(`${logPrefix} Already joined, cleaning up before rejoining`);
       await cleanup();
     }
 
@@ -200,31 +189,16 @@ export function useVoiceChat() {
       console.log(`${logPrefix} Attempting to join room`);
       setIsConnecting(true);
 
-      // Check if the operation was aborted
-      if (signal.aborted) {
-        throw new Error('Operation aborted');
-      }
-
       if (!clientRef.current) {
         initializeClient();
       }
 
       const token = await fetchToken();
 
-      // Check again for abort
-      if (signal.aborted) {
-        throw new Error('Operation aborted');
-      }
-
       if (!localTrackRef.current) {
         console.log(`${logPrefix} Creating microphone audio track`);
         const audioTrack = await AgoraRTC.createMicrophoneAudioTrack();
         localTrackRef.current = audioTrack;
-      }
-
-      // Final abort check before joining
-      if (signal.aborted) {
-        throw new Error('Operation aborted');
       }
 
       console.log(`${logPrefix} Joining channel:`, CHANNEL_NAME);
@@ -251,11 +225,6 @@ export function useVoiceChat() {
         });
       }
     } catch (error) {
-      if (error instanceof Error && error.message === 'Operation aborted') {
-        console.log(`${logPrefix} Join operation was aborted`);
-        return;
-      }
-
       console.error(`${logPrefix} Error joining room:`, error);
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
@@ -271,20 +240,14 @@ export function useVoiceChat() {
       });
 
       await cleanup();
+      throw error;
     } finally {
       setIsConnecting(false);
-      joinAttemptRef.current = null;
     }
-  }, [toast, initializeClient, cleanup, isJoined, isConnecting]);
+  }, [cleanup, initializeClient, toast, isJoined]);
 
   const leaveRoom = useCallback(async () => {
-    if (isLeavingRef.current) {
-      console.log(`${logPrefix} Already leaving room`);
-      return;
-    }
-
     try {
-      isLeavingRef.current = true;
       console.log(`${logPrefix} Leaving room`);
       await cleanup();
       toast({
@@ -300,8 +263,7 @@ export function useVoiceChat() {
         description: `Failed to leave room: ${errorMessage}`,
         variant: 'destructive',
       });
-    } finally {
-      isLeavingRef.current = false;
+      throw error;
     }
   }, [cleanup, toast]);
 
