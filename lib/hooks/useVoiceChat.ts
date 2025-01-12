@@ -9,7 +9,7 @@ import { useToast } from './useToast';
 
 const FALLBACK_APP_ID = 'b692145dadfd4f2b9bd3c0e9e5ecaab8';
 const FALLBACK_TOKEN =
-  '007eJxTYDi1cvr+ILcFWvNsdQwSo+9LsETYJts8n7I3UEK8+PiMK5UKDElmlkaGJqYpiSlpKSZpRkmWSSnGyQaplqmmqcmJiUkW/n7N6Q2BjAw/f85jYmSAQBCfhSE3MTOPgQEADh4frg==';
+  '007eJxTYHigyLDU9sUK/YS/7UdyNjYEx7l3fTlk7Nf9R+ExQ1dcEacCQ5KZpZGhiWlKYkpaikmaUZJlUopxskGqZappanJiYpLFX4+W9IZARgZds9MsjAwQCOKzMOQmZuYxMAAAgNggYA==
 
 const AGORA_APP_ID = process.env.NEXT_PUBLIC_AGORA_APP_ID || FALLBACK_APP_ID;
 const CHANNEL_NAME = 'main';
