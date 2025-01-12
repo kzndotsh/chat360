@@ -1,29 +1,34 @@
-"use client";
+'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import AgoraRTC, { 
-  IAgoraRTCClient, 
+
+import AgoraRTC, {
+  IAgoraRTCClient,
   IAgoraRTCRemoteUser,
   IMicrophoneAudioTrack,
   ClientConfig,
 } from 'agora-rtc-sdk-ng';
-import { useToast } from "@/components/ui/use-toast";
+
+import { useToast } from './useToast';
 
 const AGORA_APP_ID = process.env.NEXT_PUBLIC_AGORA_APP_ID || '';
-const TOKEN_SERVER_URL = process.env.NODE_ENV === 'production' 
-  ? '/.netlify/functions/token'
-  : 'http://localhost:8080/token';
+
+const TOKEN_SERVER_URL =
+  process.env.NODE_ENV === 'production'
+    ? '/.netlify/functions/token'
+    : 'http://localhost:8080/token';
+
 const CHANNEL_NAME = 'main';
 
 const clientConfig: ClientConfig = {
-  mode: "rtc",
-  codec: "vp8",
+  mode: 'rtc',
+  codec: 'vp8',
   websocketRetryConfig: {
     timeout: 10000,
     timeoutFactor: 1.5,
     maxRetryCount: 5,
-    maxRetryTimeout: 30000
-  }
+    maxRetryTimeout: 30000,
+  },
 };
 
 AgoraRTC.disableLogUpload();
@@ -31,13 +36,18 @@ AgoraRTC.setLogLevel(4);
 
 export function useVoiceChat() {
   const { toast } = useToast();
+
   const [isJoined, setIsJoined] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
+
   const [isMuted, setIsMuted] = useState(false);
   const [micPermissionDenied, setMicPermissionDenied] = useState(false);
+
   const [userCount, setUserCount] = useState(0);
+
   const [remoteUsers, setRemoteUsers] = useState<IAgoraRTCRemoteUser[]>([]);
+
   const [localVolume, setLocalVolume] = useState(100);
   const [volumeLevel, setVolumeLevel] = useState(0);
 
@@ -96,46 +106,49 @@ export function useVoiceChat() {
   const initializeClient = useCallback(() => {
     if (!clientRef.current) {
       clientRef.current = AgoraRTC.createClient(clientConfig);
-      
-      clientRef.current.on("user-joined", (user) => {
-        console.log("Remote user joined:", user.uid);
-        setUserCount(prev => prev + 1);
+
+      clientRef.current.on('user-joined', (user) => {
+        console.log('Remote user joined:', user.uid);
+        setUserCount((prev) => prev + 1);
       });
 
-      clientRef.current.on("user-left", (user) => {
-        console.log("Remote user left:", user.uid);
-        setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
-        setUserCount(prev => Math.max(0, prev - 1));
+      clientRef.current.on('user-left', (user) => {
+        console.log('Remote user left:', user.uid);
+        setRemoteUsers((prev) => prev.filter((u) => u.uid !== user.uid));
+        setUserCount((prev) => Math.max(0, prev - 1));
       });
 
-      clientRef.current.on("user-published", async (user, mediaType) => {
+      clientRef.current.on('user-published', async (user, mediaType) => {
         await clientRef.current?.subscribe(user, mediaType);
         if (mediaType === 'audio') {
           user.audioTrack?.play();
         }
-        setRemoteUsers(prev => [...prev.filter(u => u.uid !== user.uid), user]);
+        setRemoteUsers((prev) => [
+          ...prev.filter((u) => u.uid !== user.uid),
+          user,
+        ]);
       });
 
-      clientRef.current.on("user-unpublished", (user) => {
-        setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
+      clientRef.current.on('user-unpublished', (user) => {
+        setRemoteUsers((prev) => prev.filter((u) => u.uid !== user.uid));
       });
 
-      clientRef.current.on("connection-state-change", (state) => {
+      clientRef.current.on('connection-state-change', (state) => {
         setIsConnected(state === 'CONNECTED');
         setIsConnecting(state === 'CONNECTING');
       });
 
-      clientRef.current.on("token-privilege-will-expire", async () => {
+      clientRef.current.on('token-privilege-will-expire', async () => {
         try {
           const token = await fetchToken();
           await clientRef.current?.renewToken(token);
-          console.log("Token renewed successfully");
+          console.log('Token renewed successfully');
         } catch (error) {
-          console.error("Error renewing token:", error);
+          console.error('Error renewing token:', error);
           toast({
-            title: "Error",
-            description: "Failed to renew token. You may be disconnected soon.",
-            variant: "destructive"
+            title: 'Error',
+            description: 'Failed to renew token. You may be disconnected soon.',
+            variant: 'destructive',
           });
         }
       });
@@ -145,9 +158,9 @@ export function useVoiceChat() {
   const joinRoom = useCallback(async () => {
     if (!AGORA_APP_ID) {
       toast({
-        title: "Configuration Error",
-        description: "Agora App ID is not configured",
-        variant: "destructive"
+        title: 'Configuration Error',
+        description: 'Agora App ID is not configured',
+        variant: 'destructive',
       });
       return;
     }
@@ -174,13 +187,13 @@ export function useVoiceChat() {
         AGORA_APP_ID,
         CHANNEL_NAME,
         token,
-        uidRef.current
+        uidRef.current,
       );
-      
+
       // Publish the local audio track
       if (clientRef.current && localTrackRef.current) {
         await clientRef.current.publish(localTrackRef.current);
-        
+
         const users = clientRef.current.remoteUsers;
         setRemoteUsers(users);
         setUserCount(users.length + 1);
@@ -188,22 +201,23 @@ export function useVoiceChat() {
         setMicPermissionDenied(false);
 
         toast({
-          title: "Joined Room",
-          description: "Successfully joined the voice chat room",
+          title: 'Joined Room',
+          description: 'Successfully joined the voice chat room',
         });
       }
     } catch (error) {
       console.error('Error joining room:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+
       if (errorMessage.includes('Permission denied')) {
         setMicPermissionDenied(true);
       }
 
       toast({
-        title: "Error",
+        title: 'Error',
         description: `Failed to join room: ${errorMessage}`,
-        variant: "destructive"
+        variant: 'destructive',
       });
 
       await cleanup();
@@ -216,16 +230,17 @@ export function useVoiceChat() {
     try {
       await cleanup();
       toast({
-        title: "Left Room",
-        description: "Successfully left the voice chat room",
+        title: 'Left Room',
+        description: 'Successfully left the voice chat room',
       });
     } catch (error) {
       console.error('Error leaving room:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
       toast({
-        title: "Error",
+        title: 'Error',
         description: `Failed to leave room: ${errorMessage}`,
-        variant: "destructive"
+        variant: 'destructive',
       });
     }
   }, [cleanup, toast]);
@@ -245,17 +260,20 @@ export function useVoiceChat() {
     }
   }, []);
 
-  const setRemoteVolume = useCallback((uid: string, volume: number) => {
-    const user = remoteUsers.find(u => u.uid.toString() === uid);
-    if (user && user.audioTrack) {
-      user.audioTrack.setVolume(volume);
-    }
-  }, [remoteUsers]);
+  const setRemoteVolume = useCallback(
+    (uid: string, volume: number) => {
+      const user = remoteUsers.find((u) => u.uid.toString() === uid);
+      if (user && user.audioTrack) {
+        user.audioTrack.setVolume(volume);
+      }
+    },
+    [remoteUsers],
+  );
 
   const requestMicrophonePermission = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach(track => track.stop());
+      stream.getTracks().forEach((track) => track.stop());
       setMicPermissionDenied(false);
       return true;
     } catch (error) {

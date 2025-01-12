@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { VolumeSlider } from "@/components/VolumeSlider";
 import { ConnectionStatus } from '@/components/ConnectionStatus';
-import { useToast } from "@/components/ui/use-toast";
+import { useToast } from "@/lib/hooks/useToast";
 import { Mic, MicOff, Users, Volume2 } from 'lucide-react';
 import { useVoiceChat } from '@/lib/hooks/useVoiceChat';
 

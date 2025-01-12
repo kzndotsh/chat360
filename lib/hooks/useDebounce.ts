@@ -1,10 +1,10 @@
-"use client";
+'use client';
 
 import { useCallback, useRef } from 'react';
 
 export function useDebounce<T extends (...args: any[]) => any>(
   callback: T,
-  delay: number
+  delay: number,
 ): (...args: Parameters<T>) => void {
   const timeoutRef = useRef<NodeJS.Timeout>();
 
@@ -18,6 +18,6 @@ export function useDebounce<T extends (...args: any[]) => any>(
         callback(...args);
       }, delay);
     },
-    [callback, delay]
+    [callback, delay],
   );
 }
