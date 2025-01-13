@@ -10,7 +10,6 @@ import MemberList from '@/components/MemberList';
 import { PartyHeader } from '@/components/PartyHeader';
 import { PartyControls } from '@/components/PartyControls';
 import { usePartyState } from '@/lib/hooks/usePartyState';
-import { useVoiceChat } from '@/lib/hooks/useVoiceChat';
 import Clock from '@/components/Clock';
 import { BACKGROUND_VIDEO_URL } from '@/lib/constants';
 import { logWithContext } from '@/lib/logger';
@@ -31,72 +30,73 @@ export default function PartyChat() {
     leaveParty,
     isConnected,
     initialize,
+    micPermissionDenied,
+    requestMicrophonePermission,
   } = usePartyState();
 
-  const { micPermissionDenied, requestMicrophonePermission } = useVoiceChat();
-
   useEffect(() => {
-    logWithContext('PartyChat.tsx', 'useEffect: init', 'Component mounting');
-    return () => {
-      logWithContext('PartyChat.tsx', 'useEffect: exit', 'Component unmounting');
-    };
-  }, []);
-
-  useEffect(() => {
+    logWithContext('PartyChat', 'useEffect: init', 'Component mounting');
     const init = async () => {
       try {
         await initialize();
-        logWithContext('PartyChat.tsx', 'init', 'Initialization complete');
+        logWithContext('PartyChat', 'init', 'Initialization complete');
       } catch (error) {
         setShowJoinModal(true);
         Sentry.captureException(error);
-        logWithContext('PartyChat.tsx', 'init', `Initialization error: ${error}`);
+        logWithContext('PartyChat', 'init', `Initialization error: ${error}`);
       }
     };
     init();
+    return () => {
+      logWithContext('PartyChat', 'useEffect: cleanup', 'Component unmounting');
+    };
   }, [initialize]);
 
   const handleJoinParty = async (username: string, avatar: string, status: string) => {
+    logWithContext('PartyChat', 'handleJoinParty', `Attempt to join party as ${username}`);
     try {
       await joinParty(username, avatar, status);
       setShowJoinModal(false);
-      logWithContext('PartyChat.tsx', 'handleJoinParty', `Joined party as ${username}`);
+      logWithContext('PartyChat', 'handleJoinParty', `Joined party as ${username}`);
     } catch (error) {
       Sentry.captureException(error);
-      logWithContext('PartyChat.tsx', 'handleJoinParty', `Join party error: ${error}`);
+      logWithContext('PartyChat', 'handleJoinParty', `Join party error: ${error}`);
     }
   };
 
   const handleEditProfile = async (username: string, avatar: string, status: string) => {
+    logWithContext('PartyChat', 'handleEditProfile', `Attempt to edit profile for ${username}`);
     try {
       await editProfile(username, avatar, status);
       setShowEditModal(false);
-      logWithContext('PartyChat.tsx', 'handleEditProfile', `Profile edited for ${username}`);
+      logWithContext('PartyChat', 'handleEditProfile', `Profile edited for ${username}`);
     } catch (error) {
       Sentry.captureException(error);
-      logWithContext('PartyChat.tsx', 'handleEditProfile', `Edit profile error: ${error}`);
+      logWithContext('PartyChat', 'handleEditProfile', `Edit profile error: ${error}`);
     }
   };
 
   const handleLeaveParty = async () => {
+    logWithContext('PartyChat', 'handleLeaveParty', 'Attempting to leave party');
     try {
       await leaveParty();
-      logWithContext('PartyChat.tsx', 'handleLeaveParty', 'Left party');
+      logWithContext('PartyChat', 'handleLeaveParty', 'Left party');
     } catch (error) {
       Sentry.captureException(error);
-      logWithContext('PartyChat.tsx', 'handleLeaveParty', `Leave party error: ${error}`);
+      logWithContext('PartyChat', 'handleLeaveParty', `Leave party error: ${error}`);
     }
   };
 
   const handleToggleMute = async () => {
+    logWithContext('PartyChat', 'handleToggleMute', 'Attempting to toggle mute');
     try {
       if (currentUser?.id) {
-        await toggleMute(currentUser.id);
-        logWithContext('PartyChat.tsx', 'handleToggleMute', `Toggled mute for ${currentUser.name}`);
+        await toggleMute();
+        logWithContext('PartyChat', 'handleToggleMute', `Toggled mute for ${currentUser.name}`);
       }
     } catch (error) {
       Sentry.captureException(error);
-      logWithContext('PartyChat.tsx', 'handleToggleMute', `Toggle mute error: ${error}`);
+      logWithContext('PartyChat', 'handleToggleMute', `Toggle mute error: ${error}`);
     }
   };
 
@@ -114,7 +114,7 @@ export default function PartyChat() {
               playsInline
               onError={() => {
                 setVideoError(true);
-                logWithContext('PartyChat.tsx', 'video', 'Video error encountered');
+                logWithContext('PartyChat', 'video', 'Video error encountered');
               }}
               className='absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 min-w-full min-h-full object-cover'
               style={{ filter: 'blur(6px)' }}>
