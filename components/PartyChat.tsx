@@ -36,6 +36,13 @@ export default function PartyChat() {
   const { micPermissionDenied, requestMicrophonePermission } = useVoiceChat();
 
   useEffect(() => {
+    logWithContext('PartyChat.tsx', 'useEffect: init', 'Component mounting');
+    return () => {
+      logWithContext('PartyChat.tsx', 'useEffect: exit', 'Component unmounting');
+    };
+  }, []);
+
+  useEffect(() => {
     const init = async () => {
       try {
         await initialize();
@@ -43,73 +50,41 @@ export default function PartyChat() {
       } catch (error) {
         setShowJoinModal(true);
         Sentry.captureException(error);
-        logWithContext(
-          'PartyChat.tsx',
-          'init',
-          `Initialization error: ${error}`,
-        );
+        logWithContext('PartyChat.tsx', 'init', `Initialization error: ${error}`);
       }
     };
     init();
   }, [initialize]);
 
-  const handleJoinParty = async (
-    username: string,
-    avatar: string,
-    status: string,
-  ) => {
+  const handleJoinParty = async (username: string, avatar: string, status: string) => {
     try {
       await joinParty(username, avatar, status);
       setShowJoinModal(false);
-      logWithContext(
-        'PartyChat.tsx',
-        'handleJoinParty',
-        `Joined party as ${username}`,
-      );
+      logWithContext('PartyChat.tsx', 'handleJoinParty', `Joined party as ${username}`);
     } catch (error) {
       Sentry.captureException(error);
-      logWithContext(
-        'PartyChat.tsx',
-        'handleJoinParty',
-        `Join party error: ${error}`,
-      );
+      logWithContext('PartyChat.tsx', 'handleJoinParty', `Join party error: ${error}`);
     }
   };
 
-  const handleEditProfile = async (
-    username: string,
-    avatar: string,
-    status: string,
-  ) => {
+  const handleEditProfile = async (username: string, avatar: string, status: string) => {
     try {
       await editProfile(username, avatar, status);
       setShowEditModal(false);
-      logWithContext(
-        'PartyChat.tsx',
-        'handleEditProfile',
-        `Profile edited for ${username}`,
-      );
+      logWithContext('PartyChat.tsx', 'handleEditProfile', `Profile edited for ${username}`);
     } catch (error) {
       Sentry.captureException(error);
-      logWithContext(
-        'PartyChat.tsx',
-        'handleEditProfile',
-        `Edit profile error: ${error}`,
-      );
+      logWithContext('PartyChat.tsx', 'handleEditProfile', `Edit profile error: ${error}`);
     }
   };
 
   const handleLeaveParty = async () => {
     try {
       await leaveParty();
-      logWithContext('PartyChat.tsx', 'handleLeaveParty', `Left party`);
+      logWithContext('PartyChat.tsx', 'handleLeaveParty', 'Left party');
     } catch (error) {
       Sentry.captureException(error);
-      logWithContext(
-        'PartyChat.tsx',
-        'handleLeaveParty',
-        `Leave party error: ${error}`,
-      );
+      logWithContext('PartyChat.tsx', 'handleLeaveParty', `Leave party error: ${error}`);
     }
   };
 
@@ -117,19 +92,11 @@ export default function PartyChat() {
     try {
       if (currentUser?.id) {
         await toggleMute(currentUser.id);
-        logWithContext(
-          'PartyChat.tsx',
-          'handleToggleMute',
-          `Toggled mute for ${currentUser.name}`,
-        );
+        logWithContext('PartyChat.tsx', 'handleToggleMute', `Toggled mute for ${currentUser.name}`);
       }
     } catch (error) {
       Sentry.captureException(error);
-      logWithContext(
-        'PartyChat.tsx',
-        'handleToggleMute',
-        `Toggle mute error: ${error}`,
-      );
+      logWithContext('PartyChat.tsx', 'handleToggleMute', `Toggle mute error: ${error}`);
     }
   };
 
@@ -147,18 +114,11 @@ export default function PartyChat() {
               playsInline
               onError={() => {
                 setVideoError(true);
-                logWithContext(
-                  'PartyChat.tsx',
-                  'video',
-                  'Video error encountered',
-                );
+                logWithContext('PartyChat.tsx', 'video', 'Video error encountered');
               }}
               className='absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 min-w-full min-h-full object-cover'
               style={{ filter: 'blur(6px)' }}>
-              <source
-                src={BACKGROUND_VIDEO_URL}
-                type='video/mp4'
-              />
+              <source src={BACKGROUND_VIDEO_URL} type='video/mp4' />
             </video>
           )}
         </div>
@@ -166,7 +126,6 @@ export default function PartyChat() {
         <div className='absolute inset-0 bg-black opacity-55 z-10' />
 
         <div className='relative z-20 w-full max-w-[825px] mx-auto p-4 sm:p-6'>
-          {/* Header */}
           <div className='flex items-end justify-between mb-2'>
             <h1 className='text-lg text-white pl-[30px]'>$360</h1>
             <button
@@ -189,25 +148,17 @@ export default function PartyChat() {
           </div>
 
           <Card className='bg-[#f0f0fa] border-0 mb-2 rounded-none relative overflow-hidden shadow-none text-[#161718] aspect-[16/9.75]'>
-            {/* Party Header */}
             <PartyHeader membersCount={members.length} />
 
-            {/* Invite Button */}
             <div className='bg-gradient-to-b from-[#70cc00] to-[#409202] py-[6px] pl-[30px] cursor-pointer hover:brightness-110 transition-all flex items-center gap-2 shadow-[inset_0_-2px_4px_rgba(0,0,0,0.1)]'>
-              <span className='font-medium text-[1.15rem] text-white'>
-                Copy CA
-              </span>
+              <span className='font-medium text-[1.15rem] text-white'>Copy CA</span>
               <Clipboard className='w-3.5 h-3.5 text-white' />
             </div>
 
-            {/* Party Options */}
             <div className='py-[6px] pl-[30px] text-[#282b2f] border-b border-gray-400 shadow-[inset_0_-2px_4px_rgba(0,0,0,0.08)]'>
-              <span className='font-medium text-[1.15rem]'>
-                Party Options: Party Chat
-              </span>
+              <span className='font-medium text-[1.15rem]'>Party Options: Party Chat</span>
             </div>
 
-            {/* Member List */}
             <MemberList
               members={members}
               toggleMute={toggleMute}

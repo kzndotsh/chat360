@@ -42,9 +42,12 @@ export function useVoiceChat() {
       uidRef.current = parseInt(storedUid, 10);
     } else {
       const newUid = Math.floor(Math.random() * 1000000);
+
       uidRef.current = newUid;
+
       localStorage.setItem(STORAGE_KEY, newUid.toString());
     }
+
     logWithContext(
       'useVoiceChat.js',
       'useEffect: UID Load',
@@ -54,6 +57,7 @@ export function useVoiceChat() {
 
   const cleanup = useCallback(async () => {
     logWithContext('useVoiceChat.js', 'cleanup', 'Cleaning up resources');
+
     if (volumeIntervalRef.current) {
       clearInterval(volumeIntervalRef.current);
       volumeIntervalRef.current = null;
@@ -67,7 +71,9 @@ export function useVoiceChat() {
 
     if (clientRef.current) {
       clientRef.current.removeAllListeners();
+
       await clientRef.current.leave();
+
       clientRef.current = null;
     }
 
@@ -80,6 +86,7 @@ export function useVoiceChat() {
 
   const fetchToken = async () => {
     logWithContext('useVoiceChat.js', 'fetchToken', 'Fetching token');
+
     return FALLBACK_TOKEN;
   };
 
@@ -93,6 +100,7 @@ export function useVoiceChat() {
           'user-joined',
           `User joined: ${user.uid}`,
         );
+
         setRemoteUsers((prev) => [...prev, user]);
       });
 
@@ -102,6 +110,7 @@ export function useVoiceChat() {
           'user-left',
           `User left: ${user.uid}`,
         );
+
         setRemoteUsers((prev) => prev.filter((u) => u.uid !== user.uid));
       });
 
@@ -111,7 +120,9 @@ export function useVoiceChat() {
           'user-published',
           `User published: ${user.uid}, MediaType: ${mediaType}`,
         );
+
         await clientRef.current?.subscribe(user, mediaType);
+
         if (mediaType === 'audio') {
           user.audioTrack?.play();
         }
@@ -123,6 +134,7 @@ export function useVoiceChat() {
           'connection-state-change',
           `Connection state: ${state}`,
         );
+
         setIsConnected(state === 'CONNECTED');
         setIsConnecting(state === 'CONNECTING');
 
@@ -132,7 +144,9 @@ export function useVoiceChat() {
             'connection-state-change',
             'Client connected',
           );
+
           const users = clientRef.current?.remoteUsers || [];
+
           setRemoteUsers(users);
         }
 
@@ -150,6 +164,7 @@ export function useVoiceChat() {
   const joinRoom = useCallback(async () => {
     if (AGORA_APP_ID && !isJoined) {
       logWithContext('useVoiceChat.js', 'joinRoom', 'Attempting to join room');
+
       try {
         setIsConnecting(true);
 
@@ -158,6 +173,7 @@ export function useVoiceChat() {
         }
 
         const token = await fetchToken();
+
         logWithContext(
           'useVoiceChat.js',
           'joinRoom',
@@ -166,6 +182,7 @@ export function useVoiceChat() {
 
         if (!localTrackRef.current) {
           localTrackRef.current = await AgoraRTC.createMicrophoneAudioTrack();
+
           logWithContext(
             'useVoiceChat.js',
             'joinRoom',
@@ -183,6 +200,7 @@ export function useVoiceChat() {
 
         setIsJoined(true);
         setMicPermissionDenied(false);
+
         logWithContext(
           'useVoiceChat.js',
           'joinRoom',
@@ -194,9 +212,11 @@ export function useVoiceChat() {
           'joinRoom',
           `Failed to join room: ${error.message}`,
         );
+
         if (error.message.includes('Permission denied')) {
           setMicPermissionDenied(true);
         }
+
         await cleanup();
       } finally {
         setIsConnecting(false);
@@ -206,9 +226,11 @@ export function useVoiceChat() {
 
   const leaveRoom = useCallback(async () => {
     logWithContext('useVoiceChat.js', 'leaveRoom', 'Attempting to leave room');
+
     try {
       if (clientRef.current) {
         await clientRef.current.leave();
+
         logWithContext(
           'useVoiceChat.js',
           'leaveRoom',
@@ -219,6 +241,7 @@ export function useVoiceChat() {
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error occurred';
+
       logWithContext(
         'useVoiceChat.js',
         'leaveRoom',
@@ -229,12 +252,15 @@ export function useVoiceChat() {
 
   const toggleMute = useCallback(() => {
     logWithContext('useVoiceChat.js', 'toggleMute', 'Toggling mute');
+
     if (localTrackRef.current && isJoined) {
       const newMuteState = !isMuted;
+
       localTrackRef.current
         .setEnabled(!newMuteState)
         .then(() => {
           setIsMuted(newMuteState);
+
           logWithContext(
             'useVoiceChat.js',
             'toggleMute',
@@ -256,7 +282,9 @@ export function useVoiceChat() {
       .getUserMedia({ audio: true })
       .then((stream) => {
         stream.getTracks().forEach((track) => track.stop());
+
         setMicPermissionDenied(false);
+
         logWithContext(
           'useVoiceChat.js',
           'useEffect: MicPermission',
@@ -265,6 +293,7 @@ export function useVoiceChat() {
       })
       .catch(() => {
         setMicPermissionDenied(true);
+
         logWithContext(
           'useVoiceChat.js',
           'useEffect: MicPermission',
@@ -279,14 +308,17 @@ export function useVoiceChat() {
         const localLevel = Math.round(
           (localTrackRef.current?.getVolumeLevel() || 0) * 100,
         );
+
         setVolumeLevels((prev) => ({ ...prev, [uidRef.current]: localLevel }));
 
         remoteUsers.forEach((user) => {
           const userLevel = Math.round(
             (user.audioTrack?.getVolumeLevel() || 0) * 100,
           );
+
           setVolumeLevels((prev) => ({ ...prev, [user.uid]: userLevel }));
         });
+
         logWithContext(
           'useVoiceChat.js',
           'useEffect: VolumeLevels',
@@ -298,6 +330,7 @@ export function useVoiceChat() {
     return () => {
       if (volumeIntervalRef.current) {
         clearInterval(volumeIntervalRef.current);
+
         logWithContext(
           'useVoiceChat.js',
           'useEffect: VolumeLevels',
