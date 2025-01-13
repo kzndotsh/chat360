@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { logWithContext } from '@/lib/logger';
 
 interface PartyControlsProps {
   currentUser: {
@@ -34,7 +35,9 @@ export function PartyControls({
     if (isLeaving || !currentUser?.isActive) return;
     setIsLeaving(true);
     try {
-      onLeave();
+      logWithContext('PartyControls.tsx', 'handleLeave', 'Attempting to leave party');
+      await onLeave();
+      logWithContext('PartyControls.tsx', 'handleLeave', 'Left party successfully');
     } finally {
       setIsLeaving(false);
     }
@@ -49,7 +52,10 @@ export function PartyControls({
     <div className="flex flex-col gap-2 px-[30px]">
       <div className="flex flex-wrap items-center gap-1 sm:gap-2 text-sm sm:text-base mt-1">
         <button
-          onClick={onJoin}
+          onClick={() => {
+            logWithContext('PartyControls.tsx', 'joinParty', 'Joining party');
+            onJoin();
+          }}
           className={buttonClass(!(currentUser?.isActive ?? false), false)}
           disabled={currentUser?.isActive ?? false}
         >
@@ -73,7 +79,10 @@ export function PartyControls({
         </button>
 
         <button
-          onClick={onToggleMute}
+          onClick={() => {
+            logWithContext('PartyControls.tsx', 'toggleMute', 'Toggling mute');
+            onToggleMute();
+          }}
           className={buttonClass(currentUser?.isActive ?? false, false)}
           disabled={!(currentUser?.isActive ?? false)}
         >
@@ -86,7 +95,10 @@ export function PartyControls({
         </button>
 
         <button
-          onClick={onEdit}
+          onClick={() => {
+            logWithContext('PartyControls.tsx', 'editProfile', 'Editing profile');
+            onEdit();
+          }}
           className={buttonClass(Boolean(currentUser || storedAvatar), false)}
           disabled={!currentUser && !storedAvatar}
         >
@@ -99,7 +111,10 @@ export function PartyControls({
 
       {micPermissionDenied && (
         <button
-          onClick={onRequestMicrophonePermission}
+          onClick={() => {
+            logWithContext('PartyControls.tsx', 'requestMicrophonePermission', 'Requesting microphone permission');
+            onRequestMicrophonePermission();
+          }}
           className="flex items-center justify-center gap-2 text-white bg-[#0c71ba] hover:bg-[#0a5c94] transition-colors py-2 mt-1"
         >
           <span>Re-request Microphone Access</span>

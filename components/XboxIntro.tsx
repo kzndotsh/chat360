@@ -1,8 +1,9 @@
-'use client'
+'use client';
 
-import { useEffect, useRef, useState } from 'react'
-import { Button } from "@/components/ui/button"
-import { Volume2, VolumeX } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react';
+import { Button } from "@/components/ui/button";
+import { Volume2, VolumeX } from 'lucide-react';
+import { logWithContext } from '@/lib/logger';
 
 interface XboxIntroProps {
   onIntroEnd: () => void;
@@ -19,14 +20,16 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
         try {
           await videoElement.play();
           setIsMuted(false);
+          logWithContext('XboxIntro.tsx', 'attemptPlay', 'Video playing with sound.');
         } catch (error) {
-          console.error("Autoplay with sound failed:", error);
+          logWithContext('XboxIntro.tsx', 'attemptPlay', `Autoplay with sound failed: ${error}`);
           videoElement.muted = true;
           setIsMuted(true);
           try {
             await videoElement.play();
+            logWithContext('XboxIntro.tsx', 'attemptPlay', 'Video playing muted.');
           } catch (mutedError) {
-            console.error("Autoplay even when muted failed:", mutedError);
+            logWithContext('XboxIntro.tsx', 'attemptPlay', `Autoplay even when muted failed: ${mutedError}`);
           }
         }
       };
@@ -34,12 +37,14 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
       attemptPlay();
 
       videoElement.onended = () => {
+        logWithContext('XboxIntro.tsx', 'videoElement.onended', 'Video ended.');
         onIntroEnd();
       };
     }
   }, [onIntroEnd]);
 
   const handleSkip = () => {
+    logWithContext('XboxIntro.tsx', 'handleSkip', 'Intro skipped.');
     onIntroEnd();
   };
 
@@ -47,6 +52,7 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
     if (videoRef.current) {
       videoRef.current.muted = !videoRef.current.muted;
       setIsMuted(!isMuted);
+      logWithContext('XboxIntro.tsx', 'toggleMute', `Mute toggled to ${!isMuted}.`);
     }
   };
 
@@ -90,4 +96,3 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
     animation: slow-pulse 3s ease-in-out infinite;
   }
 `}</style>
-

@@ -3,19 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "NODE_ENV=development NODE_OPTIONS='--inspect' next dev",
+    "dev": "NODE_ENV=development next dev",
+    "dev:debug": "NODE_ENV=development NODE_OPTIONS='--inspect' next dev",
     "build": "NODE_ENV=production next build",
     "start": "NODE_ENV=production next start",
     "lint": "next lint"
   },
   "dependencies": {
     "@netlify/functions": "^2.6.0",
-    "@radix-ui/react-alert-dialog": "^1.0.5",
-    "@radix-ui/react-avatar": "^1.1.2",
-    "@radix-ui/react-slider": "^1.1.2",
     "@radix-ui/react-slot": "^1.1.1",
-    "@radix-ui/react-toast": "^1.2.4",
-    "@radix-ui/react-tooltip": "^1.0.7",
     "@sentry/nextjs": "^8.48.0",
     "@supabase/supabase-js": "^2.39.3",
     "agora-rtc-sdk-ng": "^4.20.0",

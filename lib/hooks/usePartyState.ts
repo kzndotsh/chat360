@@ -3,6 +3,7 @@ import * as Sentry from '@sentry/react';
 import { PartyMember } from '@/types';
 import { useVoiceChat } from './useVoiceChat';
 import { supabase } from '@/lib/supabase';
+import { logWithContext } from '@/lib/logger';
 
 export function usePartyState() {
   const [members, setMembers] = useState<PartyMember[]>([]);
@@ -26,7 +27,6 @@ export function usePartyState() {
   const joinInProgressRef = useRef(false);
 
   useEffect(() => {
-    // Subscribe to real-time changes in the 'party_members' table
     const channel = supabase
       .channel('party_changes')
       .on(
@@ -44,7 +44,11 @@ export function usePartyState() {
 
             if (members) {
               setMembers(members.map(mapMember));
-              console.log('Updated Members:', members);
+              logWithContext(
+                'usePartyState.ts',
+                'useEffect',
+                `Updated Members: ${JSON.stringify(members)}`,
+              );
             }
           } catch (error) {
             console.error('Error fetching members:', error);
@@ -60,12 +64,10 @@ export function usePartyState() {
   }, []);
 
   useEffect(() => {
-    // Synchronize connection state with voice chat
     setIsConnected(isJoined && voiceChatInitialized.current);
   }, [isJoined]);
 
   useEffect(() => {
-    // Update mute state in local and server state
     if (currentUser?.id && typeof isMuted === 'boolean' && isJoined) {
       setLocalMuted(isMuted);
       updateMuteState(isMuted, currentUser.id);
@@ -84,6 +86,11 @@ export function usePartyState() {
   const updateMuteState = async (muted: boolean, id: string) => {
     try {
       await supabase.from('party_members').update({ muted }).eq('id', id);
+      logWithContext(
+        'usePartyState.ts',
+        'updateMuteState',
+        `Updated mute state for ID ${id} to ${muted}`,
+      );
     } catch (error) {
       console.error('Error updating mute state:', error);
       Sentry.captureException(error);
@@ -116,7 +123,11 @@ export function usePartyState() {
         setCurrentUser(member);
         setStoredUser(member);
         localStorage.setItem('currentUser', JSON.stringify(member));
-        console.log('Member state updated:', member);
+        logWithContext(
+          'usePartyState.ts',
+          'updateMemberState',
+          `Member state updated: ${JSON.stringify(member)}`,
+        );
       } catch (error) {
         console.error('Error updating member state:', error);
         Sentry.captureException(error);
@@ -136,7 +147,7 @@ export function usePartyState() {
         await joinRoom();
         voiceChatInitialized.current = true;
 
-        const newMember: PartyMember = storedUser
+        const newMember = storedUser
           ? {
               ...storedUser,
               name: username,
@@ -159,7 +170,11 @@ export function usePartyState() {
           ...prev.filter((m) => m.id !== newMember.id),
           newMember,
         ]);
-        console.log('Joined party:', newMember);
+        logWithContext(
+          'usePartyState.ts',
+          'joinParty',
+          `Joined party: ${JSON.stringify(newMember)}`,
+        );
       } catch (error) {
         console.error('Error joining party:', error);
         Sentry.captureException(error);
@@ -186,7 +201,11 @@ export function usePartyState() {
         game: status,
       };
       await updateMemberState(updatedUser);
-      console.log('Profile edited:', updatedUser);
+      logWithContext(
+        'usePartyState.ts',
+        'editProfile',
+        `Profile edited: ${JSON.stringify(updatedUser)}`,
+      );
     },
     [currentUser, updateMemberState],
   );
@@ -197,21 +216,23 @@ export function usePartyState() {
 
     try {
       toggleVoiceMute();
-
       const newMutedState = !currentUser.muted;
       await updateMemberState({ ...currentUser, muted: newMutedState });
 
-      // Update local state
       setCurrentUser((prev) =>
         prev ? { ...prev, muted: newMutedState } : prev,
       );
-
-      console.log(`Mute toggled for ${currentUser.name}: ${newMutedState}`);
+      logWithContext(
+        'usePartyState.ts',
+        'toggleMute',
+        `Mute toggled for ${currentUser.name}: ${newMutedState}`,
+      );
     } catch (error) {
       console.error('Error toggling mute:', error);
       Sentry.captureException(error);
     }
   };
+
   const leaveParty = async () => {
     if (!currentUser?.isActive || isLeavingRef.current) return;
 
@@ -224,7 +245,11 @@ export function usePartyState() {
       await updateMemberState(userToStore);
 
       setMembers((prev) => prev.filter((m) => m.id !== currentUser.id));
-      console.log('Left party:', userToStore);
+      logWithContext(
+        'usePartyState.ts',
+        'leaveParty',
+        `Left party: ${JSON.stringify(userToStore)}`,
+      );
     } catch (error) {
       console.error('Error leaving party:', error);
       Sentry.captureException(error);

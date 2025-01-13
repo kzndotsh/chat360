@@ -1,9 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import * as Sentry from '@sentry/react';
 import Image from 'next/image';
-
 import { Clipboard } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { JoinPartyModal } from '@/components/JoinPartyModal';
@@ -11,11 +10,10 @@ import MemberList from '@/components/MemberList';
 import { PartyHeader } from '@/components/PartyHeader';
 import { PartyControls } from '@/components/PartyControls';
 import { usePartyState } from '@/lib/hooks/usePartyState';
-import { useCurrentTime } from '@/lib/hooks/useCurrentTime';
 import { useVoiceChat } from '@/lib/hooks/useVoiceChat';
-import { ErrorBoundary } from '@/components/ErrorBoundary';
-
+import Clock from '@/components/Clock';
 import { BACKGROUND_VIDEO_URL } from '@/lib/constants';
+import { logWithContext } from '@/lib/logger';
 
 export default function PartyChat() {
   const [showEditModal, setShowEditModal] = useState(false);
@@ -36,16 +34,20 @@ export default function PartyChat() {
   } = usePartyState();
 
   const { micPermissionDenied, requestMicrophonePermission } = useVoiceChat();
-  
-  const currentTime = useCurrentTime();
 
   useEffect(() => {
     const init = async () => {
       try {
         await initialize();
+        logWithContext('PartyChat.tsx', 'init', 'Initialization complete');
       } catch (error) {
         setShowJoinModal(true);
         Sentry.captureException(error);
+        logWithContext(
+          'PartyChat.tsx',
+          'init',
+          `Initialization error: ${error}`,
+        );
       }
     };
     init();
@@ -59,8 +61,18 @@ export default function PartyChat() {
     try {
       await joinParty(username, avatar, status);
       setShowJoinModal(false);
+      logWithContext(
+        'PartyChat.tsx',
+        'handleJoinParty',
+        `Joined party as ${username}`,
+      );
     } catch (error) {
       Sentry.captureException(error);
+      logWithContext(
+        'PartyChat.tsx',
+        'handleJoinParty',
+        `Join party error: ${error}`,
+      );
     }
   };
 
@@ -72,16 +84,32 @@ export default function PartyChat() {
     try {
       await editProfile(username, avatar, status);
       setShowEditModal(false);
+      logWithContext(
+        'PartyChat.tsx',
+        'handleEditProfile',
+        `Profile edited for ${username}`,
+      );
     } catch (error) {
       Sentry.captureException(error);
+      logWithContext(
+        'PartyChat.tsx',
+        'handleEditProfile',
+        `Edit profile error: ${error}`,
+      );
     }
   };
 
   const handleLeaveParty = async () => {
     try {
       await leaveParty();
+      logWithContext('PartyChat.tsx', 'handleLeaveParty', `Left party`);
     } catch (error) {
       Sentry.captureException(error);
+      logWithContext(
+        'PartyChat.tsx',
+        'handleLeaveParty',
+        `Leave party error: ${error}`,
+      );
     }
   };
 
@@ -89,17 +117,25 @@ export default function PartyChat() {
     try {
       if (currentUser?.id) {
         await toggleMute(currentUser.id);
+        logWithContext(
+          'PartyChat.tsx',
+          'handleToggleMute',
+          `Toggled mute for ${currentUser.name}`,
+        );
       }
     } catch (error) {
       Sentry.captureException(error);
+      logWithContext(
+        'PartyChat.tsx',
+        'handleToggleMute',
+        `Toggle mute error: ${error}`,
+      );
     }
   };
 
-
   return (
-    <ErrorBoundary>
+    <>
       <div className='min-h-screen relative flex items-center justify-center bg-black overflow-hidden'>
-        {/* Video Background */}
         <div className='absolute inset-0 z-0'>
           {videoError ? (
             <div className='absolute inset-0 bg-gradient-to-b from-gray-900 to-black' />
@@ -109,7 +145,14 @@ export default function PartyChat() {
               loop
               muted
               playsInline
-              onError={() => setVideoError(true)}
+              onError={() => {
+                setVideoError(true);
+                logWithContext(
+                  'PartyChat.tsx',
+                  'video',
+                  'Video error encountered',
+                );
+              }}
               className='absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 min-w-full min-h-full object-cover'
               style={{ filter: 'blur(6px)' }}>
               <source
@@ -139,18 +182,14 @@ export default function PartyChat() {
               <div className='w-full h-1 bg-white scale-x-0 group-hover:scale-x-100 transition-transform duration-200 ease-in-out' />
             </button>
             <div className='text-right text-white pr-[30px]'>
-              <span
-                className='text-lg'
-                suppressHydrationWarning>
-                {currentTime.toLocaleTimeString([], {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
+              <span className='text-lg'>
+                <Clock />
               </span>
             </div>
           </div>
 
           <Card className='bg-[#f0f0fa] border-0 mb-2 rounded-none relative overflow-hidden shadow-none text-[#161718] aspect-[16/9.75]'>
+            {/* Party Header */}
             <PartyHeader membersCount={members.length} />
 
             {/* Invite Button */}
@@ -172,12 +211,17 @@ export default function PartyChat() {
             <MemberList
               members={members}
               toggleMute={toggleMute}
+              volumeLevels={{}}
               currentUserId={currentUser?.id}
             />
           </Card>
 
           <PartyControls
-            currentUser={currentUser ? { ...currentUser, isActive: currentUser.isActive ?? false } : null}
+            currentUser={
+              currentUser
+                ? { ...currentUser, isActive: currentUser.isActive ?? false }
+                : null
+            }
             storedAvatar={storedAvatar}
             onJoin={() => setShowJoinModal(true)}
             onLeave={handleLeaveParty}
@@ -222,6 +266,6 @@ export default function PartyChat() {
           isEditMode={true}
         />
       )}
-    </ErrorBoundary>
+    </>
   );
 }

@@ -5,7 +5,7 @@ import AgoraRTC, {
   IMicrophoneAudioTrack,
   ClientConfig,
 } from 'agora-rtc-sdk-ng';
-import { useToast } from './useToast';
+import { logWithContext } from '@/lib/logger';
 
 const FALLBACK_APP_ID = 'b692145dadfd4f2b9bd3c0e9e5ecaab8';
 const FALLBACK_TOKEN =
@@ -19,12 +19,10 @@ const clientConfig: ClientConfig = {
   codec: 'vp8',
 };
 
-// Set Agora log level for debugging purposes
 AgoraRTC.setLogLevel(2);
 const STORAGE_KEY = 'agora_uid';
 
 export function useVoiceChat() {
-  // State to manage various status flags and data
   const [isJoined, setIsJoined] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -33,14 +31,11 @@ export function useVoiceChat() {
   const [remoteUsers, setRemoteUsers] = useState<IAgoraRTCRemoteUser[]>([]);
   const [volumeLevels, setVolumeLevels] = useState<Record<string, number>>({});
 
-  // Refs for Agora client and audio track
   const clientRef = useRef<IAgoraRTCClient | null>(null);
   const localTrackRef = useRef<IMicrophoneAudioTrack | null>(null);
   const volumeIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const uidRef = useRef<number>(0);
-  const { toast } = useToast();
 
-  // Load or generate UID
   useEffect(() => {
     const storedUid = localStorage.getItem(STORAGE_KEY);
     if (storedUid) {
@@ -50,10 +45,15 @@ export function useVoiceChat() {
       uidRef.current = newUid;
       localStorage.setItem(STORAGE_KEY, newUid.toString());
     }
+    logWithContext(
+      'useVoiceChat.js',
+      'useEffect: UID Load',
+      `UID loaded/generated: ${uidRef.current}`,
+    );
   }, []);
 
-  // Cleanup resources on unload
   const cleanup = useCallback(async () => {
+    logWithContext('useVoiceChat.js', 'cleanup', 'Cleaning up resources');
     if (volumeIntervalRef.current) {
       clearInterval(volumeIntervalRef.current);
       volumeIntervalRef.current = null;
@@ -78,23 +78,39 @@ export function useVoiceChat() {
     setIsMuted(false);
   }, []);
 
-  // Fetch token (typically from server, here using fallback)
-  const fetchToken = async () => FALLBACK_TOKEN;
+  const fetchToken = async () => {
+    logWithContext('useVoiceChat.js', 'fetchToken', 'Fetching token');
+    return FALLBACK_TOKEN;
+  };
 
-  // Initialize Agora client
   const initializeClient = useCallback(() => {
     if (!clientRef.current) {
       clientRef.current = AgoraRTC.createClient(clientConfig);
 
       clientRef.current.on('user-joined', (user) => {
+        logWithContext(
+          'useVoiceChat.js',
+          'user-joined',
+          `User joined: ${user.uid}`,
+        );
         setRemoteUsers((prev) => [...prev, user]);
       });
 
       clientRef.current.on('user-left', (user) => {
+        logWithContext(
+          'useVoiceChat.js',
+          'user-left',
+          `User left: ${user.uid}`,
+        );
         setRemoteUsers((prev) => prev.filter((u) => u.uid !== user.uid));
       });
 
       clientRef.current.on('user-published', async (user, mediaType) => {
+        logWithContext(
+          'useVoiceChat.js',
+          'user-published',
+          `User published: ${user.uid}, MediaType: ${mediaType}`,
+        );
         await clientRef.current?.subscribe(user, mediaType);
         if (mediaType === 'audio') {
           user.audioTrack?.play();
@@ -102,26 +118,38 @@ export function useVoiceChat() {
       });
 
       clientRef.current.on('connection-state-change', (state) => {
-        console.log('Connection state:', state);
+        logWithContext(
+          'useVoiceChat.js',
+          'connection-state-change',
+          `Connection state: ${state}`,
+        );
         setIsConnected(state === 'CONNECTED');
         setIsConnecting(state === 'CONNECTING');
 
         if (state === 'CONNECTED') {
-          console.log('Client connected');
+          logWithContext(
+            'useVoiceChat.js',
+            'connection-state-change',
+            'Client connected',
+          );
           const users = clientRef.current?.remoteUsers || [];
           setRemoteUsers(users);
         }
 
         if (state === 'DISCONNECTED') {
-          console.log('Client disconnected');
+          logWithContext(
+            'useVoiceChat.js',
+            'connection-state-change',
+            'Client disconnected',
+          );
         }
       });
     }
   }, []);
 
-  // Join voice chat room
   const joinRoom = useCallback(async () => {
     if (AGORA_APP_ID && !isJoined) {
+      logWithContext('useVoiceChat.js', 'joinRoom', 'Attempting to join room');
       try {
         setIsConnecting(true);
 
@@ -130,9 +158,19 @@ export function useVoiceChat() {
         }
 
         const token = await fetchToken();
+        logWithContext(
+          'useVoiceChat.js',
+          'joinRoom',
+          `Token fetched: ${token}`,
+        );
 
         if (!localTrackRef.current) {
           localTrackRef.current = await AgoraRTC.createMicrophoneAudioTrack();
+          logWithContext(
+            'useVoiceChat.js',
+            'joinRoom',
+            'Microphone track created',
+          );
         }
 
         await clientRef.current?.join(
@@ -145,80 +183,96 @@ export function useVoiceChat() {
 
         setIsJoined(true);
         setMicPermissionDenied(false);
-        toast({
-          title: 'Joined Room',
-          description: 'Successfully joined the voice chat room',
-        });
+        logWithContext(
+          'useVoiceChat.js',
+          'joinRoom',
+          'Successfully joined room',
+        );
       } catch (error: any) {
+        logWithContext(
+          'useVoiceChat.js',
+          'joinRoom',
+          `Failed to join room: ${error.message}`,
+        );
         if (error.message.includes('Permission denied')) {
           setMicPermissionDenied(true);
         }
-
-        toast({
-          title: 'Error',
-          description: `Failed to join room: ${error.message}`,
-          variant: 'destructive',
-        });
         await cleanup();
       } finally {
         setIsConnecting(false);
       }
     }
-  }, [cleanup, initializeClient, toast, isJoined]);
+  }, [cleanup, initializeClient, isJoined]);
 
-  // Leave voice chat room
   const leaveRoom = useCallback(async () => {
+    logWithContext('useVoiceChat.js', 'leaveRoom', 'Attempting to leave room');
     try {
       if (clientRef.current) {
         await clientRef.current.leave();
-        console.log('Successfully left room.'); // Debug log
+        logWithContext(
+          'useVoiceChat.js',
+          'leaveRoom',
+          'Left room successfully',
+        );
       }
-      await cleanup(); // Ensure cleanup is called
-      toast({
-        title: 'Left Room',
-        description: 'Successfully left the voice chat room',
-      });
+      await cleanup();
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error occurred';
-      toast({
-        title: 'Error',
-        description: `Failed to leave room: ${errorMessage}`,
-        variant: 'destructive',
-      });
+      logWithContext(
+        'useVoiceChat.js',
+        'leaveRoom',
+        `Failed to leave room: ${errorMessage}`,
+      );
     }
-  }, [cleanup, toast]);
+  }, [cleanup]);
 
-  // Toggle mute state
   const toggleMute = useCallback(() => {
+    logWithContext('useVoiceChat.js', 'toggleMute', 'Toggling mute');
     if (localTrackRef.current && isJoined) {
       const newMuteState = !isMuted;
       localTrackRef.current
         .setEnabled(!newMuteState)
         .then(() => {
           setIsMuted(newMuteState);
-          console.log(`Mic ${newMuteState ? 'muted' : 'unmuted'}`);
+          logWithContext(
+            'useVoiceChat.js',
+            'toggleMute',
+            `Mic ${newMuteState ? 'muted' : 'unmuted'}`,
+          );
         })
         .catch((error) => {
-          console.error('Error toggling mic:', error);
+          logWithContext(
+            'useVoiceChat.js',
+            'toggleMute',
+            `Error toggling mic: ${error}`,
+          );
         });
     }
   }, [isJoined, isMuted]);
 
-  // Check microphone permission on mount
   useEffect(() => {
     navigator.mediaDevices
       .getUserMedia({ audio: true })
       .then((stream) => {
         stream.getTracks().forEach((track) => track.stop());
         setMicPermissionDenied(false);
+        logWithContext(
+          'useVoiceChat.js',
+          'useEffect: MicPermission',
+          'Microphone access granted',
+        );
       })
       .catch(() => {
         setMicPermissionDenied(true);
+        logWithContext(
+          'useVoiceChat.js',
+          'useEffect: MicPermission',
+          'Microphone access denied',
+        );
       });
   }, []);
 
-  // Monitor and update volume levels
   useEffect(() => {
     if (localTrackRef.current && isJoined && !isMuted) {
       volumeIntervalRef.current = setInterval(() => {
@@ -233,20 +287,34 @@ export function useVoiceChat() {
           );
           setVolumeLevels((prev) => ({ ...prev, [user.uid]: userLevel }));
         });
+        logWithContext(
+          'useVoiceChat.js',
+          'useEffect: VolumeLevels',
+          'Volume levels updated',
+        );
       }, 100);
     }
 
     return () => {
       if (volumeIntervalRef.current) {
         clearInterval(volumeIntervalRef.current);
+        logWithContext(
+          'useVoiceChat.js',
+          'useEffect: VolumeLevels',
+          'Volume tracking stopped',
+        );
       }
     };
   }, [isJoined, isMuted, remoteUsers]);
 
-  // Cleanup on component unmount
   useEffect(() => {
     return () => {
       cleanup();
+      logWithContext(
+        'useVoiceChat.js',
+        'useEffect: Cleanup',
+        'Cleanup on component unmount',
+      );
     };
   }, [cleanup]);
 
@@ -268,17 +336,20 @@ export function useVoiceChat() {
           audio: true,
         });
         stream.getTracks().forEach((track) => track.stop());
-        toast({ title: 'Success', description: 'Microphone access granted' });
+        logWithContext(
+          'useVoiceChat.js',
+          'requestMicrophonePermission',
+          'Microphone access granted on request',
+        );
         return true;
       } catch {
-        toast({
-          title: 'Error',
-          description:
-            'Microphone access denied. Please check your browser settings.',
-          variant: 'destructive',
-        });
+        logWithContext(
+          'useVoiceChat.js',
+          'requestMicrophonePermission',
+          'Microphone access denied on request',
+        );
         return false;
       }
-    }, [toast]),
+    }, []),
   };
 }
