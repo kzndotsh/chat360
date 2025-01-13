@@ -8,7 +8,9 @@ import { RoomSkeleton } from '@/components/RoomSkeleton';
 // Disable SSR for PartyChat component and handle loading state
 const PartyChat = dynamic(() => import('@/components/PartyChat').catch(err => {
   console.error('Failed to load PartyChat:', err);
-  return () => <div>Failed to load chat component</div>;
+  const FallbackComponent = () => <div>Failed to load chat component</div>;
+  FallbackComponent.displayName = 'FallbackComponent';
+  return FallbackComponent;
 }), {
   ssr: false,
   loading: () => <RoomSkeleton />

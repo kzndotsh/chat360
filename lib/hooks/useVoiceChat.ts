@@ -72,7 +72,7 @@ export function useVoiceChat() {
     if (localTrackRef.current) {
       try {
         localTrackRef.current.stop();
-        await localTrackRef.current.close();
+        localTrackRef.current.close();
       } catch (error) {
         console.error(`${logPrefix} Error closing local track:`, error);
       }

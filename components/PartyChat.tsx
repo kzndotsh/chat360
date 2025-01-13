@@ -10,6 +10,7 @@ import { usePartyState } from '@/lib/hooks/usePartyState';
 import { useCurrentTime } from '@/lib/hooks/useCurrentTime';
 import { useVoiceChat } from '@/lib/hooks/useVoiceChat';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import logger from '@/lib/utils/logger';
 
 // Define the video URL as a constant
 const BACKGROUND_VIDEO_URL = 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/bg%20vid-IrN6ZDtoQMHnThmO35MvmafQ4ccLAo.mp4';
@@ -43,7 +44,7 @@ export default function PartyChat() {
       try {
         await initialize();
       } catch (error) {
-        console.error('Failed to initialize party state:', error);
+        logger.error('Failed to initialize party state:', error);
         if (mounted) {
           setShowJoinModal(true);
         }
@@ -62,7 +63,7 @@ export default function PartyChat() {
       await joinParty(username, avatar, status);
       setShowJoinModal(false);
     } catch (error) {
-      console.error('Failed to join party:', error);
+      logger.error('Failed to join party:', error);
     }
   }, [joinParty]);
 
@@ -76,7 +77,7 @@ export default function PartyChat() {
       try {
         await toggleMute(currentUser.id);
       } catch (error) {
-        console.error('Failed to toggle mute:', error);
+        logger.error('Failed to toggle mute:', error);
       }
     }
   };
@@ -85,7 +86,7 @@ export default function PartyChat() {
     try {
       await leaveParty();
     } catch (error) {
-      console.error('Failed to leave party:', error);
+      logger.error('Failed to leave party:', error);
     }
   };
 
@@ -135,9 +136,11 @@ export default function PartyChat() {
             <button
               onClick={() => setShowEditModal(true)}
               className='flex flex-col items-center justify-center group'>
-              <img
+              <Image
                 src={currentUser?.avatar || storedAvatar || '/placeholder.svg'}
                 alt='Profile'
+                width={64}
+                height={64}
                 className='w-[47px] h-[47px] sm:w-[64px] sm:h-[64px] object-cover mb-1 transition-transform duration-200 ease-in-out group-hover:scale-110 group-hover:shadow-lg'
               />
               <div className='w-full h-1 bg-white scale-x-0 group-hover:scale-x-100 transition-transform duration-200 ease-in-out' />
@@ -174,7 +177,7 @@ export default function PartyChat() {
             <MemberList
               members={allRows}
               toggleMute={toggleMute}
-              volumeLevel={volumeLevel}
+              volumeLevels={{}}
               currentUserId={currentUser?.id}
             />
           </Card>
@@ -194,7 +197,7 @@ export default function PartyChat() {
           />
         </div>
       </div>
-      qqqqqqqqq
+
       {showJoinModal && (
         <JoinPartyModal
           onJoin={handleJoinParty}

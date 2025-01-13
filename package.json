@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "NODE_ENV=development next dev",
+    "dev": "NODE_ENV=development NODE_OPTIONS='--inspect' next dev",
     "build": "NODE_ENV=production next build",
     "start": "NODE_ENV=production next start",
     "lint": "next lint"
@@ -22,7 +22,7 @@
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
     "lucide-react": "^0.331.0",
-    "next": "14.1.0",
+    "next": "^15.1.4",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "tailwind-merge": "^2.2.1",
@@ -32,13 +32,11 @@
     "@types/node": "20.11.16",
     "@types/react": "18.2.51",
     "@types/react-dom": "18.2.18",
-    "autoprefixer": "10.4.17",
-    "cssnano": "^6.1.2",
-    "cssnano-preset-advanced": "^6.0.3",
+    "autoprefixer": "^10.4.20",
     "eslint": "8.56.0",
     "eslint-config-next": "14.1.0",
-    "postcss": "^8.4.31",
-    "tailwindcss": "3.4.1",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.1",
     "typescript": "5.3.3"
   }
 }

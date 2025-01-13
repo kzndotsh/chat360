@@ -1,4 +1,5 @@
 /** @type {import('next').NextConfig} */
+
 const nextConfig = {
   output: 'export',
   images: {
@@ -6,9 +7,27 @@ const nextConfig = {
     remotePatterns: [
       {
         protocol: 'https',
-        hostname: 'i.imgur.com'
+        hostname: '*'
       }
     ]
+  },
+  experimental: {
+    // optimizeCss: true,
+    // optimizeImages: true,
+    // optimizeFonts: true,
+    // scrollRestoration: true,
+    // esmExternals: true,
+    // modern: true,
+    // polyfillsOptimization: true,
+    // reactRoot: true,
+    // scriptLoader: true,
+    // workerThreads: true,
+    // workerBundles: true,
+    // externalDir: true,
+    // pageEnv: true,
+    // isrMemoryCacheSize: 100,
+    // isrPages: true,
+    // isrFlushToDisk: 
   },
   eslint: {
     ignoreDuringBuilds: true
@@ -16,17 +35,13 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true
   },
-  webpack: ( config ) => {
-    config.resolve.fallback = {
-      ...config.resolve.fallback,
-      fs: false,
-      net: false,
-      tls: false,
-      bufferutil: false,
-      'utf-8-validate': false
-    };
-    return config;
+  logging: {
+    fetches: {
+      fullUrl: true,
+      hmrRefreshes: true,
+    },
   }
 };
+
 
 module.exports = nextConfig;

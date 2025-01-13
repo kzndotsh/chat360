@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { PartyMember } from '@/types';
 import { useVoiceChat } from './useVoiceChat';
 import { supabase } from '@/lib/supabase';
+import logger from '@/lib/utils/logger';
 
 export function usePartyState() {
   const logPrefix = '[PartyState]';
@@ -11,6 +12,7 @@ export function usePartyState() {
   const [storedUser, setStoredUser] = useState<PartyMember | null>(null);
   const [localMuted, setLocalMuted] = useState<boolean>(false);
   const [isConnected, setIsConnected] = useState(false);
+  const [isReconnecting, setIsReconnecting] = useState(false);
 
   const {
     isJoined,
@@ -29,6 +31,7 @@ export function usePartyState() {
 
   // Subscribe to realtime changes
   useEffect(() => {
+    logger.debug(`${logPrefix} Subscribing to realtime changes`);
     const channel = supabase
       .channel('party_changes')
       .on(
@@ -38,7 +41,10 @@ export function usePartyState() {
           schema: 'public',
           table: 'party_members',
         },
-        async () => {
+        async (payload) => {
+          logger.debug(
+            `${logPrefix} Realtime change detected: ${JSON.stringify(payload)}`,
+          );
           try {
             // Fetch latest active members
             const { data: members, error } = await supabase
@@ -60,27 +66,37 @@ export function usePartyState() {
                   isActive: m.is_active,
                 })),
               );
+              logger.debug(
+                `${logPrefix} Members updated: ${JSON.stringify(members)}`,
+              );
             }
           } catch (error) {
-            console.error(`${logPrefix} Failed to fetch members:`, error);
+            logger.error(`${logPrefix} Failed to fetch members: ${error}`);
           }
         },
       )
       .subscribe();
 
     return () => {
+      logger.debug(`${logPrefix} Unsubscribing from realtime changes`);
       supabase.removeChannel(channel);
     };
   }, []);
 
   // Handle voice chat connection state
   useEffect(() => {
+    logger.debug(
+      `${logPrefix} Voice chat connection state changed: isJoined=${isJoined}`,
+    );
     setIsConnected(isJoined && voiceChatInitialized.current);
   }, [isJoined]);
 
   // Handle voice chat mute state changes
   useEffect(() => {
     if (currentUser?.id && typeof isMuted === 'boolean' && isJoined) {
+      logger.debug(
+        `${logPrefix} Voice chat mute state changed: isMuted=${isMuted}`,
+      );
       setLocalMuted(isMuted);
       setCurrentUser((prev) => (prev ? { ...prev, muted: isMuted } : null));
 
@@ -91,7 +107,7 @@ export function usePartyState() {
         .eq('id', currentUser.id)
         .then(({ error }) => {
           if (error) {
-            console.error(`${logPrefix} Failed to update mute state:`, error);
+            logger.error(`${logPrefix} Failed to update mute state: ${error}`);
           }
         });
     }
@@ -101,7 +117,7 @@ export function usePartyState() {
     async (member: PartyMember) => {
       if (!member) return;
 
-      console.log(`${logPrefix} Updating member state for:`, member.name);
+      logger.debug(`${logPrefix} Updating member state for: ${member.name}`);
 
       try {
         // First, if member is becoming inactive, clear their agora_uid
@@ -133,8 +149,11 @@ export function usePartyState() {
         setCurrentUser(member);
         setStoredUser(member);
         localStorage.setItem('currentUser', JSON.stringify(member));
+        logger.debug(
+          `${logPrefix} Member state updated: ${JSON.stringify(member)}`,
+        );
       } catch (error) {
-        console.error(`${logPrefix} Failed to update member state:`, error);
+        logger.error(`${logPrefix} Failed to update member state: ${error}`);
         throw error;
       }
     },
@@ -144,24 +163,23 @@ export function usePartyState() {
   const joinParty = useCallback(
     async (username: string, avatar: string, status: string) => {
       if (joinInProgressRef.current) {
-        console.log(`${logPrefix} Join already in progress`);
+        logger.debug(`${logPrefix} Join already in progress`);
         return;
       }
 
       joinInProgressRef.current = true;
 
       try {
-        console.log(`${logPrefix} Attempting to join party:`, username);
+        logger.debug(`${logPrefix} Attempting to join party: ${username}`);
 
         // Initialize voice chat first to get the agora_uid
         try {
-          console.log(`${logPrefix} Initializing voice chat`);
+          logger.debug(`${logPrefix} Initializing voice chat`);
           await joinRoom();
           voiceChatInitialized.current = true;
         } catch (error) {
-          console.error(
-            `${logPrefix} Voice chat initialization failed:`,
-            error,
+          logger.error(
+            `${logPrefix} Voice chat initialization failed: ${error}`,
           );
           throw error;
         }
@@ -187,8 +205,15 @@ export function usePartyState() {
 
         // Update member state with the current agora_uid
         await updateMemberState(newMember);
+
+        // Update members state
+        setMembers((prevMembers) => [
+          ...prevMembers.filter((m) => m.id !== newMember.id),
+          newMember,
+        ]);
+        logger.debug(`${logPrefix} Joined party: ${JSON.stringify(newMember)}`);
       } catch (error) {
-        console.error(`${logPrefix} Failed to join party:`, error);
+        logger.error(`${logPrefix} Failed to join party: ${error}`);
         // Cleanup on failure
         if (voiceChatInitialized.current) {
           await leaveRoom();
@@ -214,6 +239,9 @@ export function usePartyState() {
       };
 
       await updateMemberState(updatedUser);
+      logger.debug(
+        `${logPrefix} Profile edited: ${JSON.stringify(updatedUser)}`,
+      );
     },
     [currentUser, updateMemberState],
   );
@@ -222,31 +250,34 @@ export function usePartyState() {
     if (currentUser?.id !== id) return;
 
     if (!voiceChatInitialized.current || !isJoined) {
-      console.warn(
+      logger.warn(
         `${logPrefix} Cannot toggle mute - Voice chat not initialized`,
       );
       return;
     }
 
     try {
-      console.log(`${logPrefix} Toggling mute for user:`, id);
-      const newMuteState = await toggleVoiceMute();
+      logger.debug(`${logPrefix} Toggling mute for user: ${id}`);
+      const newMuteState = toggleVoiceMute();
 
       if (typeof newMuteState !== 'boolean') {
-        console.warn(`${logPrefix} Invalid mute state returned:`, newMuteState);
+        logger.warn(
+          `${logPrefix} Invalid mute state returned: ${newMuteState}`,
+        );
         return;
       }
 
       const updatedUser = { ...currentUser, muted: newMuteState };
       await updateMemberState(updatedUser);
+      logger.debug(`${logPrefix} Mute toggled: ${JSON.stringify(updatedUser)}`);
     } catch (error) {
-      console.error(`${logPrefix} Failed to toggle mute:`, error);
+      logger.error(`${logPrefix} Failed to toggle mute: ${error}`);
     }
   };
 
   const leaveParty = async () => {
     if (!currentUser?.isActive || isLeavingRef.current) {
-      console.log(
+      logger.debug(
         `${logPrefix} Leave party blocked - User not active or already leaving`,
       );
       return;
@@ -254,7 +285,7 @@ export function usePartyState() {
 
     try {
       isLeavingRef.current = true;
-      console.log(`${logPrefix} Leaving party:`, currentUser.name);
+      logger.debug(`${logPrefix} Leaving party: ${currentUser.name}`);
 
       // Reset voice chat state first
       voiceChatInitialized.current = false;
@@ -263,8 +294,14 @@ export function usePartyState() {
       // Then update user state
       const userToStore = { ...currentUser, isActive: false };
       await updateMemberState(userToStore);
+
+      // Update members state
+      setMembers((prevMembers) =>
+        prevMembers.filter((m) => m.id !== currentUser.id),
+      );
+      logger.debug(`${logPrefix} Left party: ${currentUser.name}`);
     } catch (error) {
-      console.error(`${logPrefix} Failed to leave party:`, error);
+      logger.error(`${logPrefix} Failed to leave party: ${error}`);
       throw error;
     } finally {
       isLeavingRef.current = false;
@@ -274,7 +311,7 @@ export function usePartyState() {
   const initialize = useCallback(async () => {
     if (initialized.current) return;
 
-    console.log(`${logPrefix} Initializing party state`);
+    logger.debug(`${logPrefix} Initializing party state`);
     initialized.current = true;
 
     try {
@@ -304,6 +341,9 @@ export function usePartyState() {
             isActive: m.is_active,
           })),
         );
+        logger.debug(
+          `${logPrefix} Initial members fetched: ${JSON.stringify(members)}`,
+        );
       }
 
       // If user was previously active, mark them as inactive
@@ -312,7 +352,7 @@ export function usePartyState() {
         await updateMemberState(userToStore);
       }
     } catch (error) {
-      console.error(`${logPrefix} Failed to initialize:`, error);
+      logger.error(`${logPrefix} Failed to initialize: ${error}`);
       throw error;
     }
   }, [updateMemberState]);

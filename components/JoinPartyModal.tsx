@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import logger from '@/lib/utils/logger';
 
 interface JoinPartyModalProps {
   onJoin: (username: string, avatar: string, status: string) => void;
@@ -90,7 +91,7 @@ export const JoinPartyModal = React.memo(function JoinPartyModal({
         setSelectedAvatar(user.avatar || AVATARS[0]);
         setSelectedStatus(user.game || STATUSES[0]);
       } catch (e) {
-        console.error('Failed to parse stored user data:', e);
+        logger.error('Failed to parse stored user data:', e);
       }
     }
   }, [isEditMode, initialData]);
@@ -111,7 +112,7 @@ export const JoinPartyModal = React.memo(function JoinPartyModal({
 
     setTimeout(() => {
       setIsSubmitting(false);
-      onJoin(username.trim(), avatar, status);
+      onJoin(username.trim() || '', avatar || '', status || '');
     }, 300);
   };
 
