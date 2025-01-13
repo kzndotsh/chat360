@@ -4,5 +4,5 @@ export interface PartyMember {
   game: string;
   muted: boolean;
   avatar: string;
-  isActive?: boolean;
+  isActive: boolean;
 }

@@ -1,23 +1,19 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import * as Sentry from '@sentry/react';
 import { PartyMember } from '@/types';
 import { useVoiceChat } from './useVoiceChat';
 import { supabase } from '@/lib/supabase';
-import logger from '@/lib/utils/logger';
 
 export function usePartyState() {
-  const logPrefix = '[PartyState]';
-
   const [members, setMembers] = useState<PartyMember[]>([]);
   const [currentUser, setCurrentUser] = useState<PartyMember | null>(null);
   const [storedUser, setStoredUser] = useState<PartyMember | null>(null);
-  const [localMuted, setLocalMuted] = useState<boolean>(false);
+  const [localMuted, setLocalMuted] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
-  const [isReconnecting, setIsReconnecting] = useState(false);
 
   const {
     isJoined,
     isMuted,
-    volumeLevel,
     currentUid,
     joinRoom,
     leaveRoom,
@@ -29,24 +25,15 @@ export function usePartyState() {
   const isLeavingRef = useRef(false);
   const joinInProgressRef = useRef(false);
 
-  // Subscribe to realtime changes
   useEffect(() => {
-    logger.debug(`${logPrefix} Subscribing to realtime changes`);
+    // Subscribe to real-time changes in the 'party_members' table
     const channel = supabase
       .channel('party_changes')
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'party_members',
-        },
-        async (payload) => {
-          logger.debug(
-            `${logPrefix} Realtime change detected: ${JSON.stringify(payload)}`,
-          );
+        { event: '*', schema: 'public', table: 'party_members' },
+        async () => {
           try {
-            // Fetch latest active members
             const { data: members, error } = await supabase
               .from('party_members')
               .select('*')
@@ -56,104 +43,83 @@ export function usePartyState() {
             if (error) throw error;
 
             if (members) {
-              setMembers(
-                members.map((m) => ({
-                  id: m.id,
-                  name: m.name,
-                  game: m.game,
-                  muted: m.muted,
-                  avatar: m.avatar,
-                  isActive: m.is_active,
-                })),
-              );
-              logger.debug(
-                `${logPrefix} Members updated: ${JSON.stringify(members)}`,
-              );
+              setMembers(members.map(mapMember));
+              console.log('Updated Members:', members);
             }
           } catch (error) {
-            logger.error(`${logPrefix} Failed to fetch members: ${error}`);
+            console.error('Error fetching members:', error);
+            Sentry.captureException(error);
           }
         },
       )
       .subscribe();
 
     return () => {
-      logger.debug(`${logPrefix} Unsubscribing from realtime changes`);
       supabase.removeChannel(channel);
     };
   }, []);
 
-  // Handle voice chat connection state
   useEffect(() => {
-    logger.debug(
-      `${logPrefix} Voice chat connection state changed: isJoined=${isJoined}`,
-    );
+    // Synchronize connection state with voice chat
     setIsConnected(isJoined && voiceChatInitialized.current);
   }, [isJoined]);
 
-  // Handle voice chat mute state changes
   useEffect(() => {
+    // Update mute state in local and server state
     if (currentUser?.id && typeof isMuted === 'boolean' && isJoined) {
-      logger.debug(
-        `${logPrefix} Voice chat mute state changed: isMuted=${isMuted}`,
-      );
       setLocalMuted(isMuted);
-      setCurrentUser((prev) => (prev ? { ...prev, muted: isMuted } : null));
-
-      // Update mute state in database
-      supabase
-        .from('party_members')
-        .update({ muted: isMuted })
-        .eq('id', currentUser.id)
-        .then(({ error }) => {
-          if (error) {
-            logger.error(`${logPrefix} Failed to update mute state: ${error}`);
-          }
-        });
+      updateMuteState(isMuted, currentUser.id);
     }
   }, [isMuted, currentUser?.id, isJoined]);
+
+  const mapMember = (m: any): PartyMember => ({
+    id: m.id,
+    name: m.name,
+    game: m.game,
+    muted: m.muted,
+    avatar: m.avatar,
+    isActive: m.is_active,
+  });
+
+  const updateMuteState = async (muted: boolean, id: string) => {
+    try {
+      await supabase.from('party_members').update({ muted }).eq('id', id);
+    } catch (error) {
+      console.error('Error updating mute state:', error);
+      Sentry.captureException(error);
+    }
+  };
 
   const updateMemberState = useCallback(
     async (member: PartyMember) => {
       if (!member) return;
 
-      logger.debug(`${logPrefix} Updating member state for: ${member.name}`);
-
       try {
-        // First, if member is becoming inactive, clear their agora_uid
         if (!member.isActive) {
-          const { error: clearError } = await supabase
+          await supabase
             .from('party_members')
             .update({ agora_uid: null, is_active: false })
             .eq('id', member.id);
-
-          if (clearError) throw clearError;
         }
 
-        // Then update the member state
-        const { error: updateError } = await supabase
-          .from('party_members')
-          .upsert({
-            id: member.id,
-            name: member.name,
-            avatar: member.avatar,
-            game: member.game,
-            muted: member.muted,
-            is_active: member.isActive,
-            agora_uid: member.isActive ? currentUid : null,
-            last_seen: new Date().toISOString(),
-          });
-
-        if (updateError) throw updateError;
+        await supabase.from('party_members').upsert({
+          id: member.id,
+          name: member.name,
+          avatar: member.avatar,
+          game: member.game,
+          muted: member.muted,
+          is_active: member.isActive,
+          agora_uid: member.isActive ? currentUid : null,
+          last_seen: new Date().toISOString(),
+        });
 
         setCurrentUser(member);
         setStoredUser(member);
         localStorage.setItem('currentUser', JSON.stringify(member));
-        logger.debug(
-          `${logPrefix} Member state updated: ${JSON.stringify(member)}`,
-        );
+        console.log('Member state updated:', member);
       } catch (error) {
-        logger.error(`${logPrefix} Failed to update member state: ${error}`);
+        console.error('Error updating member state:', error);
+        Sentry.captureException(error);
         throw error;
       }
     },
@@ -162,29 +128,14 @@ export function usePartyState() {
 
   const joinParty = useCallback(
     async (username: string, avatar: string, status: string) => {
-      if (joinInProgressRef.current) {
-        logger.debug(`${logPrefix} Join already in progress`);
-        return;
-      }
+      if (joinInProgressRef.current) return;
 
       joinInProgressRef.current = true;
 
       try {
-        logger.debug(`${logPrefix} Attempting to join party: ${username}`);
+        await joinRoom();
+        voiceChatInitialized.current = true;
 
-        // Initialize voice chat first to get the agora_uid
-        try {
-          logger.debug(`${logPrefix} Initializing voice chat`);
-          await joinRoom();
-          voiceChatInitialized.current = true;
-        } catch (error) {
-          logger.error(
-            `${logPrefix} Voice chat initialization failed: ${error}`,
-          );
-          throw error;
-        }
-
-        // Create or update member with the new agora_uid
         const newMember: PartyMember = storedUser
           ? {
               ...storedUser,
@@ -203,18 +154,15 @@ export function usePartyState() {
               isActive: true,
             };
 
-        // Update member state with the current agora_uid
         await updateMemberState(newMember);
-
-        // Update members state
-        setMembers((prevMembers) => [
-          ...prevMembers.filter((m) => m.id !== newMember.id),
+        setMembers((prev) => [
+          ...prev.filter((m) => m.id !== newMember.id),
           newMember,
         ]);
-        logger.debug(`${logPrefix} Joined party: ${JSON.stringify(newMember)}`);
+        console.log('Joined party:', newMember);
       } catch (error) {
-        logger.error(`${logPrefix} Failed to join party: ${error}`);
-        // Cleanup on failure
+        console.error('Error joining party:', error);
+        Sentry.captureException(error);
         if (voiceChatInitialized.current) {
           await leaveRoom();
           voiceChatInitialized.current = false;
@@ -237,71 +185,49 @@ export function usePartyState() {
         avatar,
         game: status,
       };
-
       await updateMemberState(updatedUser);
-      logger.debug(
-        `${logPrefix} Profile edited: ${JSON.stringify(updatedUser)}`,
-      );
+      console.log('Profile edited:', updatedUser);
     },
     [currentUser, updateMemberState],
   );
 
   const toggleMute = async (id: string) => {
-    if (currentUser?.id !== id) return;
-
-    if (!voiceChatInitialized.current || !isJoined) {
-      logger.warn(
-        `${logPrefix} Cannot toggle mute - Voice chat not initialized`,
-      );
+    if (currentUser?.id !== id || !voiceChatInitialized.current || !isJoined)
       return;
-    }
 
     try {
-      logger.debug(`${logPrefix} Toggling mute for user: ${id}`);
-      const newMuteState = toggleVoiceMute();
+      toggleVoiceMute();
 
-      if (typeof newMuteState !== 'boolean') {
-        logger.warn(
-          `${logPrefix} Invalid mute state returned: ${newMuteState}`,
-        );
-        return;
-      }
+      const newMutedState = !currentUser.muted;
+      await updateMemberState({ ...currentUser, muted: newMutedState });
 
-      const updatedUser = { ...currentUser, muted: newMuteState };
-      await updateMemberState(updatedUser);
-      logger.debug(`${logPrefix} Mute toggled: ${JSON.stringify(updatedUser)}`);
+      // Update local state
+      setCurrentUser((prev) =>
+        prev ? { ...prev, muted: newMutedState } : prev,
+      );
+
+      console.log(`Mute toggled for ${currentUser.name}: ${newMutedState}`);
     } catch (error) {
-      logger.error(`${logPrefix} Failed to toggle mute: ${error}`);
+      console.error('Error toggling mute:', error);
+      Sentry.captureException(error);
     }
   };
-
   const leaveParty = async () => {
-    if (!currentUser?.isActive || isLeavingRef.current) {
-      logger.debug(
-        `${logPrefix} Leave party blocked - User not active or already leaving`,
-      );
-      return;
-    }
+    if (!currentUser?.isActive || isLeavingRef.current) return;
 
     try {
       isLeavingRef.current = true;
-      logger.debug(`${logPrefix} Leaving party: ${currentUser.name}`);
-
-      // Reset voice chat state first
       voiceChatInitialized.current = false;
       await leaveRoom();
 
-      // Then update user state
       const userToStore = { ...currentUser, isActive: false };
       await updateMemberState(userToStore);
 
-      // Update members state
-      setMembers((prevMembers) =>
-        prevMembers.filter((m) => m.id !== currentUser.id),
-      );
-      logger.debug(`${logPrefix} Left party: ${currentUser.name}`);
+      setMembers((prev) => prev.filter((m) => m.id !== currentUser.id));
+      console.log('Left party:', userToStore);
     } catch (error) {
-      logger.error(`${logPrefix} Failed to leave party: ${error}`);
+      console.error('Error leaving party:', error);
+      Sentry.captureException(error);
       throw error;
     } finally {
       isLeavingRef.current = false;
@@ -311,48 +237,33 @@ export function usePartyState() {
   const initialize = useCallback(async () => {
     if (initialized.current) return;
 
-    logger.debug(`${logPrefix} Initializing party state`);
     initialized.current = true;
 
     try {
       const stored = localStorage.getItem('currentUser');
-      if (!stored) return;
+      if (stored) {
+        const user = JSON.parse(stored);
+        setStoredUser(user);
 
-      const user = JSON.parse(stored);
-      setStoredUser(user);
+        const { data: members, error } = await supabase
+          .from('party_members')
+          .select('*')
+          .eq('is_active', true)
+          .order('created_at', { ascending: true });
 
-      // Fetch initial members list
-      const { data: members, error } = await supabase
-        .from('party_members')
-        .select('*')
-        .eq('is_active', true)
-        .order('created_at', { ascending: true });
+        if (error) throw error;
 
-      if (error) throw error;
+        if (members) {
+          setMembers(members.map(mapMember));
+        }
 
-      if (members) {
-        setMembers(
-          members.map((m) => ({
-            id: m.id,
-            name: m.name,
-            game: m.game,
-            muted: m.muted,
-            avatar: m.avatar,
-            isActive: m.is_active,
-          })),
-        );
-        logger.debug(
-          `${logPrefix} Initial members fetched: ${JSON.stringify(members)}`,
-        );
-      }
-
-      // If user was previously active, mark them as inactive
-      if (user.isActive) {
-        const userToStore = { ...user, isActive: false };
-        await updateMemberState(userToStore);
+        if (user.isActive) {
+          await updateMemberState({ ...user, isActive: false });
+        }
       }
     } catch (error) {
-      logger.error(`${logPrefix} Failed to initialize: ${error}`);
+      console.error('Error during initialization:', error);
+      Sentry.captureException(error);
       throw error;
     }
   }, [updateMemberState]);
@@ -363,7 +274,6 @@ export function usePartyState() {
     storedAvatar: storedUser?.avatar || null,
     isConnected,
     isMuted: localMuted,
-    volumeLevel,
     toggleMute,
     joinParty,
     editProfile,

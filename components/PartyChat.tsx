@@ -1,5 +1,9 @@
-import Image from 'next/image';
+'use client';
+
 import { useState, useEffect, useCallback } from 'react';
+import * as Sentry from '@sentry/react';
+import Image from 'next/image';
+
 import { Clipboard } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { JoinPartyModal } from '@/components/JoinPartyModal';
@@ -10,75 +14,66 @@ import { usePartyState } from '@/lib/hooks/usePartyState';
 import { useCurrentTime } from '@/lib/hooks/useCurrentTime';
 import { useVoiceChat } from '@/lib/hooks/useVoiceChat';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
-import logger from '@/lib/utils/logger';
 
-// Define the video URL as a constant
-const BACKGROUND_VIDEO_URL = 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/bg%20vid-IrN6ZDtoQMHnThmO35MvmafQ4ccLAo.mp4';
+import { BACKGROUND_VIDEO_URL } from '@/lib/constants';
 
 export default function PartyChat() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [videoError, setVideoError] = useState(false);
+
   const {
     members,
     currentUser,
     storedAvatar,
-    volumeLevel,
     isMuted,
     toggleMute,
     joinParty,
     editProfile,
     leaveParty,
     isConnected,
-    initialize
+    initialize,
   } = usePartyState();
 
   const { micPermissionDenied, requestMicrophonePermission } = useVoiceChat();
+  
   const currentTime = useCurrentTime();
 
-  // Initialize party state on mount
   useEffect(() => {
-    let mounted = true;
-
     const init = async () => {
       try {
         await initialize();
       } catch (error) {
-        logger.error('Failed to initialize party state:', error);
-        if (mounted) {
-          setShowJoinModal(true);
-        }
+        setShowJoinModal(true);
+        Sentry.captureException(error);
       }
     };
-
     init();
-
-    return () => {
-      mounted = false;
-    };
   }, [initialize]);
 
-  const handleJoinParty = useCallback(async (username: string, avatar: string, status: string) => {
+  const handleJoinParty = async (
+    username: string,
+    avatar: string,
+    status: string,
+  ) => {
     try {
       await joinParty(username, avatar, status);
       setShowJoinModal(false);
     } catch (error) {
-      logger.error('Failed to join party:', error);
+      Sentry.captureException(error);
     }
-  }, [joinParty]);
-
-  const handleEditProfile = (username: string, avatar: string, status: string) => {
-    editProfile(username, avatar, status);
-    setShowEditModal(false);
   };
 
-  const handleToggleMute = async () => {
-    if (currentUser) {
-      try {
-        await toggleMute(currentUser.id);
-      } catch (error) {
-        logger.error('Failed to toggle mute:', error);
-      }
+  const handleEditProfile = async (
+    username: string,
+    avatar: string,
+    status: string,
+  ) => {
+    try {
+      await editProfile(username, avatar, status);
+      setShowEditModal(false);
+    } catch (error) {
+      Sentry.captureException(error);
     }
   };
 
@@ -86,44 +81,42 @@ export default function PartyChat() {
     try {
       await leaveParty();
     } catch (error) {
-      logger.error('Failed to leave party:', error);
+      Sentry.captureException(error);
     }
   };
 
-  // Fill empty rows to maintain consistent height
-  const emptyRows = Array(Math.max(0, 7 - members.length))
-    .fill(null)
-    .map((_, index) => ({
-      id: `empty-${index}`,
-      name: '',
-      game: '',
-      muted: false,
-      avatar: '',
-    }));
+  const handleToggleMute = async () => {
+    try {
+      if (currentUser?.id) {
+        await toggleMute(currentUser.id);
+      }
+    } catch (error) {
+      Sentry.captureException(error);
+    }
+  };
 
-  const allRows = [...members, ...emptyRows];
 
   return (
     <ErrorBoundary>
-      <div className='min-h-screen relative flex items-center justify-center bg-black tracking-wide overflow-hidden'>
+      <div className='min-h-screen relative flex items-center justify-center bg-black overflow-hidden'>
         {/* Video Background */}
         <div className='absolute inset-0 z-0'>
-          {!videoError ? (
+          {videoError ? (
+            <div className='absolute inset-0 bg-gradient-to-b from-gray-900 to-black' />
+          ) : (
             <video
               autoPlay
               loop
               muted
               playsInline
               onError={() => setVideoError(true)}
-              className='absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 min-w-full min-h-full w-auto h-auto object-cover'
+              className='absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 min-w-full min-h-full object-cover'
               style={{ filter: 'blur(6px)' }}>
               <source
                 src={BACKGROUND_VIDEO_URL}
                 type='video/mp4'
               />
             </video>
-          ) : (
-            <div className="absolute inset-0 bg-gradient-to-b from-gray-900 to-black" />
           )}
         </div>
 
@@ -135,7 +128,7 @@ export default function PartyChat() {
             <h1 className='text-lg text-white pl-[30px]'>$360</h1>
             <button
               onClick={() => setShowEditModal(true)}
-              className='flex flex-col items-center justify-center group'>
+              className='flex flex-col items-center group'>
               <Image
                 src={currentUser?.avatar || storedAvatar || '/placeholder.svg'}
                 alt='Profile'
@@ -146,7 +139,9 @@ export default function PartyChat() {
               <div className='w-full h-1 bg-white scale-x-0 group-hover:scale-x-100 transition-transform duration-200 ease-in-out' />
             </button>
             <div className='text-right text-white pr-[30px]'>
-              <span className='text-lg' suppressHydrationWarning>
+              <span
+                className='text-lg'
+                suppressHydrationWarning>
                 {currentTime.toLocaleTimeString([], {
                   hour: '2-digit',
                   minute: '2-digit',
@@ -175,21 +170,19 @@ export default function PartyChat() {
 
             {/* Member List */}
             <MemberList
-              members={allRows}
+              members={members}
               toggleMute={toggleMute}
-              volumeLevels={{}}
               currentUserId={currentUser?.id}
             />
           </Card>
 
           <PartyControls
-            currentUser={currentUser}
+            currentUser={currentUser ? { ...currentUser, isActive: currentUser.isActive ?? false } : null}
             storedAvatar={storedAvatar}
             onJoin={() => setShowJoinModal(true)}
             onLeave={handleLeaveParty}
             onToggleMute={handleToggleMute}
             onEdit={() => setShowEditModal(true)}
-            volumeLevel={volumeLevel}
             micPermissionDenied={micPermissionDenied}
             onRequestMicrophonePermission={requestMicrophonePermission}
             isMuted={isMuted}
@@ -201,11 +194,15 @@ export default function PartyChat() {
       {showJoinModal && (
         <JoinPartyModal
           onJoin={handleJoinParty}
-          initialData={currentUser ? {
-            username: currentUser.name,
-            avatar: currentUser.avatar,
-            status: currentUser.game,
-          } : undefined}
+          initialData={
+            currentUser
+              ? {
+                  username: currentUser.name,
+                  avatar: currentUser.avatar,
+                  status: currentUser.game,
+                }
+              : undefined
+          }
         />
       )}
 
@@ -213,11 +210,15 @@ export default function PartyChat() {
         <JoinPartyModal
           onJoin={handleEditProfile}
           onCancel={() => setShowEditModal(false)}
-          initialData={currentUser ? {
-            username: currentUser.name,
-            avatar: currentUser.avatar,
-            status: currentUser.game,
-          } : undefined}
+          initialData={
+            currentUser
+              ? {
+                  username: currentUser.name,
+                  avatar: currentUser.avatar,
+                  status: currentUser.game,
+                }
+              : undefined
+          }
           isEditMode={true}
         />
       )}

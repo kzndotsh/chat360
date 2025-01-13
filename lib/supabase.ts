@@ -10,10 +10,12 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
+    // debug: process.env.NODE_ENV === 'development',
   },
   realtime: {
     params: {
       eventsPerSecond: 10,
     },
+    log_level: 'info',
   },
 });

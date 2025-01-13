@@ -1,10 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
+
 import Image from 'next/image';
+
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
+
 import { cn } from '@/lib/utils';
-import logger from '@/lib/utils/logger';
+
+import { AVATARS, STATUSES } from '@/lib/constants';
 
 interface JoinPartyModalProps {
   onJoin: (username: string, avatar: string, status: string) => void;
@@ -17,48 +21,6 @@ interface JoinPartyModalProps {
   };
 }
 
-const STATUSES = [
-  'Trenching',
-  'Memescope',
-  'Farming Copytraders',
-  'Wallet Tracking',
-  'Scanning',
-  'Diamond Handing',
-  '6 Fig Hell',
-  'Yield Maxxing',
-  'Tax Evading',
-  'Perps Trading',
-  'Buying High Selling Low',
-  'Shitposting',
-  'Retiring Early',
-  'PNL Flexing',
-  'Larping',
-  'Engagement Farming',
-  'Top Blasting',
-];
-
-const AVATARS = [
-  'https://i.imgur.com/LCycgcq.png',
-  'https://i.imgur.com/Qrlzo59.png',
-  'https://i.imgur.com/BWLZz9H.png',
-  'https://i.imgur.com/oCuOi6l.png',
-  'https://i.imgur.com/08d8swY.png',
-  'https://i.imgur.com/6K2HjZJ.png',
-  'https://i.imgur.com/hV0hK5b.png',
-  'https://i.imgur.com/prPVuvk.png',
-  'https://i.imgur.com/moSmzqx.png',
-  'https://i.imgur.com/iqXefXu.png',
-  'https://i.imgur.com/3kKBxGO.png',
-  'https://i.imgur.com/W7Ru6qZ.png',
-  'https://i.imgur.com/HKmELiM.png',
-  'https://i.imgur.com/A4QPhdW.png',
-  'https://i.imgur.com/VJDaLgc.png',
-  'https://i.imgur.com/97mMl1n.png',
-  'https://i.imgur.com/qc7qYPN.png',
-  'https://i.imgur.com/KACYo9j.png',
-  'https://i.imgur.com/toyTkGS.png',
-  'https://i.imgur.com/fQ79yoT.png'
-];
 
 export const JoinPartyModal = React.memo(function JoinPartyModal({
   onJoin,
@@ -66,14 +28,16 @@ export const JoinPartyModal = React.memo(function JoinPartyModal({
   isEditMode = false,
   initialData,
 }: JoinPartyModalProps) {
-  const [username, setUsername] = useState(initialData?.username || '');
+  const [ username, setUsername ] = useState(initialData?.username || '');
+  
   const [selectedAvatar, setSelectedAvatar] = useState(
     initialData?.avatar || AVATARS[0],
   );
   const [selectedStatus, setSelectedStatus] = useState(
     initialData?.status || STATUSES[0],
   );
-  const [canCancel, setCanCancel] = useState(false);
+  
+  const [ canCancel, setCanCancel ] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -91,7 +55,6 @@ export const JoinPartyModal = React.memo(function JoinPartyModal({
         setSelectedAvatar(user.avatar || AVATARS[0]);
         setSelectedStatus(user.game || STATUSES[0]);
       } catch (e) {
-        logger.error('Failed to parse stored user data:', e);
       }
     }
   }, [isEditMode, initialData]);

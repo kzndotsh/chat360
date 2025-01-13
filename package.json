@@ -16,6 +16,7 @@
     "@radix-ui/react-slot": "^1.1.1",
     "@radix-ui/react-toast": "^1.2.4",
     "@radix-ui/react-tooltip": "^1.0.7",
+    "@sentry/nextjs": "^8.48.0",
     "@supabase/supabase-js": "^2.39.3",
     "agora-rtc-sdk-ng": "^4.20.0",
     "agora-token": "^2.0.3",
