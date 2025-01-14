@@ -5,4 +5,5 @@ export interface PartyMember {
   muted: boolean;
   avatar: string;
   isActive: boolean;
+  agora_uid?: string | null;
 }

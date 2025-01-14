@@ -1,12 +1,14 @@
-import React, { useEffect } from 'react';
+import React, { useCallback } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import Image from 'next/image';
-import { BaseModal } from './BaseModal'; 
-import { Input } from '@/components/ui/input'; 
+import { BaseModal } from './BaseModal';
+import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { AVATARS, STATUSES } from '@/lib/constants';
+import { LoadingSpinner } from './LoadingSpinner';
 import { logWithContext } from '@/lib/logger';
 import * as Sentry from '@sentry/react';
+import { useFormStore } from '@/lib/stores/useFormStore';
 
 interface FormData {
   name: string;
@@ -15,121 +17,174 @@ interface FormData {
 }
 
 interface NewUserModalProps {
-  initialData?: {
-    name: string;
-    avatar: string;
-    status: string;
-  };
-  onJoin: (name: string, avatar: string, status: string) => void;
+  onJoin: (name: string, avatar: string, status: string) => Promise<void>;
   onCancel: () => void;
+  isSubmitting: boolean;
 }
 
-export const NewUserModal: React.FC<NewUserModalProps> = ({ initialData, onJoin, onCancel }) => {
+export const NewUserModal: React.FC<NewUserModalProps> = ({
+  onJoin,
+  onCancel,
+  isSubmitting,
+}) => {
+  const { formData: storedFormData } = useFormStore();
+
   const {
     control,
     handleSubmit,
-    setValue,
-    formState: { errors, isSubmitting },
+    formState: { errors },
   } = useForm<FormData>({
     defaultValues: {
-      name: initialData?.name || '',
-      avatar: initialData?.avatar || AVATARS[0],
-      status: initialData?.status || STATUSES[0],
+      name: storedFormData.name || '',
+      avatar: storedFormData.avatar || AVATARS[0],
+      status: storedFormData.status || STATUSES[0],
     },
   });
 
-  useEffect(() => {
-    if (initialData) {
-      setValue('name', initialData.name);
-      setValue('avatar', initialData.avatar);
-      setValue('status', initialData.status);
-    }
-  }, [initialData, setValue]);
+  const handleFormSubmit = useCallback(
+    async (data: FormData) => {
+      const context = {
+        component: 'NewUserModal',
+        action: 'handleFormSubmit',
+        formData: data,
+        isSubmitting,
+      };
 
-  const handleFormSubmit = (data: FormData) => {
-    try {
-      logWithContext('NewUserModal.tsx', 'handleFormSubmit', 'Submitting form data');
-      onJoin(data.name.trim(), data.avatar, data.status);
-      logWithContext('NewUserModal.tsx', 'handleFormSubmit', 'Form submitted successfully');
-    } catch (error) {
-      logWithContext('NewUserModal.tsx', 'handleFormSubmit', `Error submitting form: ${error}`);
-      Sentry.captureException(error);
-    }
-  };
+      logWithContext(
+        'NewUserModal',
+        'handleFormSubmit',
+        `Attempting to submit form with name: ${data.name}`
+      );
+
+      if (isSubmitting) {
+        logWithContext(
+          'NewUserModal',
+          'handleFormSubmit',
+          'Form submission already in progress, skipping'
+        );
+        return;
+      }
+
+      try {
+        logWithContext('NewUserModal', 'handleFormSubmit', 'Calling onJoin');
+        await onJoin(data.name.trim(), data.avatar, data.status);
+        logWithContext(
+          'NewUserModal',
+          'handleFormSubmit',
+          'Form submitted successfully'
+        );
+      } catch (error) {
+        logWithContext(
+          'NewUserModal',
+          'handleFormSubmit',
+          `Form submission failed: ${error}`
+        );
+        Sentry.captureException(error, {
+          extra: context,
+        });
+        console.error('Form submission failed:', error);
+        throw error;
+      }
+    },
+    [onJoin, isSubmitting]
+  );
 
   return (
     <BaseModal
-      title='Join Chat360 Party'
+      title="Join Party"
       onCancel={onCancel}
       onSubmit={handleSubmit(handleFormSubmit)}
-      canCancel={true}
+      canCancel={!isSubmitting}
       isSubmitting={isSubmitting}
-      cancelText='Cancel'
-      submitText='Join Party'
+      cancelText="Cancel"
+      submitText={isSubmitting ? 'Joining...' : 'Join Party'}
     >
-      <div>
-        <label htmlFor='name' className='block text-sm font-medium text-[#161718] mb-1'>
-          Username
-        </label>
-        <Controller
-          name='name'
-          control={control}
-          rules={{ required: 'Username is required' }}
-          render={({ field }) => (
-            <Input
-              {...field}
-              className='w-full px-3 py-2 border border-gray-300 rounded-md text-black bg-white focus:outline-none focus:ring-1 focus:ring-[#616b83] focus:border-[#616b83] transition-colors' 
-              type='text'
-              id='username'
-              required
-              disabled={isSubmitting}
-            />
+      <div className="space-y-4">
+        <div>
+          <label
+            htmlFor="username"
+            className="mb-1 block text-sm font-medium text-[#161718]"
+          >
+            Username
+          </label>
+          <Controller
+            name="name"
+            control={control}
+            rules={{ required: 'Username is required' }}
+            render={({ field }) => (
+              <Input
+                {...field}
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-black transition-colors focus:border-[#616b83] focus:outline-none focus:ring-1 focus:ring-[#616b83]"
+                type="text"
+                id="username"
+                required
+                disabled={isSubmitting}
+              />
+            )}
+          />
+          {errors.name && (
+            <p className="mt-1 text-sm text-red-500">{errors.name.message}</p>
           )}
-        />
-        {errors.name && <p className='mt-1 text-sm text-red-500'>{errors.name.message}</p>}
-      </div>
+        </div>
 
-      <div>
-        <label className='block text-sm font-medium text-[#161718] mb-1'>Select Avatar</label>
-        <Controller
-          name='avatar'
-          control={control}
-          render={({ field: { onChange, value } }) => (
-            <div className='grid grid-cols-5 gap-2'>
-              {AVATARS.map((avatar, index) => (
-                <button
-                  key={index}
-                  type='button'
-                  onClick={() => onChange(avatar)}
-                  disabled={isSubmitting}
-                  className={`w-12 h-12 rounded-md overflow-hidden ${value === avatar ? 'ring-[3px] ring-[#55b611]' : ''}`}
-                >
-                  <Image src={avatar} alt={`Avatar ${index + 1}`} width={48} height={48} />
-                </button>
-              ))}
-            </div>
-          )}
-        />
-      </div>
+        <div>
+          <label className="mb-1 block text-sm font-medium text-[#161718]">
+            Select Avatar
+          </label>
+          <Controller
+            name="avatar"
+            control={control}
+            render={({ field: { onChange, value } }) => (
+              <div className="grid grid-cols-5 gap-2">
+                {AVATARS.map((avatar, index) => (
+                  <button
+                    key={index}
+                    type="button"
+                    onClick={() => onChange(avatar)}
+                    disabled={isSubmitting}
+                    className={`h-12 w-12 overflow-hidden rounded-md ${
+                      value === avatar ? 'ring-[3px] ring-[#55b611]' : ''
+                    }`}
+                  >
+                    <Image
+                      src={avatar}
+                      alt={`Avatar ${index + 1}`}
+                      width={48}
+                      height={48}
+                    />
+                  </button>
+                ))}
+              </div>
+            )}
+          />
+        </div>
 
-      <div>
-        <label htmlFor='status' className='block text-sm font-medium text-[#161718] mb-1'>Status</label>
-        <Controller
-          name='status'
-          control={control}
-          render={({ field }) => (
-            <Select
-              {...field}
-              id='status'
-              className='w-full px-3 py-2 border border-gray-300 rounded-md text-black bg-white focus:outline-none focus:ring-1 focus:ring-[#616b83] focus:border-[#616b83] transition-colors'
-              disabled={isSubmitting}
-            >
-              {STATUSES.map((status) => (
-                <option key={status} value={status}>{status}</option>
-              ))}
-            </Select>
-          )}
-        />
+        <div>
+          <label
+            htmlFor="status"
+            className="mb-1 block text-sm font-medium text-[#161718]"
+          >
+            Status
+          </label>
+          <Controller
+            name="status"
+            control={control}
+            render={({ field }) => (
+              <Select
+                {...field}
+                id="status"
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-black transition-colors focus:border-[#616b83] focus:outline-none focus:ring-1 focus:ring-[#616b83]"
+                disabled={isSubmitting}
+              >
+                {STATUSES.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
+              </Select>
+            )}
+          />
+        </div>
       </div>
     </BaseModal>
   );

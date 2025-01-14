@@ -15,8 +15,5 @@ export const ModalPortal: React.FC<ModalPortalProps> = ({ children }) => {
 
   if (!mounted) return null;
 
-  return createPortal(
-    children,
-    document.body
-  );
-}; 
+  return createPortal(children, document.body);
+};

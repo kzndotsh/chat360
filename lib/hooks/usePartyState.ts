@@ -13,7 +13,8 @@ import { logWithContext } from '@/lib/logger';
 const AGORA_APP_ID =
   process.env.NEXT_PUBLIC_AGORA_APP_ID || 'b692145dadfd4f2b9bd3c0e9e5ecaab8';
 const AGORA_TEMP_TOKEN =
-  process.env.NEXT_PUBLIC_AGORA_TEMP_TOKEN || 'YOUR_TEMP_TOKEN_HERE';
+  process.env.NEXT_PUBLIC_AGORA_TEMP_TOKEN ||
+  '007eJxTYHigyLDU9sUK/YS/7UdyNjYEx7l3fTlk7Nf9R+ExQ1dcEacCQ5KZpZGhiWlKYkpaikmaUZJlUopxskGqZappanJiYpLFX4+W9IZARgZds9MsjAwQCOKzMOQmZuYxMAAAgNggYA==';
 const CHANNEL_NAME = 'main';
 const STORAGE_KEY = 'agora_uid';
 
@@ -41,6 +42,8 @@ export function usePartyState() {
   const initialized = useRef(false);
   const uidRef = useRef<string>('');
 
+  const STALE_THRESHOLD_MINUTES = 2;
+
   useEffect(() => {
     const storedUid = localStorage.getItem(STORAGE_KEY);
     if (storedUid) {
@@ -53,7 +56,7 @@ export function usePartyState() {
     logWithContext(
       'usePartyState',
       'UID Load',
-      `Loaded/Generated UID: ${uidRef.current}`,
+      `Loaded/Generated UID: ${uidRef.current}`
     );
   }, []);
 
@@ -80,6 +83,28 @@ export function usePartyState() {
 
   const fetchMembers = useCallback(async () => {
     try {
+      // First, cleanup stale members
+      const staleThreshold = new Date();
+      staleThreshold.setMinutes(
+        staleThreshold.getMinutes() - STALE_THRESHOLD_MINUTES
+      );
+
+      const { error: cleanupError } = await supabase
+        .from('party_members')
+        .update({ is_active: false })
+        .eq('is_active', true)
+        .lt('last_seen', staleThreshold.toISOString());
+
+      if (cleanupError) {
+        logWithContext(
+          'usePartyState',
+          'fetchMembers',
+          `Error cleaning up stale members: ${cleanupError}`
+        );
+        Sentry.captureException(cleanupError);
+      }
+
+      // Then fetch active members
       const { data, error } = await supabase
         .from('party_members')
         .select('*')
@@ -90,7 +115,7 @@ export function usePartyState() {
         logWithContext(
           'usePartyState',
           'fetchMembers',
-          `Error fetching members: ${error}`,
+          `Error fetching members: ${error}`
         );
         Sentry.captureException(error);
       } else {
@@ -100,7 +125,7 @@ export function usePartyState() {
       logWithContext(
         'usePartyState',
         'fetchMembers',
-        `Unexpected error fetching members: ${error}`,
+        `Unexpected error fetching members: ${error}`
       );
       Sentry.captureException(error);
     }
@@ -114,9 +139,22 @@ export function usePartyState() {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'party_members' },
-        fetchMembers,
+        (payload) => {
+          logWithContext(
+            'usePartyState',
+            'realtimeUpdate',
+            `Received realtime update: ${JSON.stringify(payload)}`
+          );
+          fetchMembers();
+        }
       )
-      .subscribe();
+      .subscribe((status) => {
+        logWithContext(
+          'usePartyState',
+          'channelStatus',
+          `Supabase channel status: ${status}`
+        );
+      });
 
     return () => {
       supabase.removeChannel(channel);
@@ -125,25 +163,48 @@ export function usePartyState() {
 
   const updateMemberState = useCallback(async (member: PartyMember) => {
     try {
-      await supabase.from('party_members').upsert({
-        ...member,
-        agora_uid: member.isActive ? uidRef.current : null,
-        last_seen: new Date().toISOString(),
-      });
-      setCurrentUser(member);
-      localStorage.setItem('currentUser', JSON.stringify(member));
       logWithContext(
         'usePartyState',
         'updateMemberState',
-        `Member updated: ${JSON.stringify(member)}`,
+        `Updating member in database: ${JSON.stringify(member)}`
       );
+
+      const { data, error } = await supabase.from('party_members').upsert({
+        id: member.id,
+        name: member.name,
+        avatar: member.avatar,
+        game: member.game,
+        muted: member.muted,
+        is_active: member.isActive,
+        agora_uid: member.isActive ? uidRef.current : null,
+        last_seen: new Date().toISOString(),
+      });
+
+      if (error) {
+        logWithContext(
+          'usePartyState',
+          'updateMemberState',
+          `Database error: ${error.message}`
+        );
+        throw error;
+      }
+
+      logWithContext(
+        'usePartyState',
+        'updateMemberState',
+        `Database update successful: ${JSON.stringify(data)}`
+      );
+
+      setCurrentUser(member);
+      localStorage.setItem('currentUser', JSON.stringify(member));
     } catch (error) {
       logWithContext(
         'usePartyState',
         'updateMemberState',
-        `Error updating member state: ${error}`,
+        `Error updating member state: ${error}`
       );
       Sentry.captureException(error);
+      throw error;
     }
   }, []);
 
@@ -162,7 +223,7 @@ export function usePartyState() {
         logWithContext(
           'usePartyState',
           'User Published',
-          `User: ${user.uid}, MediaType: ${mediaType}`,
+          `User: ${user.uid}, MediaType: ${mediaType}`
         );
         if (mediaType === 'audio') {
           await clientRef.current?.subscribe(user, mediaType);
@@ -181,34 +242,59 @@ export function usePartyState() {
       logWithContext(
         'usePartyState',
         'joinVoiceChannel',
-        'Attempting to join voice channel',
+        `Attempting to join voice channel with UID: ${uidRef.current}`
       );
       try {
         if (!localTrackRef.current) {
+          logWithContext(
+            'usePartyState',
+            'joinVoiceChannel',
+            'Creating microphone track'
+          );
           localTrackRef.current = await AgoraRTC.createMicrophoneAudioTrack();
           logWithContext(
             'usePartyState',
-            'Microphone Track',
-            'Created microphone audio track',
+            'joinVoiceChannel',
+            'Microphone track created successfully'
           );
         }
         if (!clientRef.current) {
+          logWithContext(
+            'usePartyState',
+            'joinVoiceChannel',
+            'Initializing Agora client'
+          );
           initializeAgoraClient();
         }
+        logWithContext(
+          'usePartyState',
+          'joinVoiceChannel',
+          `Joining channel with AppID: ${AGORA_APP_ID}, Channel: ${CHANNEL_NAME}`
+        );
         await clientRef.current?.join(
           AGORA_APP_ID,
           CHANNEL_NAME,
           AGORA_TEMP_TOKEN,
-          uidRef.current,
+          uidRef.current
+        );
+        logWithContext(
+          'usePartyState',
+          'joinVoiceChannel',
+          'Successfully joined channel, publishing track'
         );
         await clientRef.current?.publish(localTrackRef.current);
+        logWithContext(
+          'usePartyState',
+          'joinVoiceChannel',
+          'Track published successfully'
+        );
         setIsJoined(true);
         setMicPermissionDenied(false);
       } catch (error) {
         logWithContext(
           'usePartyState',
           'joinVoiceChannel',
-          `Error joining voice channel: ${error}`,
+          `Error joining voice channel: ${error}`
         );
         if (
           error instanceof Error &&
@@ -225,7 +311,7 @@ export function usePartyState() {
     logWithContext(
       'usePartyState',
       'leaveVoiceChannel',
-      'Leaving voice channel',
+      'Leaving voice channel'
     );
     try {
       if (clientRef.current) {
@@ -236,32 +322,36 @@ export function usePartyState() {
       logWithContext(
         'usePartyState',
         'leaveVoiceChannel',
-        `Error leaving voice channel: ${error}`,
+        `Error leaving voice channel: ${error}`
       );
       Sentry.captureException(error);
     }
   }, [handleCleanup]);
 
   const toggleMute = useCallback(async () => {
+    if (!currentUser) return;
+
+    const newMuteState = !isMuted;
+    logWithContext(
+      'usePartyState',
+      'toggleMute',
+      `Mute toggled to: ${newMuteState}`
+    );
+
     if (localTrackRef.current) {
-      try {
-        await localTrackRef.current.setEnabled(!isMuted);
-        setIsMuted(!isMuted);
-        logWithContext(
-          'usePartyState',
-          'toggleMute',
-          `Mute toggled to: ${!isMuted}`,
-        );
-      } catch (error) {
-        logWithContext(
-          'usePartyState',
-          'toggleMute',
-          `Error toggling mute status: ${error}`,
-        );
-        Sentry.captureException(error);
+      if (newMuteState) {
+        await localTrackRef.current.setEnabled(false);
+      } else {
+        await localTrackRef.current.setEnabled(true);
       }
     }
-  }, [isMuted]);
+
+    setIsMuted(newMuteState);
+
+    // Update the database with new mute state
+    const updatedUser = { ...currentUser, muted: newMuteState };
+    await updateMemberState(updatedUser);
+  }, [currentUser, isMuted, updateMemberState]);
 
   const requestMicrophonePermission = useCallback(async () => {
     try {
@@ -276,59 +366,89 @@ export function usePartyState() {
   }, []);
 
   useEffect(() => {
-    if (localTrackRef.current && isJoined && !isMuted) {
-      volumeIntervalRef.current = setInterval(() => {
-        const localVolume = Math.round(
-          localTrackRef.current!.getVolumeLevel() * 100,
-        );
-        setVolumeLevels((prev) => {
-          if (prev[uidRef.current] !== localVolume) {
-            return { ...prev, [uidRef.current]: localVolume };
-          }
-          return prev;
-        });
-        remoteUsers.forEach((user) => {
-          const userVolume = Math.round(
-            (user.audioTrack?.getVolumeLevel() || 0) * 100,
-          );
-          setVolumeLevels((prev) => {
-            if (prev[user.uid] !== userVolume) {
-              return { ...prev, [user.uid]: userVolume };
-            }
-            return prev;
-          });
-        });
-      }, 500);
+    if (!isJoined || !localTrackRef.current) return;
+
+    // Clear any existing interval
+    if (volumeIntervalRef.current) {
+      clearInterval(volumeIntervalRef.current);
     }
+
+    volumeIntervalRef.current = setInterval(async () => {
+      if (localTrackRef.current && currentUser) {
+        const level = await localTrackRef.current.getVolumeLevel();
+        setVolumeLevels((prev) => ({
+          ...prev,
+          [currentUser.id]: Math.floor(level * 100),
+        }));
+      }
+
+      // Get remote users' volume levels
+      remoteUsers.forEach((user) => {
+        if (user.audioTrack) {
+          const level = user.audioTrack.getVolumeLevel();
+          const member = members.find((m) => m.agora_uid === user.uid);
+          if (member) {
+            setVolumeLevels((prev) => ({
+              ...prev,
+              [member.id]: Math.floor(level * 100),
+            }));
+          }
+        }
+      });
+    }, 500);
+
     return () => {
-      if (volumeIntervalRef.current) clearInterval(volumeIntervalRef.current);
+      if (volumeIntervalRef.current) {
+        clearInterval(volumeIntervalRef.current);
+        volumeIntervalRef.current = null;
+      }
     };
-  }, [isJoined, isMuted, remoteUsers]);
+  }, [isJoined, currentUser, members, remoteUsers]);
 
   const joinParty = useCallback(
     async (name: string, avatar: string, status: string) => {
       try {
+        logWithContext(
+          'usePartyState',
+          'joinParty',
+          `Starting join process for ${name}`
+        );
+
         await joinVoiceChannel();
+
         const newMember: PartyMember = {
-          id: uidRef.current,
+          id: crypto.randomUUID(),
           name: name,
           avatar,
           game: status,
           isActive: true,
           muted: false,
         };
+
+        logWithContext(
+          'usePartyState',
+          'joinParty',
+          `Updating member state: ${JSON.stringify(newMember)}`
+        );
+
         await updateMemberState(newMember);
-        setMembers((prev) => [...prev, newMember]);
+
+        logWithContext(
+          'usePartyState',
+          'joinParty',
+          'Join party successful, member state updated'
+        );
       } catch (error) {
         logWithContext(
           'usePartyState',
           'joinParty',
-          `Error joining party: ${error}`,
+          `Error joining party: ${error}`
         );
         Sentry.captureException(error);
+        throw error;
       }
     },
-    [joinVoiceChannel, updateMemberState],
+    [joinVoiceChannel, updateMemberState]
   );
 
   const leaveParty = useCallback(async () => {
@@ -342,7 +462,7 @@ export function usePartyState() {
       logWithContext(
         'usePartyState',
         'leaveParty',
-        `Error leaving party: ${error}`,
+        `Error leaving party: ${error}`
       );
       Sentry.captureException(error);
     }
@@ -364,12 +484,12 @@ export function usePartyState() {
         logWithContext(
           'usePartyState',
           'editProfile',
-          `Error editing profile: ${error}`,
+          `Error editing profile: ${error}`
         );
         Sentry.captureException(error);
       }
     },
-    [currentUser, updateMemberState],
+    [currentUser, updateMemberState]
   );
 
   const initialize = useCallback(async () => {
@@ -389,11 +509,29 @@ export function usePartyState() {
       logWithContext(
         'usePartyState',
         'initialize',
-        `Error during initialization: ${error}`,
+        `Error during initialization: ${error}`
       );
       Sentry.captureException(error);
     }
   }, [updateMemberState]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const heartbeatInterval = setInterval(async () => {
+      try {
+        await updateMemberState(currentUser);
+      } catch (error) {
+        logWithContext(
+          'usePartyState',
+          'heartbeat',
+          `Error updating heartbeat: ${error}`
+        );
+      }
+    }, 30000); // Update every 30 seconds
+
+    return () => clearInterval(heartbeatInterval);
+  }, [currentUser, updateMemberState]);
 
   return {
     members,

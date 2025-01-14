@@ -78,7 +78,7 @@ export const handler: Handler = async (event) => {
       uid || 0,
       role,
       privilegeExpiredTs,
-      privilegeExpiredTs,
+      privilegeExpiredTs
     );
 
     return {

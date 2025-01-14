@@ -5,78 +5,83 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 export function RoomSkeleton() {
   return (
-    <div className='min-h-screen relative flex items-center justify-center bg-black tracking-wide overflow-hidden'>
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-black tracking-wide">
       {/* Video Background Skeleton */}
-      <div className='absolute inset-0 z-0'>
-        <div className='absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 min-w-full min-h-full w-auto h-auto bg-gray-900 animate-pulse' />
+      <div className="absolute inset-0 z-0">
+        <div className="absolute left-1/2 top-1/2 h-auto min-h-full w-auto min-w-full -translate-x-1/2 -translate-y-1/2 transform animate-pulse bg-gray-900" />
       </div>
 
       {/* Overlay */}
-      <div className='absolute inset-0 bg-black opacity-55 z-10'></div>
+      <div className="absolute inset-0 z-10 bg-black opacity-55"></div>
 
-      <div className='relative z-20 w-full max-w-[825px] mx-auto p-4 sm:p-6'>
+      <div className="relative z-20 mx-auto w-full max-w-[825px] p-4 sm:p-6">
         {/* Header */}
-        <div className='flex items-end justify-between mb-2'>
-          <Skeleton className='h-7 w-16 bg-gray-700' />
-          <Skeleton className='w-[47px] h-[47px] sm:w-[64px] sm:h-[64px] rounded-none bg-gray-700' />
-          <Skeleton className='h-7 w-16 bg-gray-700' />
+        <div className="mb-2 flex items-end justify-between">
+          <Skeleton className="h-7 w-16 bg-gray-700" />
+          <Skeleton className="h-[47px] w-[47px] rounded-none bg-gray-700 sm:h-[64px] sm:w-[64px]" />
+          <Skeleton className="h-7 w-16 bg-gray-700" />
         </div>
 
-        <Card className='bg-[#f0f0fa] border-0 mb-2 rounded-none relative overflow-hidden shadow-none text-[#161718] aspect-[16/9.75]'>
+        <Card className="relative mb-2 aspect-[16/9.75] overflow-hidden rounded-none border-0 bg-[#f0f0fa] text-[#161718] shadow-none">
           {/* Header Skeleton */}
-          <div className='flex flex-col shadow-[0_2px_4px_rgba(0,0,0,0.05)]'>
-            <div className='flex flex-col sm:flex-row'>
-              <div className='flex h-[40px] sm:h-[40px] order-1 sm:order-2 sm:w-[423px]'>
+          <div className="flex flex-col shadow-[0_2px_4px_rgba(0,0,0,0.05)]">
+            <div className="flex flex-col sm:flex-row">
+              <div className="order-1 flex h-[40px] sm:order-2 sm:h-[40px] sm:w-[423px]">
                 {[1, 2, 3].map((i) => (
-                  <div key={i} className='flex-1 bg-gray-300 animate-pulse' />
+                  <div key={i} className="flex-1 animate-pulse bg-gray-300" />
                 ))}
               </div>
-              <div className='flex-1 bg-[#f0f0fa] h-[40px] flex items-center justify-center sm:justify-start sm:items-end order-2 sm:order-1'>
-                <div className='flex items-center gap-2 mt-1 sm:mt-0 sm:mb-1 pl-[30px] w-full'>
-                  <Skeleton className='w-7 h-7 bg-gray-300' />
-                  <Skeleton className='h-7 w-32 bg-gray-300' />
+              <div className="order-2 flex h-[40px] flex-1 items-center justify-center bg-[#f0f0fa] sm:order-1 sm:items-end sm:justify-start">
+                <div className="mt-1 flex w-full items-center gap-2 pl-[30px] sm:mb-1 sm:mt-0">
+                  <Skeleton className="h-7 w-7 bg-gray-300" />
+                  <Skeleton className="h-7 w-32 bg-gray-300" />
                 </div>
               </div>
             </div>
-            <div className='h-[10px] bg-[#f0f0fa] border-b border-gray-200'></div>
+            <div className="h-[10px] border-b border-gray-200 bg-[#f0f0fa]"></div>
           </div>
 
           {/* Invite Button Skeleton */}
-          <div className='bg-gray-300 animate-pulse h-[38px] pl-[30px] flex items-center'>
-            <Skeleton className='h-6 w-24 bg-gray-400' />
+          <div className="flex h-[38px] animate-pulse items-center bg-gray-300 pl-[30px]">
+            <Skeleton className="h-6 w-24 bg-gray-400" />
           </div>
 
           {/* Party Options Skeleton */}
-          <div className='bg-[#f0f0fa] py-[6px] pl-[30px] border-b border-gray-400'>
-            <Skeleton className='h-6 w-48 bg-gray-300' />
+          <div className="border-b border-gray-400 bg-[#f0f0fa] py-[6px] pl-[30px]">
+            <Skeleton className="h-6 w-48 bg-gray-300" />
           </div>
 
           {/* Member List Skeleton */}
-          <div className='max-h-[381px] overflow-y-auto'>
-            {Array(7).fill(null).map((_, i) => (
-              <div key={i} className='flex items-center py-0.5 px-2 border-t first:border-t-0 border-gray-400'>
-                <div className='flex items-center gap-1 w-[202px] sm:w-[440px] -ml-7'>
-                  <Skeleton className='w-8 h-8 sm:w-9 sm:h-9 ml-5 bg-gray-300' />
-                  <Skeleton className='w-7 h-7 sm:w-8 sm:h-8 ml-1 bg-gray-300' />
-                  <Skeleton className='flex-1 h-6 bg-gray-300' />
+          <div className="max-h-[381px] overflow-y-auto">
+            {Array(7)
+              .fill(null)
+              .map((_, i) => (
+                <div
+                  key={i}
+                  className="flex items-center border-t border-gray-400 px-2 py-0.5 first:border-t-0"
+                >
+                  <div className="-ml-7 flex w-[202px] items-center gap-1 sm:w-[440px]">
+                    <Skeleton className="ml-5 h-8 w-8 bg-gray-300 sm:h-9 sm:w-9" />
+                    <Skeleton className="ml-1 h-7 w-7 bg-gray-300 sm:h-8 sm:w-8" />
+                    <Skeleton className="h-6 flex-1 bg-gray-300" />
+                  </div>
+                  <div className="ml-[-55px] w-[23px] sm:ml-[-50px]">
+                    <Skeleton className="h-4 w-4 bg-gray-300 sm:h-6 sm:w-6" />
+                  </div>
+                  <div className="ml-[-38px] flex-1 sm:ml-[59px]">
+                    <Skeleton className="h-6 w-32 bg-gray-300" />
+                  </div>
                 </div>
-                <div className='w-[23px] ml-[-55px] sm:ml-[-50px]'>
-                  <Skeleton className='w-4 h-4 sm:w-6 sm:h-6 bg-gray-300' />
-                </div>
-                <div className='flex-1 ml-[-38px] sm:ml-[59px]'>
-                  <Skeleton className='h-6 w-32 bg-gray-300' />
-                </div>
-              </div>
-            ))}
+              ))}
           </div>
         </Card>
 
         {/* Controls Skeleton */}
-        <div className='flex flex-wrap items-center gap-1 sm:gap-2 mt-1 px-[30px]'>
+        <div className="mt-1 flex flex-wrap items-center gap-1 px-[30px] sm:gap-2">
           {[1, 2, 3, 4].map((i) => (
-            <div key={i} className='flex items-center gap-0 sm:gap-2'>
-              <Skeleton className='w-3 h-3 sm:w-4 sm:h-4 rounded-full bg-gray-700' />
-              <Skeleton className='h-4 w-16 sm:w-20 bg-gray-700' />
+            <div key={i} className="flex items-center gap-0 sm:gap-2">
+              <Skeleton className="h-3 w-3 rounded-full bg-gray-700 sm:h-4 sm:w-4" />
+              <Skeleton className="h-4 w-16 bg-gray-700 sm:w-20" />
             </div>
           ))}
         </div>

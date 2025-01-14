@@ -7,7 +7,7 @@ interface LogContext {
 export const logWithContext = (
   filename: string,
   functionName: string,
-  message: string,
+  message: string
 ) => {
   console.log(`[${filename}] [${functionName}]: ${message}`);
 };

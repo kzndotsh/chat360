@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Button } from "@/components/ui/button";
+import { Button } from '@/components/ui/button';
 import { Volume2, VolumeX } from 'lucide-react';
 import { logWithContext } from '@/lib/logger';
 
@@ -23,16 +23,32 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
         try {
           await videoElement.play();
           setIsMuted(false);
-          logWithContext('XboxIntro.tsx', 'attemptPlay', 'Video playing with sound.');
+          logWithContext(
+            'XboxIntro.tsx',
+            'attemptPlay',
+            'Video playing with sound.'
+          );
         } catch (error) {
-          logWithContext('XboxIntro.tsx', 'attemptPlay', `Autoplay with sound failed: ${error}`);
+          logWithContext(
+            'XboxIntro.tsx',
+            'attemptPlay',
+            `Autoplay with sound failed: ${error}`
+          );
           videoElement.muted = true;
           setIsMuted(true);
           try {
             await videoElement.play();
-            logWithContext('XboxIntro.tsx', 'attemptPlay', 'Video playing muted.');
+            logWithContext(
+              'XboxIntro.tsx',
+              'attemptPlay',
+              'Video playing muted.'
+            );
           } catch (mutedError) {
-            logWithContext('XboxIntro.tsx', 'attemptPlay', `Autoplay even when muted failed: ${mutedError}`);
+            logWithContext(
+              'XboxIntro.tsx',
+              'attemptPlay',
+              `Autoplay even when muted failed: ${mutedError}`
+            );
           }
         }
       };
@@ -55,7 +71,11 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
     if (videoRef.current) {
       videoRef.current.muted = !videoRef.current.muted;
       setIsMuted(!isMuted);
-      logWithContext('XboxIntro.tsx', 'toggleMute', `Mute toggled to ${!isMuted}.`);
+      logWithContext(
+        'XboxIntro.tsx',
+        'toggleMute',
+        `Mute toggled to ${!isMuted}.`
+      );
     }
   };
 
@@ -63,7 +83,7 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
     <div className="fixed inset-0 z-50 bg-black">
       <video
         ref={videoRef}
-        className="w-full h-full object-cover"
+        className="h-full w-full object-cover"
         src={INTRO_VIDEO_URL}
         playsInline
         loop={false}
@@ -71,14 +91,14 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
       <div className="absolute bottom-4 right-4 flex space-x-2">
         <Button
           onClick={toggleMute}
-          className="bg-white text-black hover:bg-gray-200 rounded-md px-4 py-2 font-semibold transition-all duration-300"
+          className="rounded-md bg-white px-4 py-2 font-semibold text-black transition-all duration-300 hover:bg-gray-200"
         >
           {isMuted ? <VolumeX size={24} /> : <Volume2 size={24} />}
         </Button>
 
         <Button
           onClick={handleSkip}
-          className="bg-white text-black hover:bg-gray-200 rounded-md px-4 py-2 font-semibold transition-all duration-300 animate-slow-pulse"
+          className="animate-slow-pulse rounded-md bg-white px-4 py-2 font-semibold text-black transition-all duration-300 hover:bg-gray-200"
         >
           Skip Intro
         </Button>

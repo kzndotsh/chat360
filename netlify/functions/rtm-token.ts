@@ -74,7 +74,7 @@ export const handler: Handler = async (event) => {
       APP_CERTIFICATE,
       uid,
       role,
-      privilegeExpiredTs,
+      privilegeExpiredTs
     );
 
     return {
