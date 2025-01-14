@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { logWithContext } from '@/lib/logger';
+import { NewUserModal } from './NewUserModal';
 
 interface PartyControlsProps {
   currentUser: {
@@ -30,6 +31,7 @@ export function PartyControls({
   onRequestMicrophonePermission,
 }: PartyControlsProps) {
   const [isLeaving, setIsLeaving] = useState(false);
+  const [showJoinModal, setShowJoinModal] = useState(false);
 
   const handleLeave = async () => {
     if (isLeaving || !currentUser?.isActive) return;
@@ -53,8 +55,8 @@ export function PartyControls({
       <div className="flex flex-wrap items-center gap-1 sm:gap-2 text-sm sm:text-base mt-1">
         <button
           onClick={() => {
-            logWithContext('PartyControls.tsx', 'joinParty', 'Joining party');
-            onJoin();
+            logWithContext('PartyControls.tsx', 'joinParty', 'Opening join modal');
+            setShowJoinModal(true);
           }}
           className={buttonClass(!(currentUser?.isActive ?? false), false)}
           disabled={currentUser?.isActive ?? false}
@@ -119,6 +121,18 @@ export function PartyControls({
         >
           <span>Re-request Microphone Access</span>
         </button>
+      )}
+
+      {showJoinModal && (
+        <NewUserModal
+          initialData={currentUser ? { name: '', avatar: storedAvatar || '', status: '' } : undefined}
+          onJoin={(name, avatar, status) => {
+            logWithContext('PartyControls.tsx', 'joinParty', 'Joining party');
+            onJoin();
+            setShowJoinModal(false);
+          }}
+          onCancel={() => setShowJoinModal(false)}
+        />
       )}
     </div>
   );

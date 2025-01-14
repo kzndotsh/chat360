@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 
 import { XboxIntro } from '@/components/XboxIntro';
@@ -28,13 +28,13 @@ const PartyChat = dynamic(() => import('@/components/PartyChat').catch((err) => 
 export default function Page() {
   const [showIntro, setShowIntro] = useState(true);
 
-  if (showIntro) {
+  useEffect(() => {
     logWithContext('Page.tsx', 'render', 'Showing XboxIntro');
-  
-    return <XboxIntro onIntroEnd={() => setShowIntro(false)} />;
-  }
+  }, []);
 
-  logWithContext('Page.tsx', 'render', 'Showing PartyChat');
-  
-  return <PartyChat />;
+  return showIntro ? (
+    <XboxIntro onIntroEnd={() => setShowIntro(false)} />
+  ) : (
+    <PartyChat />
+  );
 }

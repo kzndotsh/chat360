@@ -1,7 +1,8 @@
-export { AVATARS, STATUSES, BACKGROUND_VIDEO_URL };
-
 const BACKGROUND_VIDEO_URL =
   'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/bg%20vid-IrN6ZDtoQMHnThmO35MvmafQ4ccLAo.mp4';
+
+const INTRO_VIDEO_URL =
+  'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/sirte_4-WPMUIrD20Lz0kDYC1Gqzl8ymIljn6M.mp4';
 
 const STATUSES = [
   'Trenching',
@@ -45,3 +46,5 @@ const AVATARS = [
   'https://i.imgur.com/toyTkGS.png',
   'https://i.imgur.com/fQ79yoT.png',
 ];
+
+export { AVATARS, STATUSES, BACKGROUND_VIDEO_URL, INTRO_VIDEO_URL };

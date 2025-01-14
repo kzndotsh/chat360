@@ -1,3 +1,5 @@
+"use client";
+
 import { memo } from 'react';
 import { PartyMember } from '../types';
 import Image from 'next/image';

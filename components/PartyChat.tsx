@@ -5,7 +5,8 @@ import * as Sentry from '@sentry/react';
 import Image from 'next/image';
 import { Clipboard } from 'lucide-react';
 import { Card } from '@/components/ui/card';
-import { JoinPartyModal } from '@/components/JoinPartyModal';
+import { NewUserModal } from '@/components/NewUserModal';  // Adjust import path
+import { EditProfileModal } from '@/components/EditProfileModal';  // Adjust import path
 import MemberList from '@/components/MemberList';
 import { PartyHeader } from '@/components/PartyHeader';
 import { PartyControls } from '@/components/PartyControls';
@@ -13,6 +14,8 @@ import { usePartyState } from '@/lib/hooks/usePartyState';
 import Clock from '@/components/Clock';
 import { BACKGROUND_VIDEO_URL } from '@/lib/constants';
 import { logWithContext } from '@/lib/logger';
+import { AVATARS } from '@/lib/constants';
+import { ModalPortal } from '@/components/ModalPortal';
 
 export default function PartyChat() {
   const [showEditModal, setShowEditModal] = useState(false);
@@ -51,6 +54,13 @@ export default function PartyChat() {
       logWithContext('PartyChat', 'useEffect: cleanup', 'Component unmounting');
     };
   }, [initialize]);
+
+  useEffect(() => {
+    return () => {
+      setShowEditModal(false);
+      setShowJoinModal(false);
+    };
+  }, []);
 
   const handleJoinParty = async (username: string, avatar: string, status: string) => {
     logWithContext('PartyChat', 'handleJoinParty', `Attempt to join party as ${username}`);
@@ -132,7 +142,7 @@ export default function PartyChat() {
               onClick={() => setShowEditModal(true)}
               className='flex flex-col items-center group'>
               <Image
-                src={currentUser?.avatar || storedAvatar || '/placeholder.svg'}
+                src={currentUser?.avatar ?? storedAvatar ?? AVATARS[0] ?? ''}
                 alt='Profile'
                 width={64}
                 height={64}
@@ -187,34 +197,24 @@ export default function PartyChat() {
       </div>
 
       {showJoinModal && (
-        <JoinPartyModal
-          onJoin={handleJoinParty}
-          initialData={
-            currentUser
-              ? {
-                  username: currentUser.name,
-                  avatar: currentUser.avatar,
-                  status: currentUser.game,
-                }
-              : undefined
-          }
-        />
+        <ModalPortal>
+          <NewUserModal
+            key={`join-modal-${Date.now()}`}
+            onJoin={handleJoinParty}
+            onCancel={() => setShowJoinModal(false)}
+          />
+        </ModalPortal>
       )}
 
       {showEditModal && (
-        <JoinPartyModal
-          onJoin={handleEditProfile}
+        <EditProfileModal
+          onSubmit={handleEditProfile}
           onCancel={() => setShowEditModal(false)}
-          initialData={
-            currentUser
-              ? {
-                  username: currentUser.name,
-                  avatar: currentUser.avatar,
-                  status: currentUser.game,
-                }
-              : undefined
-          }
-          isEditMode={true}
+          initialData={currentUser ? {
+            name: currentUser.name,
+            avatar: currentUser.avatar,
+            status: currentUser.game,
+          } : undefined}
         />
       )}
     </>

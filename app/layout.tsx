@@ -13,7 +13,7 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: 'Chat360',
-  description: 'Voice chat party app',
+  description: 'nostalgia, onchain.',
 };
  
 export const viewport: Viewport = {

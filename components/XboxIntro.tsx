@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Volume2, VolumeX } from 'lucide-react';
 import { logWithContext } from '@/lib/logger';
 
+import { INTRO_VIDEO_URL } from '@/lib/constants';
+
 interface XboxIntroProps {
   onIntroEnd: () => void;
 }
@@ -15,6 +17,7 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
 
   useEffect(() => {
     const videoElement = videoRef.current;
+
     if (videoElement) {
       const attemptPlay = async () => {
         try {
@@ -61,7 +64,7 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
       <video
         ref={videoRef}
         className="w-full h-full object-cover"
-        src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/sirte_4-WPMUIrD20Lz0kDYC1Gqzl8ymIljn6M.mp4"
+        src={INTRO_VIDEO_URL}
         playsInline
         loop={false}
       />
@@ -72,6 +75,7 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
         >
           {isMuted ? <VolumeX size={24} /> : <Volume2 size={24} />}
         </Button>
+
         <Button
           onClick={handleSkip}
           className="bg-white text-black hover:bg-gray-200 rounded-md px-4 py-2 font-semibold transition-all duration-300 animate-slow-pulse"
@@ -82,17 +86,3 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
     </div>
   );
 }
-
-<style jsx>{`
-  @keyframes slow-pulse {
-    0%, 100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.5;
-    }
-  }
-  .animate-slow-pulse {
-    animation: slow-pulse 3s ease-in-out infinite;
-  }
-`}</style>

@@ -1,3 +1,6 @@
+"use client";
+
+
 import React, { memo } from 'react';
 
 import { Volume, Volume1, VolumeX } from 'lucide-react';

@@ -87,13 +87,21 @@ export function usePartyState() {
         .order('created_at', { ascending: true });
 
       if (error) {
-        console.error('Error fetching members:', error);
+        logWithContext(
+          'usePartyState',
+          'fetchMembers',
+          `Error fetching members: ${error}`,
+        );
         Sentry.captureException(error);
       } else {
         setMembers(data || []);
       }
     } catch (error) {
-      console.error('Unexpected error fetching members:', error);
+      logWithContext(
+        'usePartyState',
+        'fetchMembers',
+        `Unexpected error fetching members: ${error}`,
+      );
       Sentry.captureException(error);
     }
   }, []);
@@ -126,11 +134,15 @@ export function usePartyState() {
       localStorage.setItem('currentUser', JSON.stringify(member));
       logWithContext(
         'usePartyState',
-        'Update Member',
+        'updateMemberState',
         `Member updated: ${JSON.stringify(member)}`,
       );
     } catch (error) {
-      console.error('Error updating member state:', error);
+      logWithContext(
+        'usePartyState',
+        'updateMemberState',
+        `Error updating member state: ${error}`,
+      );
       Sentry.captureException(error);
     }
   }, []);
@@ -168,7 +180,7 @@ export function usePartyState() {
     if (AGORA_APP_ID && !isJoined) {
       logWithContext(
         'usePartyState',
-        'Join Voice',
+        'joinVoiceChannel',
         'Attempting to join voice channel',
       );
       try {
@@ -193,7 +205,11 @@ export function usePartyState() {
         setIsJoined(true);
         setMicPermissionDenied(false);
       } catch (error) {
-        console.error('Error joining voice channel:', error);
+        logWithContext(
+          'usePartyState',
+          'joinVoiceChannel',
+          `Error joining voice channel: ${error}`,
+        );
         if (
           error instanceof Error &&
           error.message.includes('Permission denied')
@@ -206,14 +222,22 @@ export function usePartyState() {
   }, [isJoined, initializeAgoraClient, handleCleanup]);
 
   const leaveVoiceChannel = useCallback(async () => {
-    logWithContext('usePartyState', 'Leave Voice', 'Leaving voice channel');
+    logWithContext(
+      'usePartyState',
+      'leaveVoiceChannel',
+      'Leaving voice channel',
+    );
     try {
       if (clientRef.current) {
         await clientRef.current.leave();
       }
       await handleCleanup();
     } catch (error) {
-      console.error('Error leaving voice channel:', error);
+      logWithContext(
+        'usePartyState',
+        'leaveVoiceChannel',
+        `Error leaving voice channel: ${error}`,
+      );
       Sentry.captureException(error);
     }
   }, [handleCleanup]);
@@ -225,11 +249,15 @@ export function usePartyState() {
         setIsMuted(!isMuted);
         logWithContext(
           'usePartyState',
-          'Toggle Mute',
+          'toggleMute',
           `Mute toggled to: ${!isMuted}`,
         );
       } catch (error) {
-        console.error('Error toggling mute status:', error);
+        logWithContext(
+          'usePartyState',
+          'toggleMute',
+          `Error toggling mute status: ${error}`,
+        );
         Sentry.captureException(error);
       }
     }
@@ -253,14 +281,24 @@ export function usePartyState() {
         const localVolume = Math.round(
           localTrackRef.current!.getVolumeLevel() * 100,
         );
-        setVolumeLevels((prev) => ({ ...prev, [uidRef.current]: localVolume }));
+        setVolumeLevels((prev) => {
+          if (prev[uidRef.current] !== localVolume) {
+            return { ...prev, [uidRef.current]: localVolume };
+          }
+          return prev;
+        });
         remoteUsers.forEach((user) => {
           const userVolume = Math.round(
             (user.audioTrack?.getVolumeLevel() || 0) * 100,
           );
-          setVolumeLevels((prev) => ({ ...prev, [user.uid]: userVolume }));
+          setVolumeLevels((prev) => {
+            if (prev[user.uid] !== userVolume) {
+              return { ...prev, [user.uid]: userVolume };
+            }
+            return prev;
+          });
         });
-      }, 100);
+      }, 500);
     }
     return () => {
       if (volumeIntervalRef.current) clearInterval(volumeIntervalRef.current);
@@ -268,12 +306,12 @@ export function usePartyState() {
   }, [isJoined, isMuted, remoteUsers]);
 
   const joinParty = useCallback(
-    async (username: string, avatar: string, status: string) => {
+    async (name: string, avatar: string, status: string) => {
       try {
         await joinVoiceChannel();
         const newMember: PartyMember = {
           id: uidRef.current,
-          name: username,
+          name: name,
           avatar,
           game: status,
           isActive: true,
@@ -282,7 +320,11 @@ export function usePartyState() {
         await updateMemberState(newMember);
         setMembers((prev) => [...prev, newMember]);
       } catch (error) {
-        console.error('Error joining party:', error);
+        logWithContext(
+          'usePartyState',
+          'joinParty',
+          `Error joining party: ${error}`,
+        );
         Sentry.captureException(error);
       }
     },
@@ -297,17 +339,21 @@ export function usePartyState() {
       await updateMemberState(updatedUser);
       setMembers((prev) => prev.filter((m) => m.id !== currentUser.id));
     } catch (error) {
-      console.error('Error leaving party:', error);
+      logWithContext(
+        'usePartyState',
+        'leaveParty',
+        `Error leaving party: ${error}`,
+      );
       Sentry.captureException(error);
     }
   }, [leaveVoiceChannel, currentUser, updateMemberState]);
 
   const editProfile = useCallback(
-    async (username: string, avatar: string, status: string) => {
+    async (name: string, avatar: string, status: string) => {
       if (!currentUser) return;
       const updatedUser = {
         ...currentUser,
-        name: username,
+        name: name,
         avatar,
         game: status,
       };
@@ -315,7 +361,11 @@ export function usePartyState() {
         await updateMemberState(updatedUser);
         setCurrentUser(updatedUser);
       } catch (error) {
-        console.error('Error editing profile:', error);
+        logWithContext(
+          'usePartyState',
+          'editProfile',
+          `Error editing profile: ${error}`,
+        );
         Sentry.captureException(error);
       }
     },
@@ -336,7 +386,11 @@ export function usePartyState() {
         setStoredUser(user);
       }
     } catch (error) {
-      console.error('Error during initialization:', error);
+      logWithContext(
+        'usePartyState',
+        'initialize',
+        `Error during initialization: ${error}`,
+      );
       Sentry.captureException(error);
     }
   }, [updateMemberState]);
