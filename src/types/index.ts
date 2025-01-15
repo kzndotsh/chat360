@@ -1,9 +1,11 @@
 export interface PartyMember {
   id: string;
   name: string;
-  game: string;
-  muted: boolean;
   avatar: string;
+  game: string;
   isActive: boolean;
+  muted: boolean;
   agora_uid?: number | null;
+  created_at?: string;
+  last_seen?: string;
 }

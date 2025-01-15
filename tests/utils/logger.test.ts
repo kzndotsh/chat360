@@ -14,12 +14,12 @@ describe('Logger', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2025-01-15T06:26:48.440Z'));
 
-    // Mock console methods
-    console.info = vi.fn();
-    console.error = vi.fn();
-    console.warn = vi.fn();
-    console.debug = vi.fn();
-    console.log = vi.fn();
+    // Mock console methods using spyOn
+    vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    vi.spyOn(console, 'debug').mockImplementation(() => undefined);
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
   });
 
   afterEach(() => {
@@ -100,6 +100,10 @@ describe('Logger', () => {
         metadata: { error },
       });
       expect(Sentry.captureException).toHaveBeenCalledWith(error);
+      expect(console.error).toHaveBeenCalledWith(
+        '[2025-01-15T06:26:48.440Z] TestComponent - testAction: Error occurred',
+        { error }
+      );
     });
 
     it('should add breadcrumbs for non-error logs', () => {
@@ -122,18 +126,13 @@ describe('Logger', () => {
         throw new Error('Sentry error');
       });
 
-      try {
-        logger.error('Test message', {
-          component: 'TestComponent',
-          action: 'testAction',
-          metadata: { error: new Error('Test error') },
-        });
-        // If we reach here, no error was thrown
-        expect(console.error).toHaveBeenCalled();
-      } catch {
-        // Test fails if we reach here
-        expect(true).toBe(false);
-      }
+      logger.error('Test message', {
+        component: 'TestComponent',
+        action: 'testAction',
+        metadata: { error: new Error('Test error') },
+      });
+      
+      expect(console.error).toHaveBeenCalled();
     });
 
     it('handles console method errors', () => {

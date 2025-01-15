@@ -1,5 +1,14 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { POST } from '@/app/api/agora/token/route';
+
+vi.mock('agora-token', () => ({
+  RtcTokenBuilder: {
+    buildTokenWithUid: vi.fn().mockReturnValue('mock-token'),
+  },
+  RtcRole: {
+    PUBLISHER: 1,
+  },
+}));
 
 describe('Agora Token API', () => {
   beforeEach(() => {

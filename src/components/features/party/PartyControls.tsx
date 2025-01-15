@@ -1,16 +1,17 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { logger } from '@/lib/utils/logger';
 import { type PartyMember } from '@/types';
-import { useFormStore } from '@/lib/stores/useFormStore';
 import { useModalStore } from '@/lib/stores/useModalStore';
+import { AVATARS } from '@/lib/config/constants';
 
 interface PartyControlsProps {
   currentUser: PartyMember | null;
+  isLeaving: boolean;
   isMuted: boolean;
   micPermissionDenied?: boolean;
-  onJoin: (name: string, avatar: string, status: string) => Promise<void>;
+  onJoin: (name: string, avatar: string, game: string) => Promise<void>;
   onLeave: () => Promise<void>;
   onToggleMute: () => Promise<void>;
   onRequestMicrophonePermission: () => Promise<boolean>;
@@ -18,19 +19,87 @@ interface PartyControlsProps {
 
 export function PartyControls({
   currentUser,
+  isLeaving,
+  isMuted,
+  micPermissionDenied = false,
   onJoin,
   onLeave,
   onToggleMute,
-  isMuted,
-  micPermissionDenied = false,
   onRequestMicrophonePermission,
 }: PartyControlsProps) {
-  const [isJoining, setIsJoining] = useState(false);
-  const [isLeaving, setIsLeaving] = useState(false);
-  const { showModal } = useModalStore();
+  const showModal = useModalStore((state) => state.showModal);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isTogglingMute, setIsTogglingMute] = useState(false);
+
+  const handleJoinClick = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const storedUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+
+      if (storedUser) {
+        const userData = {
+          name: storedUser.name || '',
+          avatar: storedUser.avatar || AVATARS[0],
+          game: storedUser.game || 'Online',
+        };
+
+        await onJoin(userData.name, userData.avatar, userData.game);
+      } else {
+        showModal('join');
+      }
+    } catch (err) {
+      logger.error('Failed to join party', {
+        action: 'joinParty',
+        metadata: { error: err instanceof Error ? err : new Error(String(err)) },
+      });
+      if (err instanceof Error && err.message.includes('Missing required profile fields')) {
+        showModal('join');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, [onJoin, showModal]);
+
+  const handleEditClick = useCallback(() => {
+    showModal('edit', {
+      name: currentUser?.name || '',
+      avatar: currentUser?.avatar || '',
+      game: currentUser?.game || '',
+    });
+  }, [showModal, currentUser]);
+
+  const handleLeaveClick = useCallback(async () => {
+    try {
+      await onLeave();
+    } catch (err) {
+      logger.error('Failed to leave party', {
+        action: 'leaveParty',
+        metadata: { error: err instanceof Error ? err : new Error(String(err)) },
+      });
+    }
+  }, [onLeave]);
+
+  const handleMuteClick = useCallback(async () => {
+    if (isTogglingMute) return;
+    try {
+      setIsTogglingMute(true);
+      if (micPermissionDenied) {
+        const granted = await onRequestMicrophonePermission();
+        if (!granted) {
+          logger.warn('Microphone permission denied', {
+            action: 'handleMuteClick',
+          });
+        }
+      } else {
+        await onToggleMute();
+      }
+    } finally {
+      setIsTogglingMute(false);
+    }
+  }, [isTogglingMute, micPermissionDenied, onRequestMicrophonePermission, onToggleMute]);
 
   const buttonClass = (enabled: boolean, loading: boolean) =>
-    `flex items-center gap-1 ${
+    `flex items-center gap-2 ${
       enabled
         ? loading
           ? 'cursor-not-allowed opacity-50'
@@ -38,126 +107,59 @@ export function PartyControls({
         : 'cursor-not-allowed opacity-50'
     } text-white transition-opacity`;
 
-  const handleLeave = async () => {
-    if (isLeaving) return;
-    setIsLeaving(true);
-    try {
-      await onLeave();
-    } finally {
-      setIsLeaving(false);
-    }
-  };
-
-  const handleJoin = async () => {
-    if (isJoining) return;
-    setIsJoining(true);
-
-    try {
-      const lastUsedData = useFormStore.getState().lastUsedData;
-      const storedUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
-
-      // If we have prior data, join directly without showing modal
-      if (lastUsedData || storedUser) {
-        logger.info('Joining with existing user data', {
-          action: 'joinParty',
-          metadata: {
-            lastUsedData,
-            storedUser,
-          },
-        });
-
-        // Use lastUsedData if available, otherwise use storedUser
-        const userData = lastUsedData || {
-          name: storedUser.name,
-          avatar: storedUser.avatar,
-          status: storedUser.status || 'Online',
-        };
-
-        // Call onJoin directly without showing modal
-        await onJoin(userData.name, userData.avatar, userData.status);
-        return;
-      }
-
-      // Only show the new user modal if we have no prior data
-      logger.info('No existing user data, showing join modal', {
-        action: 'joinParty',
-      });
-      showModal('join');
-    } finally {
-      setIsJoining(false);
-    }
-  };
-
   return (
     <div className="flex flex-col">
       <div className="flex items-center justify-start gap-6 px-4 py-2">
         <button
-          onClick={handleJoin}
-          className={buttonClass(!currentUser?.isActive ?? true, isJoining)}
-          disabled={(currentUser?.isActive ?? false) || isJoining}
+          onClick={handleJoinClick}
+          className={buttonClass(!currentUser?.isActive ?? true, isLoading)}
+          disabled={(currentUser?.isActive ?? false) || isLoading}
         >
           <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#55b611] text-[10px] font-bold text-white">
             A
           </div>
-          <span>{isJoining ? 'Joining...' : 'Join Party'}</span>
+          <span>{isLoading ? 'Joining...' : 'Join Party'}</span>
         </button>
 
         <button
-          onClick={handleLeave}
+          onClick={handleLeaveClick}
           className={buttonClass(currentUser?.isActive ?? false, isLeaving)}
-          disabled={!(currentUser?.isActive ?? false) || isLeaving}
+          disabled={!currentUser?.isActive || isLeaving}
         >
           <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#ae1228] text-[10px] font-bold text-white">
-            B
+            X
           </div>
           <span>{isLeaving ? 'Leaving...' : 'Leave Party'}</span>
         </button>
 
         <button
-          onClick={() => {
-            logger.info('Toggling mute', {
-              action: 'toggleMute',
-            });
-            onToggleMute();
-          }}
-          className={buttonClass(currentUser?.isActive ?? false, false)}
-          disabled={!(currentUser?.isActive ?? false)}
+          onClick={handleMuteClick}
+          className={buttonClass(currentUser?.isActive ?? false, isTogglingMute)}
+          disabled={!currentUser?.isActive || isTogglingMute}
         >
           <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#0c71ba] text-[10px] font-bold text-white">
-            X
+            Y
           </div>
-          <span>{isMuted ? 'Unmute' : 'Mute'}</span>
+          <span>
+            {micPermissionDenied
+              ? 'Enable Microphone'
+              : isMuted
+              ? 'Unmute'
+              : 'Mute'}
+          </span>
         </button>
 
         <button
-          onClick={() => {
-            logger.info('Opening edit modal', {
-              action: 'openEditModal',
-            });
-            showModal('edit', {
-              name: currentUser?.name || '',
-              avatar: currentUser?.avatar || '',
-              status: currentUser?.game || '',
-            });
-          }}
-          className={buttonClass(true, false)}
-          disabled={false}
+          onClick={handleEditClick}
+          className={buttonClass(currentUser?.isActive ?? false, false)}
+          disabled={!currentUser?.isActive}
         >
           <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#e09a23] text-[10px] font-bold text-white">
-            Y
+            B
           </div>
           <span>Edit Profile</span>
         </button>
       </div>
-
-      {micPermissionDenied && (
-        <button
-          onClick={onRequestMicrophonePermission}
-          className="mx-4 flex items-center justify-center gap-2 bg-[#0c71ba] py-2 text-white transition-colors hover:bg-[#0a5c94]"
-        >
-          <span>Re-request Microphone Access</span>
-        </button>
-      )}
     </div>
   );
 }

@@ -6,7 +6,7 @@ const compat = new FlatCompat({
 
 const config = [
   {
-    ignores: ['node_modules/**', '.next/**', 'dist/**', 'build/**'],
+    ignores: ['node_modules/**', '.next/**', 'dist/**', 'build/**', 'tmp_old/**'],
   },
   ...compat.config({
     extends: ['next/core-web-vitals', 'next/typescript', 'prettier'],

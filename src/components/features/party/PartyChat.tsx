@@ -18,6 +18,7 @@ import { useFormStore } from '@/lib/stores/useFormStore';
 export function PartyChat() {
   const showModal = useModalStore((state) => state.showModal);
   const [videoError, setVideoError] = useState(false);
+  const [isLeaving, setIsLeaving] = useState(false);
   const {
     members,
     currentUser,
@@ -86,14 +87,14 @@ export function PartyChat() {
   }, [initialize, showModal, currentUser, resetForm]);
 
   const handleJoinParty = useCallback(
-    async (username: string, avatar: string, status: string) => {
+    async (username: string, avatar: string, game: string) => {
       logger.info('Attempting to join party', {
         action: 'joinParty',
-        metadata: { username, avatar, status },
+        metadata: { username, avatar, game },
       });
 
       try {
-        await joinParty(username, avatar, status);
+        await joinParty(username, avatar, game);
         logger.info('Successfully joined party', {
           action: 'joinParty',
           metadata: { username },
@@ -101,7 +102,7 @@ export function PartyChat() {
       } catch (error) {
         logger.error('Failed to join party', {
           action: 'joinParty',
-          error: error instanceof Error ? error : new Error(String(error)),
+          metadata: { error: error instanceof Error ? error : new Error(String(error)) },
         });
         throw error;
       }
@@ -110,14 +111,14 @@ export function PartyChat() {
   );
 
   const handleEditProfile = useCallback(
-    async (username: string, avatar: string, status: string) => {
+    async (username: string, avatar: string, game: string) => {
       logger.info('Attempting to edit profile', {
         action: 'editProfile',
-        metadata: { username, avatar, status },
+        metadata: { username, avatar, game },
       });
 
       try {
-        await editProfile(username, avatar, status);
+        await editProfile(username, avatar, game);
         logger.info('Successfully edited profile', {
           action: 'editProfile',
           metadata: { username },
@@ -125,7 +126,7 @@ export function PartyChat() {
       } catch (error) {
         logger.error('Failed to edit profile', {
           action: 'editProfile',
-          error: error instanceof Error ? error : new Error(String(error)),
+          metadata: { error: error instanceof Error ? error : new Error(String(error)) },
         });
         throw error;
       }
@@ -137,18 +138,21 @@ export function PartyChat() {
     logger.info('Attempting to leave party', { action: 'leaveParty' });
 
     try {
+      setIsLeaving(true);
       await leaveParty();
       logger.info('Successfully left party', { action: 'leaveParty' });
     } catch (error) {
       logger.error('Failed to leave party', {
         action: 'leaveParty',
-        error: error instanceof Error ? error : new Error(String(error)),
+        metadata: { error: error instanceof Error ? error : new Error(String(error)) },
       });
       throw error;
+    } finally {
+      setIsLeaving(false);
     }
   }, [leaveParty]);
 
-  const handleToggleMute = async () => {
+  const handleToggleMute = useCallback(async () => {
     logger.info('Toggling mute', {
       action: 'toggleMute',
       metadata: { currentUser },
@@ -162,14 +166,17 @@ export function PartyChat() {
     } catch (error) {
       logger.error('Error toggling mute', {
         action: 'toggleMute',
-        error: error as Error,
+        metadata: { error: error as Error },
       });
       Sentry.captureException(error);
     }
-  };
+  }, [toggleMute, currentUser]);
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-black">
+    <div 
+      className="relative flex min-h-screen items-center justify-center overflow-hidden bg-black"
+      data-testid="party-chat"
+    >
       <div className="absolute inset-0 z-0">
         {videoError ? (
           <div className="absolute inset-0 bg-gradient-to-b from-gray-900 to-black" />
@@ -251,6 +258,7 @@ export function PartyChat() {
 
         <PartyControls
           currentUser={currentUser}
+          isLeaving={isLeaving}
           isMuted={isMuted}
           micPermissionDenied={micPermissionDenied}
           onJoin={async (name, avatar, game) => {

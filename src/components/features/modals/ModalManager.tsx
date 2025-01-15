@@ -7,8 +7,8 @@ import { ModalPortal } from './ModalPortal';
 import * as Sentry from '@sentry/react';
 
 interface ModalManagerProps {
-  onJoinParty: (username: string, avatar: string, status: string) => Promise<void>;
-  onEditProfile: (username: string, avatar: string, status: string) => Promise<void>;
+  onJoinParty: (username: string, avatar: string, game: string) => Promise<void>;
+  onEditProfile: (username: string, avatar: string, game: string) => Promise<void>;
 }
 
 export const ModalManager = React.memo(function ModalManager({
@@ -19,18 +19,18 @@ export const ModalManager = React.memo(function ModalManager({
   const { isSubmitting, setSubmitting, resetForm, saveLastUsedData } = useFormStore();
 
   const handleJoinParty = useCallback(
-    async (username: string, avatar: string, status: string) => {
+    async (username: string, avatar: string, game: string) => {
       if (isSubmitting) return;
 
       setSubmitting(true);
       try {
-        saveLastUsedData({ name: username, avatar, status });
-        await onJoinParty(username, avatar, status);
+        saveLastUsedData({ name: username, avatar, game });
+        await onJoinParty(username, avatar, game);
         resetForm();
         hideModal();
       } catch (error) {
         Sentry.captureException(error, {
-          extra: { username, avatar, status },
+          extra: { username, avatar, game },
         });
         throw error;
       } finally {
@@ -41,18 +41,18 @@ export const ModalManager = React.memo(function ModalManager({
   );
 
   const handleEditProfile = useCallback(
-    async (username: string, avatar: string, status: string) => {
+    async (username: string, avatar: string, game: string) => {
       if (isSubmitting) return;
 
       setSubmitting(true);
       try {
-        await onEditProfile(username, avatar, status);
-        saveLastUsedData({ name: username, avatar, status });
+        await onEditProfile(username, avatar, game);
+        saveLastUsedData({ name: username, avatar, game });
         resetForm();
         hideModal();
       } catch (error) {
         Sentry.captureException(error, {
-          extra: { username, avatar, status },
+          extra: { username, avatar, game },
         });
         throw error;
       } finally {
@@ -83,7 +83,7 @@ export const ModalManager = React.memo(function ModalManager({
           initialData={{
             name: modalData.name || '',
             avatar: modalData.avatar || '',
-            status: modalData.status || '',
+            game: modalData.game || '',
           }}
           onSubmit={handleEditProfile}
           onCancel={handleCancel}

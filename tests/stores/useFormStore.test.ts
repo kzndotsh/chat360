@@ -19,13 +19,13 @@ describe('useFormStore', () => {
       formData: {
         name: '',
         avatar: AVATARS[0] || 'default-avatar',
-        status: STATUSES[0] || 'online',
+        game: STATUSES[0] || 'online',
       },
       lastUsedData: null,
       errors: {
         name: undefined,
         avatar: undefined,
-        status: undefined,
+        game: undefined,
       },
       isSubmitting: false,
     });
@@ -37,13 +37,13 @@ describe('useFormStore', () => {
     expect(state.formData).toEqual({
       name: '',
       avatar: AVATARS[0] || 'default-avatar',
-      status: STATUSES[0] || 'online',
+      game: STATUSES[0] || 'online',
     });
     expect(state.lastUsedData).toBeNull();
     expect(state.errors).toEqual({
       name: undefined,
       avatar: undefined,
-      status: undefined,
+      game: undefined,
     });
     expect(state.isSubmitting).toBe(false);
   });
@@ -56,7 +56,7 @@ describe('useFormStore', () => {
     const state = useFormStore.getState();
     expect(state.formData.name).toBe('Test User');
     expect(state.formData.avatar).toBe(AVATARS[0] || 'default-avatar');
-    expect(state.formData.status).toBe(STATUSES[0] || 'online');
+    expect(state.formData.game).toBe(STATUSES[0] || 'online');
   });
 
   it('updates form data completely', () => {
@@ -64,7 +64,7 @@ describe('useFormStore', () => {
     const newData = {
       name: 'Test User',
       avatar: 'new-avatar.png',
-      status: 'busy',
+      game: 'busy',
     };
 
     setFormData(newData);
@@ -81,7 +81,7 @@ describe('useFormStore', () => {
     const state = useFormStore.getState();
     expect(state.errors.name).toBe('Name is required');
     expect(state.errors.avatar).toBeUndefined();
-    expect(state.errors.status).toBeUndefined();
+    expect(state.errors.game).toBeUndefined();
   });
 
   it('clears field error', () => {
@@ -111,7 +111,7 @@ describe('useFormStore', () => {
     const data = {
       name: 'Test User',
       avatar: 'test-avatar.png',
-      status: 'online',
+      game: 'online',
     };
 
     saveLastUsedData(data);
@@ -134,12 +134,12 @@ describe('useFormStore', () => {
     expect(state.formData).toEqual({
       name: '',
       avatar: AVATARS[0] || 'default-avatar',
-      status: STATUSES[0] || 'online',
+      game: STATUSES[0] || 'online',
     });
     expect(state.errors).toEqual({
       name: undefined,
       avatar: undefined,
-      status: undefined,
+      game: undefined,
     });
     expect(state.isSubmitting).toBe(false);
   });
@@ -149,7 +149,7 @@ describe('useFormStore', () => {
     const lastUsedData = {
       name: 'Last User',
       avatar: 'last-avatar.png',
-      status: 'last-status',
+      game: 'last-status',
     };
 
     // Save last used data first
@@ -171,7 +171,7 @@ describe('useFormStore', () => {
     expect(state.formData).toEqual({
       name: '',
       avatar: AVATARS[0] || 'default-avatar',
-      status: STATUSES[0] || 'online',
+      game: STATUSES[0] || 'online',
     });
   });
 
@@ -189,7 +189,7 @@ describe('useFormStore', () => {
     expect(state.errors).toEqual({
       name: undefined,
       avatar: undefined,
-      status: undefined,
+      game: undefined,
     });
   });
 
@@ -198,7 +198,7 @@ describe('useFormStore', () => {
     const data = {
       name: '   Test User   ',
       avatar: AVATARS[0],
-      status: STATUSES[0],
+      game: STATUSES[0],
     };
 
     setFormData(data);
@@ -222,7 +222,7 @@ describe('useFormStore', () => {
     const data = {
       name: '!@#$%^&*()',
       avatar: AVATARS[0],
-      status: STATUSES[0],
+      game: STATUSES[0],
     };
 
     setFormData(data);
@@ -236,7 +236,7 @@ describe('useFormStore', () => {
     const updates = Array.from({ length: 100 }, (_, i) => ({
       name: `User ${i}`,
       avatar: AVATARS[0],
-      status: STATUSES[0],
+      game: STATUSES[0],
     }));
 
     await Promise.all(
@@ -263,13 +263,13 @@ describe('useFormStore', () => {
     expect(state.formData.avatar).toBe('nonexistent.png');
   });
 
-  it('handles invalid status values', () => {
+  it('handles invalid game values', () => {
     const { setFormData } = useFormStore.getState();
 
-    setFormData({ status: 'invalid_status' });
+    setFormData({ game: 'invalid_game' });
 
     const state = useFormStore.getState();
-    expect(state.formData.status).toBe('invalid_status');
+    expect(state.formData.game).toBe('invalid_game');
   });
 
   it('preserves other fields when setting an error', () => {
@@ -278,7 +278,7 @@ describe('useFormStore', () => {
     setFormData({
       name: 'Test User',
       avatar: AVATARS[0],
-      status: STATUSES[0],
+      game: STATUSES[0],
     });
 
     setError('name', 'Invalid name');
@@ -287,7 +287,7 @@ describe('useFormStore', () => {
     expect(state.formData).toEqual({
       name: 'Test User',
       avatar: AVATARS[0],
-      status: STATUSES[0],
+      game: STATUSES[0],
     });
     expect(state.errors.name).toBe('Invalid name');
   });
@@ -297,13 +297,13 @@ describe('useFormStore', () => {
 
     setError('name', 'Invalid name');
     setError('avatar', 'Invalid avatar');
-    setError('status', 'Invalid status');
+    setError('game', 'Invalid game');
 
     const state = useFormStore.getState();
     expect(state.errors).toEqual({
       name: 'Invalid name',
       avatar: 'Invalid avatar',
-      status: 'Invalid status',
+      game: 'Invalid game',
     });
   });
 });

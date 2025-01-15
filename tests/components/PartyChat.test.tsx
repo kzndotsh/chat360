@@ -23,13 +23,26 @@ vi.mock('@/lib/utils/logger', () => ({
   },
 }));
 vi.mock('next/image', () => ({
-  default: (props: {
+  default: ({
+    src,
+    alt,
+    width,
+    height,
+    className,
+  }: {
     src: string;
     alt: string;
     width?: number;
     height?: number;
     className?: string;
-  }) => <img {...props} />,
+  }) => (
+    <div
+      className={className}
+      style={{ width, height }}
+    >
+      Mock Image: {alt} (src: {src})
+    </div>
+  ),
 }));
 
 describe('PartyChat', () => {
@@ -53,23 +66,6 @@ describe('PartyChat', () => {
     isActive: true,
     muted: false,
   } satisfies PartyMember;
-
-  const mockFormStore = {
-    formData: { name: '', avatar: '', game: '' },
-    lastUsedData: {
-      name: 'Test User',
-      avatar: AVATARS[0] ?? 'https://i.imgur.com/LCycgcq.png',
-      game: 'Test Game',
-    },
-    errors: {},
-    isSubmitting: false,
-    setFormData: mockSetFormData,
-    resetForm: mockResetForm,
-    setError: vi.fn(),
-    setSubmitting: vi.fn(),
-    saveLastUsedData: vi.fn(),
-    initializeWithLastUsed: vi.fn(),
-  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -101,10 +97,33 @@ describe('PartyChat', () => {
     });
 
     // Mock useFormStore
+    const mockFormState = {
+      formData: { name: '', avatar: '', game: '' },
+      lastUsedData: {
+        name: 'Test User',
+        avatar: AVATARS[0] ?? 'https://i.imgur.com/LCycgcq.png',
+        game: 'Test Game',
+      },
+      errors: {
+        name: undefined,
+        avatar: undefined,
+        game: undefined,
+      },
+      isSubmitting: false,
+    };
+
     vi.mocked(useFormStore).mockReturnValue({
-      getState: () => mockFormStore,
-      setState: vi.fn(),
-      ...mockFormStore,
+      ...mockFormState,
+      setFormData: mockSetFormData,
+      resetForm: mockResetForm,
+      setError: vi.fn(),
+      setSubmitting: vi.fn(),
+      saveLastUsedData: vi.fn(),
+      initializeWithLastUsed: vi.fn(),
+      getState: () => mockFormState,
+      setState: (fn: ((state: typeof mockFormState) => Partial<typeof mockFormState>) | Partial<typeof mockFormState>) => {
+        Object.assign(mockFormState, typeof fn === 'function' ? fn(mockFormState) : fn);
+      },
     });
   });
 
