@@ -43,8 +43,8 @@ export const NewUserModal: React.FC<NewUserModalProps> = ({ onJoin, onCancel, is
         action: 'handleFormSubmit',
         metadata: {
           formData: data,
-          isSubmitting
-        }
+          isSubmitting,
+        },
       };
 
       logger.info('Form validation started', context);
@@ -63,8 +63,8 @@ export const NewUserModal: React.FC<NewUserModalProps> = ({ onJoin, onCancel, is
           ...context,
           metadata: {
             ...context.metadata,
-            error
-          }
+            error,
+          },
         });
         Sentry.captureException(error, {
           extra: context.metadata,

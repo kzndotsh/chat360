@@ -30,7 +30,7 @@ export const ModalManager = React.memo(function ModalManager({
         hideModal();
       } catch (error) {
         Sentry.captureException(error, {
-          extra: { username, avatar, status }
+          extra: { username, avatar, status },
         });
         throw error;
       } finally {
@@ -52,7 +52,7 @@ export const ModalManager = React.memo(function ModalManager({
         hideModal();
       } catch (error) {
         Sentry.captureException(error, {
-          extra: { username, avatar, status }
+          extra: { username, avatar, status },
         });
         throw error;
       } finally {

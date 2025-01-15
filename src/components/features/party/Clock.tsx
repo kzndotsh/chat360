@@ -3,30 +3,44 @@
 import React, { memo } from 'react';
 import { useCurrentTime } from '@/lib/hooks/useCurrentTime';
 
-const Clock = memo(() => {
+const TIME_FORMAT_OPTIONS = {
+  hour: 'numeric' as const,
+  minute: '2-digit' as const,
+  hour12: true,
+};
+
+function Clock() {
   const currentTime = useCurrentTime();
 
-  // Return placeholder if no time available
-  if (!currentTime) {
+  // Handle invalid dates
+  if (!currentTime || isNaN(currentTime.getTime())) {
     return (
       <div className="clock">
-        <span>--:-- --</span>
+        <time
+          role="time"
+          aria-label="Time unavailable"
+          aria-live="polite"
+          className="font-mono text-lg tabular-nums text-white"
+        >
+          --:-- --
+        </time>
       </div>
     );
   }
 
   return (
     <div className="clock">
-      <span>
-        {currentTime.toLocaleTimeString([], {
-          hour: '2-digit',
-          minute: '2-digit',
-        })}
-      </span>
+      <time
+        role="time"
+        aria-label="Current time"
+        aria-live="polite"
+        className="font-mono text-lg tabular-nums text-white"
+        dateTime={currentTime.toISOString()}
+      >
+        {currentTime.toLocaleTimeString('en-US', TIME_FORMAT_OPTIONS)}
+      </time>
     </div>
   );
-});
+}
 
-Clock.displayName = 'Clock';
-
-export default Clock;
+export default memo(Clock);

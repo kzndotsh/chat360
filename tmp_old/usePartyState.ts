@@ -10,8 +10,7 @@ import { PartyMember } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { logWithContext } from '@/lib/logger';
 
-const AGORA_APP_ID =
-  process.env.NEXT_PUBLIC_AGORA_APP_ID || 'b692145dadfd4f2b9bd3c0e9e5ecaab8';
+const AGORA_APP_ID = process.env.NEXT_PUBLIC_AGORA_APP_ID || 'b692145dadfd4f2b9bd3c0e9e5ecaab8';
 const AGORA_TEMP_TOKEN =
   process.env.NEXT_PUBLIC_AGORA_TEMP_TOKEN ||
   '007eJxTYHigyLDU9sUK/YS/7UdyNjYEx7l3fTlk7Nf9R+ExQ1dcEacCQ5KZpZGhiWlKYkpaikmaUZJlUopxskGqZappanJiYpLFX4+W9IZARgZds9MsjAwQCOKzMOQmZuYxMAAAgNggYA==';
@@ -53,11 +52,7 @@ export function usePartyState() {
       uidRef.current = newUid;
       localStorage.setItem(STORAGE_KEY, newUid);
     }
-    logWithContext(
-      'usePartyState',
-      'UID Load',
-      `Loaded/Generated UID: ${uidRef.current}`
-    );
+    logWithContext('usePartyState', 'UID Load', `Loaded/Generated UID: ${uidRef.current}`);
   }, []);
 
   const handleCleanup = useCallback(async () => {
@@ -85,9 +80,7 @@ export function usePartyState() {
     try {
       // First, cleanup stale members
       const staleThreshold = new Date();
-      staleThreshold.setMinutes(
-        staleThreshold.getMinutes() - STALE_THRESHOLD_MINUTES
-      );
+      staleThreshold.setMinutes(staleThreshold.getMinutes() - STALE_THRESHOLD_MINUTES);
 
       const { error: cleanupError } = await supabase
         .from('party_members')
@@ -112,11 +105,7 @@ export function usePartyState() {
         .order('created_at', { ascending: true });
 
       if (error) {
-        logWithContext(
-          'usePartyState',
-          'fetchMembers',
-          `Error fetching members: ${error}`
-        );
+        logWithContext('usePartyState', 'fetchMembers', `Error fetching members: ${error}`);
         Sentry.captureException(error);
       } else {
         setMembers(data || []);
@@ -149,11 +138,7 @@ export function usePartyState() {
         }
       )
       .subscribe((status) => {
-        logWithContext(
-          'usePartyState',
-          'channelStatus',
-          `Supabase channel status: ${status}`
-        );
+        logWithContext('usePartyState', 'channelStatus', `Supabase channel status: ${status}`);
       });
 
     return () => {
@@ -181,11 +166,7 @@ export function usePartyState() {
       });
 
       if (error) {
-        logWithContext(
-          'usePartyState',
-          'updateMemberState',
-          `Database error: ${error.message}`
-        );
+        logWithContext('usePartyState', 'updateMemberState', `Database error: ${error.message}`);
         throw error;
       }
 
@@ -198,11 +179,7 @@ export function usePartyState() {
       setCurrentUser(member);
       localStorage.setItem('currentUser', JSON.stringify(member));
     } catch (error) {
-      logWithContext(
-        'usePartyState',
-        'updateMemberState',
-        `Error updating member state: ${error}`
-      );
+      logWithContext('usePartyState', 'updateMemberState', `Error updating member state: ${error}`);
       Sentry.captureException(error);
       throw error;
     }
@@ -246,11 +223,7 @@ export function usePartyState() {
       );
       try {
         if (!localTrackRef.current) {
-          logWithContext(
-            'usePartyState',
-            'joinVoiceChannel',
-            'Creating microphone track'
-          );
+          logWithContext('usePartyState', 'joinVoiceChannel', 'Creating microphone track');
           localTrackRef.current = await AgoraRTC.createMicrophoneAudioTrack();
           logWithContext(
             'usePartyState',
@@ -259,11 +232,7 @@ export function usePartyState() {
           );
         }
         if (!clientRef.current) {
-          logWithContext(
-            'usePartyState',
-            'joinVoiceChannel',
-            'Initializing Agora client'
-          );
+          logWithContext('usePartyState', 'joinVoiceChannel', 'Initializing Agora client');
           initializeAgoraClient();
         }
         logWithContext(
@@ -271,23 +240,14 @@ export function usePartyState() {
           'joinVoiceChannel',
           `Joining channel with AppID: ${AGORA_APP_ID}, Channel: ${CHANNEL_NAME}`
         );
-        await clientRef.current?.join(
-          AGORA_APP_ID,
-          CHANNEL_NAME,
-          AGORA_TEMP_TOKEN,
-          uidRef.current
-        );
+        await clientRef.current?.join(AGORA_APP_ID, CHANNEL_NAME, AGORA_TEMP_TOKEN, uidRef.current);
         logWithContext(
           'usePartyState',
           'joinVoiceChannel',
           'Successfully joined channel, publishing track'
         );
         await clientRef.current?.publish(localTrackRef.current);
-        logWithContext(
-          'usePartyState',
-          'joinVoiceChannel',
-          'Track published successfully'
-        );
+        logWithContext('usePartyState', 'joinVoiceChannel', 'Track published successfully');
         setIsJoined(true);
         setMicPermissionDenied(false);
       } catch (error) {
@@ -296,10 +256,7 @@ export function usePartyState() {
           'joinVoiceChannel',
           `Error joining voice channel: ${error}`
         );
-        if (
-          error instanceof Error &&
-          error.message.includes('Permission denied')
-        ) {
+        if (error instanceof Error && error.message.includes('Permission denied')) {
           setMicPermissionDenied(true);
         }
         await handleCleanup();
@@ -308,22 +265,14 @@ export function usePartyState() {
   }, [isJoined, initializeAgoraClient, handleCleanup]);
 
   const leaveVoiceChannel = useCallback(async () => {
-    logWithContext(
-      'usePartyState',
-      'leaveVoiceChannel',
-      'Leaving voice channel'
-    );
+    logWithContext('usePartyState', 'leaveVoiceChannel', 'Leaving voice channel');
     try {
       if (clientRef.current) {
         await clientRef.current.leave();
       }
       await handleCleanup();
     } catch (error) {
-      logWithContext(
-        'usePartyState',
-        'leaveVoiceChannel',
-        `Error leaving voice channel: ${error}`
-      );
+      logWithContext('usePartyState', 'leaveVoiceChannel', `Error leaving voice channel: ${error}`);
       Sentry.captureException(error);
     }
   }, [handleCleanup]);
@@ -332,11 +281,7 @@ export function usePartyState() {
     if (!currentUser) return;
 
     const newMuteState = !isMuted;
-    logWithContext(
-      'usePartyState',
-      'toggleMute',
-      `Mute toggled to: ${newMuteState}`
-    );
+    logWithContext('usePartyState', 'toggleMute', `Mute toggled to: ${newMuteState}`);
 
     if (localTrackRef.current) {
       if (newMuteState) {
@@ -408,11 +353,7 @@ export function usePartyState() {
   const joinParty = useCallback(
     async (name: string, avatar: string, status: string) => {
       try {
-        logWithContext(
-          'usePartyState',
-          'joinParty',
-          `Starting join process for ${name}`
-        );
+        logWithContext('usePartyState', 'joinParty', `Starting join process for ${name}`);
 
         await joinVoiceChannel();
 
@@ -433,17 +374,9 @@ export function usePartyState() {
 
         await updateMemberState(newMember);
 
-        logWithContext(
-          'usePartyState',
-          'joinParty',
-          'Join party successful, member state updated'
-        );
+        logWithContext('usePartyState', 'joinParty', 'Join party successful, member state updated');
       } catch (error) {
-        logWithContext(
-          'usePartyState',
-          'joinParty',
-          `Error joining party: ${error}`
-        );
+        logWithContext('usePartyState', 'joinParty', `Error joining party: ${error}`);
         Sentry.captureException(error);
         throw error;
       }
@@ -459,11 +392,7 @@ export function usePartyState() {
       await updateMemberState(updatedUser);
       setMembers((prev) => prev.filter((m) => m.id !== currentUser.id));
     } catch (error) {
-      logWithContext(
-        'usePartyState',
-        'leaveParty',
-        `Error leaving party: ${error}`
-      );
+      logWithContext('usePartyState', 'leaveParty', `Error leaving party: ${error}`);
       Sentry.captureException(error);
     }
   }, [leaveVoiceChannel, currentUser, updateMemberState]);
@@ -481,11 +410,7 @@ export function usePartyState() {
         await updateMemberState(updatedUser);
         setCurrentUser(updatedUser);
       } catch (error) {
-        logWithContext(
-          'usePartyState',
-          'editProfile',
-          `Error editing profile: ${error}`
-        );
+        logWithContext('usePartyState', 'editProfile', `Error editing profile: ${error}`);
         Sentry.captureException(error);
       }
     },
@@ -506,11 +431,7 @@ export function usePartyState() {
         setStoredUser(user);
       }
     } catch (error) {
-      logWithContext(
-        'usePartyState',
-        'initialize',
-        `Error during initialization: ${error}`
-      );
+      logWithContext('usePartyState', 'initialize', `Error during initialization: ${error}`);
       Sentry.captureException(error);
     }
   }, [updateMemberState]);
@@ -522,11 +443,7 @@ export function usePartyState() {
       try {
         await updateMemberState(currentUser);
       } catch (error) {
-        logWithContext(
-          'usePartyState',
-          'heartbeat',
-          `Error updating heartbeat: ${error}`
-        );
+        logWithContext('usePartyState', 'heartbeat', `Error updating heartbeat: ${error}`);
       }
     }, 30000); // Update every 30 seconds
 

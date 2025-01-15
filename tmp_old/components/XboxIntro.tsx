@@ -23,26 +23,14 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
         try {
           await videoElement.play();
           setIsMuted(false);
-          logWithContext(
-            'XboxIntro.tsx',
-            'attemptPlay',
-            'Video playing with sound.'
-          );
+          logWithContext('XboxIntro.tsx', 'attemptPlay', 'Video playing with sound.');
         } catch (error) {
-          logWithContext(
-            'XboxIntro.tsx',
-            'attemptPlay',
-            `Autoplay with sound failed: ${error}`
-          );
+          logWithContext('XboxIntro.tsx', 'attemptPlay', `Autoplay with sound failed: ${error}`);
           videoElement.muted = true;
           setIsMuted(true);
           try {
             await videoElement.play();
-            logWithContext(
-              'XboxIntro.tsx',
-              'attemptPlay',
-              'Video playing muted.'
-            );
+            logWithContext('XboxIntro.tsx', 'attemptPlay', 'Video playing muted.');
           } catch (mutedError) {
             logWithContext(
               'XboxIntro.tsx',
@@ -71,11 +59,7 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
     if (videoRef.current) {
       videoRef.current.muted = !videoRef.current.muted;
       setIsMuted(!isMuted);
-      logWithContext(
-        'XboxIntro.tsx',
-        'toggleMute',
-        `Mute toggled to ${!isMuted}.`
-      );
+      logWithContext('XboxIntro.tsx', 'toggleMute', `Mute toggled to ${!isMuted}.`);
     }
   };
 

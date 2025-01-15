@@ -29,10 +29,10 @@ export function EditProfileModal({
     control,
     handleSubmit,
     formState: { errors },
-    reset
+    reset,
   } = useForm<FormData>({
     defaultValues: initialData,
-    mode: 'onChange'
+    mode: 'onChange',
   });
 
   // Store the last form data to prevent unnecessary resets
@@ -43,9 +43,9 @@ export function EditProfileModal({
     const currentFormData = JSON.stringify({
       name: initialData.name,
       avatar: initialData.avatar,
-      status: initialData.status
+      status: initialData.status,
     });
-    
+
     if (currentFormData !== lastFormData.current) {
       reset(initialData);
       lastFormData.current = currentFormData;

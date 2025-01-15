@@ -45,40 +45,40 @@ export function PartyChat() {
     const init = async () => {
       try {
         if (!mounted || !currentUser) return;
-        
+
         if (logger) {
           logger.info('Initializing component', {
-            action: 'init'
+            action: 'init',
           });
         }
 
         await initialize();
-        
+
         if (mounted && logger) {
           logger.info('Initialization complete', {
-            action: 'init'
+            action: 'init',
           });
         }
       } catch (error) {
         if (mounted && logger) {
           logger.error('Initialization error', {
             action: 'init',
-            error: error as Error
+            error: error as Error,
           });
         }
         Sentry.captureException(error);
         showModal('join');
       }
     };
-    
+
     init();
-    
+
     return () => {
       mounted = false;
       abortController.abort();
       if (logger) {
         logger.info('Component unmounting', {
-          action: 'useEffect: cleanup'
+          action: 'useEffect: cleanup',
         });
       }
       resetForm();
@@ -89,19 +89,19 @@ export function PartyChat() {
     async (username: string, avatar: string, status: string) => {
       logger.info('Attempting to join party', {
         action: 'joinParty',
-        metadata: { username, avatar, status }
+        metadata: { username, avatar, status },
       });
 
       try {
         await joinParty(username, avatar, status);
         logger.info('Successfully joined party', {
           action: 'joinParty',
-          metadata: { username }
+          metadata: { username },
         });
       } catch (error) {
         logger.error('Failed to join party', {
           action: 'joinParty',
-          error: error instanceof Error ? error : new Error(String(error))
+          error: error instanceof Error ? error : new Error(String(error)),
         });
         throw error;
       }
@@ -113,19 +113,19 @@ export function PartyChat() {
     async (username: string, avatar: string, status: string) => {
       logger.info('Attempting to edit profile', {
         action: 'editProfile',
-        metadata: { username, avatar, status }
+        metadata: { username, avatar, status },
       });
 
       try {
         await editProfile(username, avatar, status);
         logger.info('Successfully edited profile', {
           action: 'editProfile',
-          metadata: { username }
+          metadata: { username },
         });
       } catch (error) {
         logger.error('Failed to edit profile', {
           action: 'editProfile',
-          error: error instanceof Error ? error : new Error(String(error))
+          error: error instanceof Error ? error : new Error(String(error)),
         });
         throw error;
       }
@@ -142,7 +142,7 @@ export function PartyChat() {
     } catch (error) {
       logger.error('Failed to leave party', {
         action: 'leaveParty',
-        error: error instanceof Error ? error : new Error(String(error))
+        error: error instanceof Error ? error : new Error(String(error)),
       });
       throw error;
     }
@@ -151,18 +151,18 @@ export function PartyChat() {
   const handleToggleMute = async () => {
     logger.info('Toggling mute', {
       action: 'toggleMute',
-      metadata: { currentUser }
+      metadata: { currentUser },
     });
     try {
       await toggleMute();
       logger.info('Mute toggled successfully', {
         action: 'toggleMute',
-        metadata: { currentUser }
+        metadata: { currentUser },
       });
     } catch (error) {
       logger.error('Error toggling mute', {
         action: 'toggleMute',
-        error: error as Error
+        error: error as Error,
       });
       Sentry.captureException(error);
     }
@@ -187,11 +187,14 @@ export function PartyChat() {
               setVideoError(true);
               logger.error('Video playback error', {
                 action: 'videoPlayback',
-                metadata: { elementId: 'xbox-bg', url: BACKGROUND_VIDEO_URL }
+                metadata: { elementId: 'xbox-bg', url: BACKGROUND_VIDEO_URL },
               });
             }}
           >
-            <source src={BACKGROUND_VIDEO_URL} type="video/mp4" />
+            <source
+              src={BACKGROUND_VIDEO_URL}
+              type="video/mp4"
+            />
           </video>
         )}
       </div>
@@ -207,13 +210,13 @@ export function PartyChat() {
                 action: 'openEditModal',
                 metadata: {
                   currentUser,
-                  storedAvatar
-                }
+                  storedAvatar,
+                },
               });
               showModal('edit', {
                 name: currentUser?.name || '',
                 avatar: currentUser?.avatar || storedAvatar || AVATARS[0],
-                status: currentUser?.game || ''
+                status: currentUser?.game || '',
               });
             }}
             className="group flex flex-col items-center"

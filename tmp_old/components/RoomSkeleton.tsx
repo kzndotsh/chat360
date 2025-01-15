@@ -28,7 +28,10 @@ export function RoomSkeleton() {
             <div className="flex flex-col sm:flex-row">
               <div className="order-1 flex h-[40px] sm:order-2 sm:h-[40px] sm:w-[423px]">
                 {[1, 2, 3].map((i) => (
-                  <div key={i} className="flex-1 animate-pulse bg-gray-300" />
+                  <div
+                    key={i}
+                    className="flex-1 animate-pulse bg-gray-300"
+                  />
                 ))}
               </div>
               <div className="order-2 flex h-[40px] flex-1 items-center justify-center bg-[#f0f0fa] sm:order-1 sm:items-end sm:justify-start">
@@ -79,7 +82,10 @@ export function RoomSkeleton() {
         {/* Controls Skeleton */}
         <div className="mt-1 flex flex-wrap items-center gap-1 px-[30px] sm:gap-2">
           {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="flex items-center gap-0 sm:gap-2">
+            <div
+              key={i}
+              className="flex items-center gap-0 sm:gap-2"
+            >
               <Skeleton className="h-3 w-3 rounded-full bg-gray-700 sm:h-4 sm:w-4" />
               <Skeleton className="h-4 w-16 bg-gray-700 sm:w-20" />
             </div>

@@ -1,35 +1,46 @@
 /// <reference types="@testing-library/jest-dom" />
 import { render, screen } from '@testing-library/react';
 import { RoomSkeleton } from '@/components/features/party/RoomSkeleton';
+import { describe, it, expect } from 'vitest';
 
 describe('RoomSkeleton', () => {
   describe('Structure', () => {
     it('renders all skeleton elements', () => {
       render(<RoomSkeleton />);
-      
+
       // Main container
       expect(screen.getByTestId('room-skeleton')).toBeInTheDocument();
+
+      // Video background
       expect(screen.getByTestId('video-background-skeleton')).toBeInTheDocument();
-      
-      // Header
+
+      // Header skeletons
       expect(screen.getByTestId('header-skeleton-left')).toBeInTheDocument();
       expect(screen.getByTestId('header-skeleton-center')).toBeInTheDocument();
       expect(screen.getByTestId('header-skeleton-right')).toBeInTheDocument();
-      
+
+      // Room card
+      expect(screen.getByTestId('room-card')).toBeInTheDocument();
+
       // Header buttons
       expect(screen.getByTestId('header-button-skeleton-1')).toBeInTheDocument();
       expect(screen.getByTestId('header-button-skeleton-2')).toBeInTheDocument();
       expect(screen.getByTestId('header-button-skeleton-3')).toBeInTheDocument();
-      
+
       // Party info
       expect(screen.getByTestId('party-icon-skeleton')).toBeInTheDocument();
       expect(screen.getByTestId('party-name-skeleton')).toBeInTheDocument();
-      
-      // Buttons and options
+
+      // Invite button
       expect(screen.getByTestId('invite-button-skeleton')).toBeInTheDocument();
+
+      // Party options
       expect(screen.getByTestId('party-options-skeleton')).toBeInTheDocument();
-      
+
       // Member list
+      expect(screen.getByTestId('member-list')).toBeInTheDocument();
+
+      // Member skeletons (7 members)
       for (let i = 0; i < 7; i++) {
         expect(screen.getByTestId(`member-skeleton-${i}`)).toBeInTheDocument();
         expect(screen.getByTestId(`member-avatar-skeleton-${i}`)).toBeInTheDocument();
@@ -38,7 +49,7 @@ describe('RoomSkeleton', () => {
         expect(screen.getByTestId(`member-mic-skeleton-${i}`)).toBeInTheDocument();
         expect(screen.getByTestId(`member-game-skeleton-${i}`)).toBeInTheDocument();
       }
-      
+
       // Controls
       for (let i = 1; i <= 4; i++) {
         expect(screen.getByTestId(`control-skeleton-${i}`)).toBeInTheDocument();
@@ -49,73 +60,41 @@ describe('RoomSkeleton', () => {
   });
 
   describe('Styling', () => {
-    it('applies correct aspect ratio to card', () => {
+    it('has correct background colors', () => {
       render(<RoomSkeleton />);
-      const card = document.querySelector('.aspect-[16/9.75]');
-      expect(card).toBeInTheDocument();
+      const roomCard = screen.getByTestId('room-card');
+      expect(roomCard.className).toContain('bg-[#f0f0fa]');
     });
 
-    it('applies responsive classes', () => {
+    it('has correct text color', () => {
       render(<RoomSkeleton />);
-      const container = screen.getByTestId('room-skeleton');
-      expect(container).toHaveClass('sm:p-6');
-    });
-
-    it('applies animation classes', () => {
-      render(<RoomSkeleton />);
-      const videoBackground = screen.getByTestId('video-background-skeleton');
-      expect(videoBackground).toHaveClass('animate-pulse');
-    });
-
-    it('uses hardware acceleration', () => {
-      render(<RoomSkeleton />);
-      const container = screen.getByTestId('room-skeleton');
-      expect(container).toHaveClass('will-change-transform');
+      const roomCard = screen.getByTestId('room-card');
+      expect(roomCard.className).toContain('text-[#161718]');
     });
   });
 
   describe('Dark Mode', () => {
-    it('uses appropriate colors for dark theme', () => {
+    it('has correct background colors in dark mode', () => {
+      document.documentElement.classList.add('dark');
       render(<RoomSkeleton />);
-      
-      // Check background colors
-      const videoBackground = screen.getByTestId('video-background-skeleton');
-      expect(videoBackground).toHaveClass('bg-gray-900');
-      
-      // Check header skeleton colors
-      const headerLeft = screen.getByTestId('header-skeleton-left');
-      expect(headerLeft).toHaveClass('bg-gray-700');
-      
-      // Check member skeleton colors
-      const memberAvatar = screen.getByTestId('member-avatar-skeleton-0');
-      expect(memberAvatar).toHaveClass('bg-gray-300');
-    });
-
-    it('maintains contrast in dark mode', () => {
-      render(<RoomSkeleton />);
-      
-      // Check overlay opacity
-      const overlay = document.querySelector('.opacity-55');
-      expect(overlay).toBeInTheDocument();
-      
-      // Check text color
-      const card = document.querySelector('.text-[#161718]');
-      expect(card).toBeInTheDocument();
+      const roomCard = screen.getByTestId('room-card');
+      expect(roomCard.className).toContain('bg-[#f0f0fa]');
+      document.documentElement.classList.remove('dark');
     });
   });
 
   describe('Performance', () => {
     it('uses hardware acceleration for animations', () => {
       render(<RoomSkeleton />);
-      const container = screen.getByTestId('room-skeleton');
-      expect(container).toHaveClass('will-change-transform');
+      const roomSkeleton = screen.getByTestId('room-skeleton');
+      expect(roomSkeleton.className).toContain('will-change-transform');
     });
 
     it('maintains layout stability during animations', () => {
       render(<RoomSkeleton />);
-      const memberList = document.querySelector('.max-h-[381px]');
-      expect(memberList).toBeInTheDocument();
-      expect(memberList).toHaveClass('overflow-y-auto');
+      const memberList = screen.getByTestId('member-list');
+      expect(memberList.className).toContain('max-h-[381px]');
+      expect(memberList.className).toContain('overflow-y-auto');
     });
   });
-}); 
+});

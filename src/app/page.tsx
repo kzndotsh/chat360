@@ -10,14 +10,16 @@ import { logger } from '@/lib/utils/logger';
 
 const PartyChat = dynamic(
   () =>
-    import('@/components/features/party/PartyChat').then((mod) => mod.PartyChat).catch((err) => {
-      logger.error(`Error loading PartyChat: ${err.message}`);
+    import('@/components/features/party/PartyChat')
+      .then((mod) => mod.PartyChat)
+      .catch((err) => {
+        logger.error(`Error loading PartyChat: ${err.message}`);
 
-      const FallbackComponent = () => <div>Failed to load chat component</div>;
-      FallbackComponent.displayName = 'FallbackComponent';
+        const FallbackComponent = () => <div>Failed to load chat component</div>;
+        FallbackComponent.displayName = 'FallbackComponent';
 
-      return FallbackComponent;
-    }),
+        return FallbackComponent;
+      }),
   {
     ssr: false,
     loading: () => {
@@ -33,7 +35,7 @@ export default function Page() {
   useEffect(() => {
     logger.info('Showing XboxIntro', {
       component: 'Page.tsx',
-      action: 'render'
+      action: 'render',
     });
   }, []);
 

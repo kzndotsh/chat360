@@ -18,11 +18,7 @@ export const MemberList = memo(function MemberList({
   volumeLevels = {},
   currentUserId,
 }: MemberListProps) {
-  logWithContext(
-    'MemberList.tsx',
-    'render',
-    `Rendering Members: ${JSON.stringify(members)}`
-  );
+  logWithContext('MemberList.tsx', 'render', `Rendering Members: ${JSON.stringify(members)}`);
 
   const getMicIcon = (member: PartyMember, volumeLevel: number) => {
     if (member.muted) {

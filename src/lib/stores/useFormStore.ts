@@ -39,7 +39,7 @@ export const useFormStore = create<FormStore>((set, get) => ({
   setFormData: (data) => {
     logger.info(`Setting form data: ${JSON.stringify(data)}`, {
       component: 'useFormStore',
-      action: 'setFormData'
+      action: 'setFormData',
     });
     set((state) => ({
       formData: { ...state.formData, ...data },
@@ -58,7 +58,7 @@ export const useFormStore = create<FormStore>((set, get) => ({
   saveLastUsedData: (data) => {
     logger.info(`Saving last used data: ${JSON.stringify(data)}`, {
       component: 'useFormStore',
-      action: 'saveLastUsedData'
+      action: 'saveLastUsedData',
     });
     set(() => ({
       lastUsedData: data,
@@ -85,7 +85,7 @@ export const useFormStore = create<FormStore>((set, get) => ({
         const data = JSON.parse(stored) as FormData;
         logger.info(`Initializing with stored data: ${JSON.stringify(data)}`, {
           component: 'useFormStore',
-          action: 'initializeWithLastUsed'
+          action: 'initializeWithLastUsed',
         });
         set((state) => ({
           formData: {
@@ -99,7 +99,7 @@ export const useFormStore = create<FormStore>((set, get) => ({
         logger.error(`Error parsing stored data: ${error}`, {
           component: 'useFormStore',
           action: 'initializeWithLastUsed',
-          metadata: { error }
+          metadata: { error },
         });
         localStorage.removeItem('lastUsedFormData');
       }

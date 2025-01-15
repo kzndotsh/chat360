@@ -108,7 +108,7 @@ const MemberListItem = memo(function MemberListItem({
         <button
           onClick={toggleMute}
           className="ml-5 flex h-9 w-9 items-center justify-center text-[#161718] hover:text-gray-700"
-          aria-label={member.muted ? "Unmute" : "Mute"}
+          aria-label={member.muted ? 'Unmute' : 'Mute'}
           disabled={member.id !== currentUserId || !member.isActive}
         >
           {getMicIcon(member, volumeLevel)}
@@ -122,14 +122,17 @@ const MemberListItem = memo(function MemberListItem({
             className="object-cover opacity-90 mix-blend-multiply"
           />
         </div>
-        <span className="flex-1 overflow-hidden text-[1.35rem] font-medium leading-tight text-[#282b2f]">
+        <span
+          data-testid="member-name"
+          className="flex-1 overflow-hidden truncate text-[1.35rem] font-medium leading-tight text-[#282b2f]"
+        >
           {member.name || 'Anonymous'}
         </span>
       </div>
       <div className="ml-[-50px] flex w-[23px] items-center justify-center tracking-normal">
         <svg
           className="h-6 w-6"
-          fill={member.isActive ? "#acd43b" : "#6B717D"}
+          fill={member.isActive ? '#acd43b' : '#6B717D'}
           viewBox="0 0 3000 3000"
           xmlns="http://www.w3.org/2000/svg"
         >
@@ -138,7 +141,10 @@ const MemberListItem = memo(function MemberListItem({
         </svg>
       </div>
       <div className="ml-[59px] flex flex-1 items-center">
-        <span className="pl-2 text-left text-[1.35rem] font-medium leading-tight text-[#282b2f]">
+        <span
+          data-testid="member-game"
+          className="truncate pl-2 text-left text-[1.35rem] font-medium leading-tight text-[#282b2f]"
+        >
           {member.game || 'Not playing'}
         </span>
       </div>
@@ -155,22 +161,30 @@ export const MemberList = memo(function MemberList({
   currentUserId,
 }: MemberListProps) {
   return (
-    <div className="bubble-scrollbar max-h-[381px] overflow-y-auto">
+    <div
+      className="bubble-scrollbar max-h-[381px] overflow-y-auto"
+      role="list"
+      aria-label="Party members"
+    >
       <div>
         {members.length === 0 ? (
-          <div className="p-4 text-center text-[#282b2f]">
-            No members in party
-          </div>
+          <div className="p-4 text-center text-[#282b2f]">No members in party</div>
         ) : (
           members.map((member, index) => (
-            <MemberListItem
+            <div
               key={member.id}
-              member={member}
-              volumeLevel={volumeLevels[member.id] || 0}
-              currentUserId={currentUserId}
-              toggleMute={toggleMute}
-              shouldDisplayBorder={index !== 0}
-            />
+              role="listitem"
+              aria-label={`${member.name || 'Anonymous'} - ${member.game || 'Not playing'}`}
+              tabIndex={0}
+            >
+              <MemberListItem
+                member={member}
+                volumeLevel={volumeLevels[member.id] || 0}
+                currentUserId={currentUserId}
+                toggleMute={toggleMute}
+                shouldDisplayBorder={index !== 0}
+              />
+            </div>
           ))
         )}
       </div>

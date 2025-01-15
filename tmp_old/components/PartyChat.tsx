@@ -54,101 +54,49 @@ export default function PartyChat() {
     };
   }, [initialize, showModal]);
 
-  const handleJoinParty = async (
-    username: string,
-    avatar: string,
-    status: string
-  ) => {
-    logWithContext(
-      'PartyChat',
-      'handleJoinParty',
-      `Attempt to join party as ${username}`
-    );
+  const handleJoinParty = async (username: string, avatar: string, status: string) => {
+    logWithContext('PartyChat', 'handleJoinParty', `Attempt to join party as ${username}`);
     try {
       await joinParty(username, avatar, status);
-      logWithContext(
-        'PartyChat',
-        'handleJoinParty',
-        `Joined party as ${username}`
-      );
+      logWithContext('PartyChat', 'handleJoinParty', `Joined party as ${username}`);
     } catch (error) {
       Sentry.captureException(error);
-      logWithContext(
-        'PartyChat',
-        'handleJoinParty',
-        `Join party error: ${error}`
-      );
+      logWithContext('PartyChat', 'handleJoinParty', `Join party error: ${error}`);
     }
   };
 
-  const handleEditProfile = async (
-    username: string,
-    avatar: string,
-    status: string
-  ) => {
-    logWithContext(
-      'PartyChat',
-      'handleEditProfile',
-      `Attempt to edit profile for ${username}`
-    );
+  const handleEditProfile = async (username: string, avatar: string, status: string) => {
+    logWithContext('PartyChat', 'handleEditProfile', `Attempt to edit profile for ${username}`);
     try {
       await editProfile(username, avatar, status);
-      logWithContext(
-        'PartyChat',
-        'handleEditProfile',
-        `Profile edited for ${username}`
-      );
+      logWithContext('PartyChat', 'handleEditProfile', `Profile edited for ${username}`);
     } catch (error) {
       Sentry.captureException(error);
-      logWithContext(
-        'PartyChat',
-        'handleEditProfile',
-        `Edit profile error: ${error}`
-      );
+      logWithContext('PartyChat', 'handleEditProfile', `Edit profile error: ${error}`);
     }
   };
 
   const handleLeaveParty = async () => {
-    logWithContext(
-      'PartyChat',
-      'handleLeaveParty',
-      'Attempting to leave party'
-    );
+    logWithContext('PartyChat', 'handleLeaveParty', 'Attempting to leave party');
     try {
       await leaveParty();
       logWithContext('PartyChat', 'handleLeaveParty', 'Left party');
     } catch (error) {
       Sentry.captureException(error);
-      logWithContext(
-        'PartyChat',
-        'handleLeaveParty',
-        `Leave party error: ${error}`
-      );
+      logWithContext('PartyChat', 'handleLeaveParty', `Leave party error: ${error}`);
     }
   };
 
   const handleToggleMute = async () => {
-    logWithContext(
-      'PartyChat',
-      'handleToggleMute',
-      'Attempting to toggle mute'
-    );
+    logWithContext('PartyChat', 'handleToggleMute', 'Attempting to toggle mute');
     try {
       if (currentUser?.id) {
         await toggleMute();
-        logWithContext(
-          'PartyChat',
-          'handleToggleMute',
-          `Toggled mute for ${currentUser.name}`
-        );
+        logWithContext('PartyChat', 'handleToggleMute', `Toggled mute for ${currentUser.name}`);
       }
     } catch (error) {
       Sentry.captureException(error);
-      logWithContext(
-        'PartyChat',
-        'handleToggleMute',
-        `Toggle mute error: ${error}`
-      );
+      logWithContext('PartyChat', 'handleToggleMute', `Toggle mute error: ${error}`);
     }
   };
 
@@ -171,7 +119,10 @@ export default function PartyChat() {
               className="absolute left-1/2 top-1/2 min-h-full min-w-full -translate-x-1/2 -translate-y-1/2 transform object-cover"
               style={{ filter: 'blur(6px)' }}
             >
-              <source src={BACKGROUND_VIDEO_URL} type="video/mp4" />
+              <source
+                src={BACKGROUND_VIDEO_URL}
+                type="video/mp4"
+              />
             </video>
           )}
         </div>
@@ -220,16 +171,12 @@ export default function PartyChat() {
             <PartyHeader membersCount={members.length} />
 
             <div className="flex cursor-pointer items-center gap-2 bg-gradient-to-b from-[#70cc00] to-[#409202] py-[6px] pl-[30px] shadow-[inset_0_-2px_4px_rgba(0,0,0,0.1)] transition-all hover:brightness-110">
-              <span className="text-[1.15rem] font-medium text-white">
-                Copy CA
-              </span>
+              <span className="text-[1.15rem] font-medium text-white">Copy CA</span>
               <Clipboard className="h-3.5 w-3.5 text-white" />
             </div>
 
             <div className="border-b border-gray-400 py-[6px] pl-[30px] text-[#282b2f] shadow-[inset_0_-2px_4px_rgba(0,0,0,0.08)]">
-              <span className="text-[1.15rem] font-medium">
-                Party Options: Party Chat
-              </span>
+              <span className="text-[1.15rem] font-medium">Party Options: Party Chat</span>
             </div>
 
             <MemberList
@@ -242,9 +189,7 @@ export default function PartyChat() {
 
           <PartyControls
             currentUser={
-              currentUser
-                ? { ...currentUser, isActive: currentUser.isActive ?? false }
-                : null
+              currentUser ? { ...currentUser, isActive: currentUser.isActive ?? false } : null
             }
             storedAvatar={storedAvatar}
             onJoin={() => showModal('join')}

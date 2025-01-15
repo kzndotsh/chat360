@@ -41,9 +41,7 @@ export function PartyHeader({ membersCount }: PartyHeaderProps) {
         <div className="order-2 flex h-[40px] flex-1 items-center justify-center bg-[#f8f8f8] sm:order-1 sm:items-center sm:justify-start">
           <div className="flex w-full items-center gap-2 pl-[30px] sm:mt-0">
             <UserGroupIcon className="w-10 text-[#282b2f] opacity-90" />
-            <span className="text-lg font-medium text-[#282b2f] sm:text-xl">
-              Chat360 Party
-            </span>
+            <span className="text-lg font-medium text-[#282b2f] sm:text-xl">Chat360 Party</span>
           </div>
         </div>
 
@@ -53,9 +51,7 @@ export function PartyHeader({ membersCount }: PartyHeaderProps) {
             alt="Member Count Icon"
             iconSize="w-7 h-6"
           >
-            <span className="text-bold ml-2 text-sm text-white opacity-90">
-              {membersCount}
-            </span>
+            <span className="text-bold ml-2 text-sm text-white opacity-90">{membersCount}</span>
           </HeaderButton>
 
           <HeaderButton
@@ -64,7 +60,11 @@ export function PartyHeader({ membersCount }: PartyHeaderProps) {
             iconSize="w-7 h-7"
           />
 
-          <HeaderButton icon={TbBrandX} alt="Twitter Icon" iconSize="w-7 h-7" />
+          <HeaderButton
+            icon={TbBrandX}
+            alt="Twitter Icon"
+            iconSize="w-7 h-7"
+          />
         </div>
       </div>
       <div className="h-[10px] border-b border-[#e5e5e5] bg-[#f8f8f8]"></div>

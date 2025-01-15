@@ -26,7 +26,7 @@ export function usePartyState() {
   const loggerRef = useRef(logger);
   const supabaseChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const cleanupRef = useRef(false);
-  
+
   useEffect(() => {
     loggerRef.current = logger;
   }, []);
@@ -58,15 +58,15 @@ export function usePartyState() {
       uidRef.current = newUid;
       localStorage.setItem(STORAGE_KEY, newUid);
     }
-    loggerRef.current.info('UID initialized', { 
+    loggerRef.current.info('UID initialized', {
       action: 'initUID',
-      metadata: { uid: uidRef.current }
+      metadata: { uid: uidRef.current },
     });
   }, [loggerRef]);
 
   const handleCleanup = useCallback(async () => {
     loggerRef.current.debug('Starting cleanup', { action: 'cleanup' });
-    
+
     if (volumeIntervalRef.current) {
       clearInterval(volumeIntervalRef.current);
       volumeIntervalRef.current = null;
@@ -85,7 +85,7 @@ export function usePartyState() {
     setIsJoined(false);
     setIsConnected(false);
     setIsMuted(false);
-    
+
     loggerRef.current.info('Cleanup completed', { action: 'cleanup' });
   }, []);
 
@@ -105,7 +105,7 @@ export function usePartyState() {
       if (cleanupError) {
         loggerRef.current.error('Failed to cleanup stale members', {
           action: 'cleanupStaleMembers',
-          error: cleanupError
+          error: cleanupError,
         });
         return; // Exit early if cleanup fails
       }
@@ -120,7 +120,7 @@ export function usePartyState() {
       if (error) {
         loggerRef.current.error('Failed to fetch members', {
           action: 'fetchMembers',
-          error
+          error,
         });
         return; // Exit early if fetch fails
       }
@@ -130,18 +130,18 @@ export function usePartyState() {
 
       loggerRef.current.info('Members fetched successfully', {
         action: 'fetchMembers',
-        metadata: { memberCount: data?.length || 0 }
+        metadata: { memberCount: data?.length || 0 },
       });
     } catch (error) {
       loggerRef.current.error('Unexpected error fetching members', {
         action: 'fetchMembers',
-        error: error as Error
+        error: error as Error,
       });
     } finally {
       const duration = performance.now() - startTime;
       loggerRef.current.info('Fetch members completed', {
         action: 'fetchMembers',
-        metadata: { duration }
+        metadata: { duration },
       });
     }
   }, [loggerRef]);
@@ -152,13 +152,13 @@ export function usePartyState() {
     }
 
     loggerRef.current.debug('Setting up realtime subscription', { action: 'setupRealtime' });
-    
+
     // Initial fetch
     fetchMembers();
 
     // Set up realtime subscription with debounce
     let timeoutId: NodeJS.Timeout;
-    
+
     supabaseChannelRef.current = supabase
       .channel('party_changes')
       .on(
@@ -169,9 +169,9 @@ export function usePartyState() {
 
           loggerRef.current.debug('Received realtime update', {
             action: 'realtimeUpdate',
-            metadata: { payload }
+            metadata: { payload },
           });
-          
+
           // Debounce the fetchMembers call
           clearTimeout(timeoutId);
           timeoutId = setTimeout(() => {
@@ -185,7 +185,7 @@ export function usePartyState() {
         if (!cleanupRef.current) {
           loggerRef.current.info('Supabase channel status updated', {
             action: 'channelStatus',
-            metadata: { status }
+            metadata: { status },
           });
         }
       });
@@ -210,80 +210,86 @@ export function usePartyState() {
     };
   }, [setupRealtimeSubscription, cleanupRealtimeSubscription]);
 
-  const updateMemberState = useCallback(async (member: PartyMember) => {
-    try {
-      loggerRef.current.info('Updating member state', {
-        action: 'updateMemberState',
-        metadata: { member }
-      });
-
-      const { error } = await supabase.from('party_members').upsert({
-        id: member.id,
-        name: member.name,
-        avatar: member.avatar,
-        game: member.game,
-        muted: member.muted,
-        is_active: member.isActive,
-        agora_uid: member.isActive ? member.agora_uid || parseInt(uidRef.current) : null,
-        last_seen: new Date().toISOString(),
-      });
-
-      if (error) {
-        loggerRef.current.error('Failed to update member state', {
+  const updateMemberState = useCallback(
+    async (member: PartyMember) => {
+      try {
+        loggerRef.current.info('Updating member state', {
           action: 'updateMemberState',
-          error: new Error(error.message)
+          metadata: { member },
         });
+
+        const { error } = await supabase.from('party_members').upsert({
+          id: member.id,
+          name: member.name,
+          avatar: member.avatar,
+          game: member.game,
+          muted: member.muted,
+          is_active: member.isActive,
+          agora_uid: member.isActive ? member.agora_uid || parseInt(uidRef.current) : null,
+          last_seen: new Date().toISOString(),
+        });
+
+        if (error) {
+          loggerRef.current.error('Failed to update member state', {
+            action: 'updateMemberState',
+            error: new Error(error.message),
+          });
+          throw error;
+        }
+
+        loggerRef.current.info('Member state updated successfully', {
+          action: 'updateMemberState',
+          metadata: { member },
+        });
+
+        // Batch state updates
+        const updates = () => {
+          setCurrentUser(member);
+          setStoredUser(member);
+          localStorage.setItem('currentUser', JSON.stringify(member));
+
+          // Immediately update members list
+          setMembers((prev) => {
+            const newMembers = prev.filter((m) => m.id !== member.id);
+            if (member.isActive) {
+              newMembers.push(member);
+            }
+            return newMembers;
+          });
+        };
+        updates();
+      } catch (error) {
+        loggerRef.current.error('Error updating member state', {
+          action: 'updateMemberState',
+          error: error instanceof Error ? error : new Error(String(error)),
+        });
+        Sentry.captureException(error);
         throw error;
       }
+    },
+    [loggerRef]
+  );
 
-      loggerRef.current.info('Member state updated successfully', {
-        action: 'updateMemberState',
-        metadata: { member }
+  const handleUserPublished = useCallback(
+    async (user: IAgoraRTCRemoteUser, mediaType: 'audio' | 'video') => {
+      loggerRef.current.info('User published', {
+        action: 'UserPublished',
+        metadata: { user, mediaType },
       });
-
-      // Batch state updates
-      const updates = () => {
-        setCurrentUser(member);
-        setStoredUser(member);
-        localStorage.setItem('currentUser', JSON.stringify(member));
-        
-        // Immediately update members list
-        setMembers(prev => {
-          const newMembers = prev.filter(m => m.id !== member.id);
-          if (member.isActive) {
-            newMembers.push(member);
-          }
-          return newMembers;
-        });
-      };
-      updates();
-    } catch (error) {
-      loggerRef.current.error('Error updating member state', {
-        action: 'updateMemberState',
-        error: error instanceof Error ? error : new Error(String(error))
-      });
-      Sentry.captureException(error);
-      throw error;
-    }
-  }, [loggerRef]);
-
-  const handleUserPublished = useCallback(async (user: IAgoraRTCRemoteUser, mediaType: 'audio' | 'video') => {
-    loggerRef.current.info('User published', {
-      action: 'UserPublished',
-      metadata: { user, mediaType }
-    });
-    if (mediaType === 'audio') {
-      await clientRef.current?.subscribe(user, mediaType);
-      user.audioTrack?.play();
-    }
-  }, []);
+      if (mediaType === 'audio') {
+        await clientRef.current?.subscribe(user, mediaType);
+        user.audioTrack?.play();
+      }
+    },
+    []
+  );
 
   const handleUserUnpublished = useCallback((user: IAgoraRTCRemoteUser) => {
     loggerRef.current.info('User unpublished', {
       action: 'UserUnpublished',
-      metadata: { user }
+      metadata: { user },
     });
-    setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
+    setRemoteUsers((prev) => prev.filter((u) => u.uid !== user.uid));
   }, []);
 
   const startVolumeDetection = useCallback(() => {
@@ -299,9 +305,9 @@ export function usePartyState() {
       // Only update if volume changed by more than 5%
       if (Math.abs(volume - lastVolume) > 0.05) {
         lastVolume = volume;
-        setVolumeLevels(prev => ({
+        setVolumeLevels((prev) => ({
           ...prev,
-          [uidRef.current]: volume
+          [uidRef.current]: volume,
         }));
       }
     }, 250); // Reduced from 100ms to 250ms
@@ -327,7 +333,8 @@ export function usePartyState() {
       const { token, privileges } = await response.json();
 
       // Set up next token renewal - 30 seconds before privilege expiration
-      const timeUntilRenewal = (privileges.privilegeExpireTimestamp - Math.floor(Date.now() / 1000) - 30) * 1000;
+      const timeUntilRenewal =
+        (privileges.privilegeExpireTimestamp - Math.floor(Date.now() / 1000) - 30) * 1000;
       setTimeout(renewToken, timeUntilRenewal);
 
       // Update client with new token
@@ -335,13 +342,13 @@ export function usePartyState() {
         await clientRef.current.renewToken(token);
         loggerRef.current.info('Token renewed successfully', {
           action: 'renewToken',
-          metadata: { privileges }
+          metadata: { privileges },
         });
       }
     } catch (error) {
       loggerRef.current.error('Failed to renew token', {
         action: 'renewToken',
-        error: error instanceof Error ? error : new Error(String(error))
+        error: error instanceof Error ? error : new Error(String(error)),
       });
       Sentry.captureException(error);
     }
@@ -384,13 +391,13 @@ export function usePartyState() {
       client.on('user-unpublished', handleUserUnpublished);
       client.on('token-privilege-will-expire', () => {
         loggerRef.current.info('Token privilege will expire soon', {
-          action: 'tokenPrivilegeExpiring'
+          action: 'tokenPrivilegeExpiring',
         });
         renewToken();
       });
       client.on('token-privilege-did-expire', () => {
         loggerRef.current.warn('Token privilege expired', {
-          action: 'tokenPrivilegeExpired'
+          action: 'tokenPrivilegeExpired',
         });
         renewToken();
       });
@@ -404,7 +411,8 @@ export function usePartyState() {
       startVolumeDetection();
 
       // Set up initial token renewal
-      const timeUntilRenewal = (privileges.privilegeExpireTimestamp - Math.floor(Date.now() / 1000) - 30) * 1000;
+      const timeUntilRenewal =
+        (privileges.privilegeExpireTimestamp - Math.floor(Date.now() / 1000) - 30) * 1000;
       setTimeout(renewToken, timeUntilRenewal);
     } catch (error) {
       if (error instanceof Error && error.message.includes('Permission denied')) {
@@ -421,21 +429,21 @@ export function usePartyState() {
 
     loggerRef.current.info('Attempting to join voice channel', {
       action: 'joinVoiceChannel',
-      metadata: { uid: uidRef.current }
+      metadata: { uid: uidRef.current },
     });
     try {
       if (!localTrackRef.current) {
         loggerRef.current.info('Creating microphone track', {
-          action: 'joinVoiceChannel'
+          action: 'joinVoiceChannel',
         });
         localTrackRef.current = await AgoraRTC.createMicrophoneAudioTrack();
         loggerRef.current.info('Microphone track created successfully', {
-          action: 'joinVoiceChannel'
+          action: 'joinVoiceChannel',
         });
       }
       if (!clientRef.current) {
         loggerRef.current.info('Initializing Agora client', {
-          action: 'joinVoiceChannel'
+          action: 'joinVoiceChannel',
         });
         await initializeAgoraClient();
       }
@@ -444,7 +452,7 @@ export function usePartyState() {
     } catch (error) {
       loggerRef.current.error('Error joining voice channel', {
         action: 'joinVoiceChannel',
-        error: error as Error
+        error: error as Error,
       });
       if (error instanceof Error && error.message.includes('Permission denied')) {
         setMicPermissionDenied(true);
@@ -456,7 +464,7 @@ export function usePartyState() {
 
   const leaveVoiceChannel = useCallback(async () => {
     loggerRef.current.info('Leaving voice channel', {
-      action: 'leaveVoiceChannel'
+      action: 'leaveVoiceChannel',
     });
     try {
       if (clientRef.current) {
@@ -466,7 +474,7 @@ export function usePartyState() {
     } catch (error) {
       loggerRef.current.error('Error leaving voice channel', {
         action: 'leaveVoiceChannel',
-        error: error as Error
+        error: error as Error,
       });
       Sentry.captureException(error);
     }
@@ -480,7 +488,7 @@ export function usePartyState() {
     const newMuteState = !isMuted;
     loggerRef.current.info('Mute toggled', {
       action: 'toggleMute',
-      metadata: { newMuteState }
+      metadata: { newMuteState },
     });
 
     if (localTrackRef.current) {
@@ -574,7 +582,7 @@ export function usePartyState() {
       try {
         loggerRef.current.info('Starting join process', {
           action: 'joinParty',
-          metadata: { name }
+          metadata: { name },
         });
 
         await joinVoiceChannel();
@@ -586,7 +594,7 @@ export function usePartyState() {
         // 4. Default values
         const lastUsedData = JSON.parse(localStorage.getItem('lastUsedFormData') || 'null');
         const storedUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
-        
+
         const newMember: PartyMember = {
           id: storedUser?.id || crypto.randomUUID(),
           name: name || lastUsedData?.name || storedUser?.name || '',
@@ -599,18 +607,18 @@ export function usePartyState() {
 
         loggerRef.current.info('Updating member state', {
           action: 'joinParty',
-          metadata: { member: newMember }
+          metadata: { member: newMember },
         });
 
         await updateMemberState(newMember);
 
         loggerRef.current.info('Join party successful, member state updated', {
-          action: 'joinParty'
+          action: 'joinParty',
         });
       } catch (error) {
         loggerRef.current.error('Error joining party', {
           action: 'joinParty',
-          error: error as Error
+          error: error as Error,
         });
         Sentry.captureException(error);
         throw error;
@@ -631,7 +639,7 @@ export function usePartyState() {
     } catch (error) {
       loggerRef.current.error('Error leaving party', {
         action: 'leaveParty',
-        error: error as Error
+        error: error as Error,
       });
       Sentry.captureException(error);
     }
@@ -641,7 +649,7 @@ export function usePartyState() {
     async (name: string, avatar: string, status: string) => {
       // Get stored user data to preserve ID if it exists
       const storedUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
-      
+
       const updatedUser: PartyMember = {
         id: storedUser?.id || crypto.randomUUID(),
         name,
@@ -655,18 +663,18 @@ export function usePartyState() {
       try {
         await updateMemberState(updatedUser);
         setCurrentUser(updatedUser);
-        
+
         // Update local storage with latest data
         localStorage.setItem('currentUser', JSON.stringify(updatedUser));
-        
+
         loggerRef.current.info('Profile updated successfully', {
           action: 'editProfile',
-          metadata: { updatedUser }
+          metadata: { updatedUser },
         });
       } catch (error) {
         loggerRef.current.error('Error editing profile', {
           action: 'editProfile',
-          error: error as Error
+          error: error as Error,
         });
         Sentry.captureException(error);
         throw error;
@@ -683,7 +691,7 @@ export function usePartyState() {
       }
 
       loggerRef.current.debug('Starting initialization', { action: 'initialize' });
-      
+
       // Set initialized first to prevent race conditions
       initialized.current = true;
 
@@ -696,9 +704,9 @@ export function usePartyState() {
         uidRef.current = newUid;
         localStorage.setItem(STORAGE_KEY, newUid);
       }
-      loggerRef.current.info('UID initialized', { 
+      loggerRef.current.info('UID initialized', {
         action: 'initUID',
-        metadata: { uid: uidRef.current }
+        metadata: { uid: uidRef.current },
       });
 
       // Load stored user data and last used data
@@ -723,7 +731,7 @@ export function usePartyState() {
           muted: false,
           agora_uid: parseInt(uidRef.current),
         };
-       
+
         localStorage.setItem('currentUser', JSON.stringify(user));
       }
 
@@ -732,7 +740,7 @@ export function usePartyState() {
     } catch (error) {
       loggerRef.current.error('Error during initialization', {
         action: 'initialize',
-        error: error as Error
+        error: error as Error,
       });
       initialized.current = false;
       Sentry.captureException(error);
@@ -752,7 +760,7 @@ export function usePartyState() {
         } catch (error) {
           loggerRef.current.error('Failed to send heartbeat', {
             action: 'heartbeat',
-            error: error instanceof Error ? error : new Error(String(error))
+            error: error instanceof Error ? error : new Error(String(error)),
           });
         }
       }, 30000);

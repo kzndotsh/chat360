@@ -11,15 +11,15 @@ interface BaseModalProps {
 export function BaseModal({ children, onClose, isSubmitting = false }: BaseModalProps) {
   const handleClose = useCallback(() => {
     if (isSubmitting) {
-      logger.info('Close prevented - form is submitting', { 
-        component: 'BaseModal', 
-        action: 'handleClose' 
+      logger.info('Close prevented - form is submitting', {
+        component: 'BaseModal',
+        action: 'handleClose',
       });
       return;
     }
-    logger.info('Modal closed', { 
-      component: 'BaseModal', 
-      action: 'handleClose' 
+    logger.info('Modal closed', {
+      component: 'BaseModal',
+      action: 'handleClose',
     });
     onClose();
   }, [isSubmitting, onClose]);

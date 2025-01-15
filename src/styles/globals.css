@@ -18,7 +18,8 @@
 
 body {
   color: rgb(var(--foreground-rgb));
-  background: linear-gradient(to bottom, transparent, rgb(var(--background-end-rgb))) rgb(var(--background-start-rgb));
+  background: linear-gradient(to bottom, transparent, rgb(var(--background-end-rgb)))
+    rgb(var(--background-start-rgb));
   font-family:
     var(--font-inter),
     ui-sans-serif,
@@ -48,13 +49,13 @@ body {
 }
 
 .bubble-scrollbar::-webkit-scrollbar-thumb {
-  background: #6B717D;
+  background: #6b717d;
   border: 4px solid #e5e5e5;
   border-radius: 8px;
 }
 
 .bubble-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #5D626D;
+  background: #5d626d;
 }
 
 @keyframes slideDown {
@@ -68,7 +69,6 @@ body {
 }
 
 @keyframes fadeOut {
-
   0%,
   50% {
     opacity: 1;

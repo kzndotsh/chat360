@@ -7,7 +7,7 @@ import { config } from 'dotenv';
 config();
 
 // Extend Vitest's expect with Testing Library's matchers
-Object.keys(matchers).forEach(key => {
+Object.keys(matchers).forEach((key) => {
   const matcher = matchers[key as keyof typeof matchers];
   if (typeof matcher === 'function') {
     expect.extend({ [key]: matcher });

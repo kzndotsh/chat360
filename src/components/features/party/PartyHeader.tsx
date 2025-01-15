@@ -1,11 +1,12 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { UserIcon } from './icons/UserIcon';
 import { Chat360Icon } from './icons/Chat360Icon';
 import { TbBrandX } from 'react-icons/tb';
 import { BiSolidBarChartAlt2 } from 'react-icons/bi';
 import { Clipboard } from 'lucide-react';
+import { logger } from '@/lib/utils/logger';
 
 interface PartyHeaderProps {
   membersCount: number;
@@ -34,15 +35,18 @@ const HeaderButton = ({
 );
 
 export function PartyHeader({ membersCount }: PartyHeaderProps) {
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'success' | 'error'>('idle');
+
   return (
-    <div className="flex flex-col shadow-[0_2px_4px_rgba(0,0,0,0.05)]">
-      <div className="flex flex-col sm:flex-row">
+    <div
+      role="banner"
+      className="flex flex-col items-center justify-between shadow-[0_2px_4px_rgba(0,0,0,0.05)]"
+    >
+      <div className="flex w-full flex-col sm:flex-row">
         <div className="order-2 flex h-[40px] flex-1 items-center justify-center bg-[#f8f8f8] sm:order-1 sm:items-center sm:justify-start">
           <div className="flex w-full items-center gap-2 pl-[30px] sm:mt-0">
             <Chat360Icon className="w-10 text-[#282b2f] opacity-90" />
-            <span className="text-lg font-medium text-[#282b2f] sm:text-xl">
-              Chat360 Party
-            </span>
+            <span className="text-lg font-medium text-[#282b2f] sm:text-xl">Chat360 Party</span>
           </div>
         </div>
 
@@ -51,7 +55,7 @@ export function PartyHeader({ membersCount }: PartyHeaderProps) {
             icon={UserIcon}
             iconSize="w-7 h-6"
           >
-            <span className="text-bold ml-2 text-sm text-white opacity-90">
+            <span className="text-bold ml-2 truncate text-sm text-white opacity-90">
               {membersCount}
             </span>
           </HeaderButton>
@@ -61,19 +65,48 @@ export function PartyHeader({ membersCount }: PartyHeaderProps) {
             iconSize="w-7 h-7"
           />
 
-          <HeaderButton icon={TbBrandX} iconSize="w-7 h-7" />
+          <HeaderButton
+            icon={TbBrandX}
+            iconSize="w-7 h-7"
+          />
         </div>
       </div>
 
-      <button className="flex cursor-pointer items-center gap-2 bg-gradient-to-b from-[#70cc00] to-[#409202] py-[6px] pl-[30px] shadow-[inset_0_-2px_4px_rgba(0,0,0,0.1)] transition-all hover:brightness-110">
+      <div className="h-[10px] border-b border-gray-200 bg-[#f0f0fa]"></div>
+
+      <button
+        className="flex h-[38px] w-full cursor-pointer items-center gap-2 bg-gradient-to-b from-[#70cc00] to-[#409202] pl-[30px] shadow-[inset_0_-2px_4px_rgba(0,0,0,0.1)] transition-all hover:brightness-110"
+        onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(window.location.href);
+            setCopyStatus('success');
+            setTimeout(() => setCopyStatus('idle'), 2000);
+          } catch (error) {
+            logger.error('Failed to copy URL to clipboard', {
+              component: 'PartyHeader',
+              action: 'copyURL',
+              metadata: { error },
+            });
+            setCopyStatus('error');
+            setTimeout(() => setCopyStatus('idle'), 2000);
+          }
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.currentTarget.click();
+          }
+        }}
+        aria-label="Copy party URL"
+        aria-live="polite"
+      >
         <span className="text-[1.15rem] font-medium text-white">
-          Copy CA
+          {copyStatus === 'success' ? 'Copied!' : copyStatus === 'error' ? 'Failed!' : 'Copy URL'}
         </span>
         <Clipboard className="h-4 w-4 text-white opacity-90" />
       </button>
 
-      <div className="border-b border-gray-400 py-[6px] pl-[30px] text-[#282b2f] shadow-[inset_0_-2px_4px_rgba(0,0,0,0.08)]">
-        <span className="text-[1.15rem] font-medium">
+      <div className="h-[38px] w-full border-b border-gray-400 bg-[#f0f0fa] pl-[30px] shadow-[inset_0_-2px_4px_rgba(0,0,0,0.08)]">
+        <span className="text-[1.15rem] font-medium leading-[38px] text-[#282b2f]">
           Party Options: Party Chat
         </span>
       </div>

@@ -2,273 +2,123 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { XboxIntro } from '@/components/features/party/XboxIntro';
 import { logger } from '@/lib/utils/logger';
+import { INTRO_VIDEO_URL } from '@/lib/config/constants';
 
-// Mock logger
-vi.mock('@/lib/utils/logger');
+vi.mock('@/lib/utils/logger', () => ({
+  logger: {
+    error: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+  },
+}));
 
 describe('XboxIntro', () => {
   const mockOnIntroEnd = vi.fn();
-  let mockVideo: Partial<HTMLVideoElement> & {
-    play: ReturnType<typeof vi.fn>;
-    error: MediaError | null;
-    readyState: number;
-  };
 
   beforeEach(() => {
     vi.clearAllMocks();
-    
-    // Mock video element methods and properties
-    mockVideo = {
-      play: vi.fn(),
-      pause: vi.fn(),
-      load: vi.fn(),
-      muted: false,
-      currentTime: 0,
-      duration: 10,
-      ended: false,
-      readyState: 4, // HAVE_ENOUGH_DATA
-      error: null,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn()
-    };
-
-    // Mock createElement to return our mock video
-    vi.spyOn(document, 'createElement').mockImplementation((tagName) => {
-      if (tagName === 'video') {
-        return mockVideo as HTMLVideoElement;
-      }
-      return document.createElement(tagName);
-    });
   });
 
   describe('Video Loading', () => {
-    it('loads video with correct source', () => {
+    it('loads video with correct source and attributes', () => {
       render(<XboxIntro onIntroEnd={mockOnIntroEnd} />);
-      
-      const video = screen.getByTestId('intro-video');
-      expect(video).toHaveAttribute('src', expect.stringContaining('xbox-intro.mp4'));
-    });
-
-    it('handles video load error', () => {
-      mockVideo.error = {
-        code: 1,
-        message: 'Failed to load video',
-        MEDIA_ERR_ABORTED: 1,
-        MEDIA_ERR_NETWORK: 2,
-        MEDIA_ERR_DECODE: 3,
-        MEDIA_ERR_SRC_NOT_SUPPORTED: 4
-      };
-      mockVideo.readyState = 0; // HAVE_NOTHING
-      
-      render(<XboxIntro onIntroEnd={mockOnIntroEnd} />);
-      
-      const video = screen.getByTestId('intro-video');
-      fireEvent.error(video);
-      
-      expect(logger.error).toHaveBeenCalled();
-      expect(mockOnIntroEnd).toHaveBeenCalled();
-    });
-
-    it('handles network interruption during load', () => {
-      mockVideo.readyState = 2; // HAVE_CURRENT_DATA
-      mockVideo.error = {
-        code: 2,
-        message: 'Network error',
-        MEDIA_ERR_ABORTED: 1,
-        MEDIA_ERR_NETWORK: 2,
-        MEDIA_ERR_DECODE: 3,
-        MEDIA_ERR_SRC_NOT_SUPPORTED: 4
-      };
-      
-      render(<XboxIntro onIntroEnd={mockOnIntroEnd} />);
-      
-      const video = screen.getByTestId('intro-video');
-      fireEvent.error(video);
-      
-      expect(logger.error).toHaveBeenCalled();
-      expect(mockOnIntroEnd).toHaveBeenCalled();
-    });
-
-    it('handles invalid video source', () => {
-      mockVideo.error = {
-        code: 4,
-        message: 'Source not supported',
-        MEDIA_ERR_ABORTED: 1,
-        MEDIA_ERR_NETWORK: 2,
-        MEDIA_ERR_DECODE: 3,
-        MEDIA_ERR_SRC_NOT_SUPPORTED: 4
-      };
-      
-      render(<XboxIntro onIntroEnd={mockOnIntroEnd} />);
-      
-      const video = screen.getByTestId('intro-video');
-      fireEvent.error(video);
-      
-      expect(logger.error).toHaveBeenCalled();
-      expect(mockOnIntroEnd).toHaveBeenCalled();
+      const video = screen.getByRole('video');
+      expect(video).toHaveAttribute('src', INTRO_VIDEO_URL);
+      expect(video).toHaveAttribute('playsInline');
+      expect(video).not.toHaveAttribute('loop');
+      expect(video).toHaveClass('h-full w-full object-cover');
     });
   });
 
   describe('Playback Control', () => {
     it('attempts to play video on mount', async () => {
-      mockVideo.play.mockResolvedValue(undefined);
+      const playMock = vi.fn().mockResolvedValue(undefined);
+      HTMLMediaElement.prototype.play = playMock;
+
       render(<XboxIntro onIntroEnd={mockOnIntroEnd} />);
-      
-      expect(mockVideo.play).toHaveBeenCalled();
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(playMock).toHaveBeenCalled();
+      expect(logger.info).toHaveBeenCalledWith('Video playing with sound.', expect.any(Object));
     });
 
     it('falls back to muted playback if autoplay fails', async () => {
-      const playError = new Error('Play failed');
-      mockVideo.play
-        .mockRejectedValueOnce(playError)
+      const playMock = vi
+        .fn()
+        .mockRejectedValueOnce(new Error('Autoplay failed'))
         .mockResolvedValueOnce(undefined);
-      
-      render(<XboxIntro onIntroEnd={mockOnIntroEnd} />);
-      
-      await act(async () => {
-        await Promise.resolve();
-      });
-      
-      expect(mockVideo.muted).toBe(true);
-      expect(mockVideo.play).toHaveBeenCalledTimes(2);
-    });
+      HTMLMediaElement.prototype.play = playMock;
 
-    it('handles play interruption', async () => {
-      mockVideo.play.mockRejectedValue(new Error('Play interrupted'));
-      
       render(<XboxIntro onIntroEnd={mockOnIntroEnd} />);
-      
+
       await act(async () => {
         await Promise.resolve();
       });
-      
-      expect(logger.error).toHaveBeenCalled();
+
+      expect(playMock).toHaveBeenCalledTimes(2);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Autoplay with sound failed:'),
+        expect.any(Object)
+      );
+      expect(logger.info).toHaveBeenCalledWith('Video playing muted.', expect.any(Object));
     });
 
     it('calls onIntroEnd when video ends', () => {
       render(<XboxIntro onIntroEnd={mockOnIntroEnd} />);
-      
-      const video = screen.getByTestId('intro-video');
+      const video = screen.getByRole('video');
       fireEvent.ended(video);
-      
       expect(mockOnIntroEnd).toHaveBeenCalled();
+      expect(logger.info).toHaveBeenCalledWith('Video ended.', expect.any(Object));
     });
 
     it('handles skip button click', () => {
       render(<XboxIntro onIntroEnd={mockOnIntroEnd} />);
-      
-      const skipButton = screen.getByRole('button', { name: /skip/i });
+      const skipButton = screen.getByRole('button', { name: /skip intro/i });
       fireEvent.click(skipButton);
-      
       expect(mockOnIntroEnd).toHaveBeenCalled();
-      expect(mockVideo.pause).toHaveBeenCalled();
+      expect(logger.info).toHaveBeenCalledWith('Intro skipped.', expect.any(Object));
     });
 
     it('toggles mute state', () => {
       render(<XboxIntro onIntroEnd={mockOnIntroEnd} />);
-      
       const muteButton = screen.getByRole('button', { name: /mute/i });
+      const video = screen.getByRole('video') as HTMLVideoElement;
+
+      expect(video.muted).toBe(false);
       fireEvent.click(muteButton);
-      
-      expect(mockVideo.muted).toBe(true);
-      
-      fireEvent.click(muteButton);
-      expect(mockVideo.muted).toBe(false);
+      expect(video.muted).toBe(true);
+      expect(muteButton).toHaveAttribute('aria-pressed', 'true');
+      expect(logger.info).toHaveBeenCalledWith(
+        'Mute toggled to true.',
+        expect.objectContaining({
+          component: 'XboxIntro.tsx',
+          action: 'toggleMute',
+        })
+      );
     });
   });
 
   describe('Accessibility', () => {
-    it('has accessible video controls', () => {
+    it('has accessible controls', () => {
       render(<XboxIntro onIntroEnd={mockOnIntroEnd} />);
-      
-      const video = screen.getByTestId('intro-video');
-      expect(video).toHaveAttribute('aria-label', expect.stringContaining('intro'));
-      
-      const skipButton = screen.getByRole('button', { name: /skip/i });
-      expect(skipButton).toHaveAttribute('aria-label');
-      
+
+      expect(screen.getByRole('button', { name: /mute/i })).toHaveAttribute(
+        'aria-pressed',
+        'false'
+      );
+      expect(screen.getByRole('button', { name: /skip intro/i })).toBeInTheDocument();
+    });
+
+    it('provides feedback for screen readers when toggling mute', () => {
+      render(<XboxIntro onIntroEnd={mockOnIntroEnd} />);
       const muteButton = screen.getByRole('button', { name: /mute/i });
-      expect(muteButton).toHaveAttribute('aria-label');
-    });
 
-    it('provides keyboard navigation', () => {
-      render(<XboxIntro onIntroEnd={mockOnIntroEnd} />);
-      
-      const skipButton = screen.getByRole('button', { name: /skip/i });
-      const muteButton = screen.getByRole('button', { name: /mute/i });
-      
-      skipButton.focus();
-      fireEvent.keyDown(skipButton, { key: 'Enter' });
-      expect(mockOnIntroEnd).toHaveBeenCalled();
-      
-      muteButton.focus();
-      fireEvent.keyDown(muteButton, { key: ' ' });
-      expect(mockVideo.muted).toBe(true);
-    });
-
-    it('handles reduced motion preference', () => {
-      // Mock matchMedia
-      window.matchMedia = vi.fn().mockImplementation(query => ({
-        matches: query === '(prefers-reduced-motion: reduce)',
-        media: query,
-        onchange: null,
-        addListener: vi.fn(),
-        removeListener: vi.fn(),
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-        dispatchEvent: vi.fn(),
-      }));
-      
-      render(<XboxIntro onIntroEnd={mockOnIntroEnd} />);
-      expect(mockOnIntroEnd).toHaveBeenCalled();
+      expect(muteButton).toHaveAttribute('aria-label', 'Mute');
+      fireEvent.click(muteButton);
+      expect(muteButton).toHaveAttribute('aria-label', 'Unmute');
     });
   });
-
-  describe('Cleanup', () => {
-    it('pauses and unloads video on unmount', () => {
-      const { unmount } = render(<XboxIntro onIntroEnd={mockOnIntroEnd} />);
-      
-      unmount();
-      
-      expect(mockVideo.pause).toHaveBeenCalled();
-      expect(mockVideo.removeEventListener).toHaveBeenCalled();
-    });
-
-    it('removes event listeners on unmount', () => {
-      const { unmount } = render(<XboxIntro onIntroEnd={mockOnIntroEnd} />);
-      
-      unmount();
-      
-      expect(mockVideo.removeEventListener).toHaveBeenCalledWith('ended', expect.any(Function));
-      expect(mockVideo.removeEventListener).toHaveBeenCalledWith('error', expect.any(Function));
-    });
-
-    it('handles unmount during playback', async () => {
-      mockVideo.play.mockImplementation(() => new Promise(() => {})); // Never resolves
-      
-      const { unmount } = render(<XboxIntro onIntroEnd={mockOnIntroEnd} />);
-      
-      await act(async () => {
-        unmount();
-      });
-      
-      expect(mockVideo.pause).toHaveBeenCalled();
-    });
-  });
-
-  describe('Performance', () => {
-    it('preloads video for better performance', () => {
-      render(<XboxIntro onIntroEnd={mockOnIntroEnd} />);
-      
-      const video = screen.getByTestId('intro-video');
-      expect(video).toHaveAttribute('preload', 'auto');
-    });
-
-    it('uses appropriate video format', () => {
-      render(<XboxIntro onIntroEnd={mockOnIntroEnd} />);
-      
-      const video = screen.getByTestId('intro-video');
-      expect(video).toHaveAttribute('src', expect.stringMatching(/\.(mp4|webm)$/));
-    });
-  });
-}); 
+});

@@ -24,13 +24,13 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
           setIsMuted(false);
           logger.info('Video playing with sound.', {
             component: 'XboxIntro.tsx',
-            action: 'attemptPlay'
+            action: 'attemptPlay',
           });
         } catch (error) {
           logger.warn(`Autoplay with sound failed: ${error}`, {
             component: 'XboxIntro.tsx',
             action: 'attemptPlay',
-            metadata: { error }
+            metadata: { error },
           });
           videoElement.muted = true;
           setIsMuted(true);
@@ -38,13 +38,13 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
             await videoElement.play();
             logger.info('Video playing muted.', {
               component: 'XboxIntro.tsx',
-              action: 'attemptPlay'
+              action: 'attemptPlay',
             });
           } catch (mutedError) {
             logger.error(`Autoplay even when muted failed: ${mutedError}`, {
               component: 'XboxIntro.tsx',
               action: 'attemptPlay',
-              metadata: { error: mutedError }
+              metadata: { error: mutedError },
             });
           }
         }
@@ -55,7 +55,7 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
       videoElement.onended = () => {
         logger.info('Video ended.', {
           component: 'XboxIntro.tsx',
-          action: 'videoElement.onended'
+          action: 'videoElement.onended',
         });
         onIntroEnd();
       };
@@ -65,7 +65,7 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
   const handleSkip = () => {
     logger.info('Intro skipped.', {
       component: 'XboxIntro.tsx',
-      action: 'handleSkip'
+      action: 'handleSkip',
     });
     onIntroEnd();
   };
@@ -76,7 +76,7 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
       setIsMuted(!isMuted);
       logger.info(`Mute toggled to ${!isMuted}.`, {
         component: 'XboxIntro.tsx',
-        action: 'toggleMute'
+        action: 'toggleMute',
       });
     }
   };
@@ -89,11 +89,15 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
         src={INTRO_VIDEO_URL}
         playsInline
         loop={false}
+        role="video"
+        aria-label="Xbox intro video"
       />
       <div className="absolute bottom-4 right-4 flex space-x-2">
         <Button
           onClick={toggleMute}
           className="rounded-md bg-white px-4 py-2 font-semibold text-black transition-all duration-300 hover:bg-gray-200"
+          aria-label={isMuted ? 'Unmute' : 'Mute'}
+          aria-pressed={isMuted}
         >
           {isMuted ? <VolumeX size={24} /> : <Volume2 size={24} />}
         </Button>
@@ -101,6 +105,7 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
         <Button
           onClick={handleSkip}
           className="animate-slow-pulse rounded-md bg-white px-4 py-2 font-semibold text-black transition-all duration-300 hover:bg-gray-200"
+          aria-label="Skip Intro"
         >
           Skip Intro
         </Button>

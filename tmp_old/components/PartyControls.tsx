@@ -34,17 +34,9 @@ export function PartyControls({
     if (isLeaving || !currentUser?.isActive) return;
     setIsLeaving(true);
     try {
-      logWithContext(
-        'PartyControls.tsx',
-        'handleLeave',
-        'Attempting to leave party'
-      );
+      logWithContext('PartyControls.tsx', 'handleLeave', 'Attempting to leave party');
       await onLeave();
-      logWithContext(
-        'PartyControls.tsx',
-        'handleLeave',
-        'Left party successfully'
-      );
+      logWithContext('PartyControls.tsx', 'handleLeave', 'Left party successfully');
     } finally {
       setIsLeaving(false);
     }
@@ -57,9 +49,7 @@ export function PartyControls({
 
   const buttonClass = (isActive: boolean, isProcessing: boolean) =>
     `flex items-center gap-0 sm:gap-2 transition-opacity ${
-      isActive && !isProcessing
-        ? 'hover:opacity-80'
-        : 'opacity-50 cursor-not-allowed'
+      isActive && !isProcessing ? 'hover:opacity-80' : 'opacity-50 cursor-not-allowed'
     }`;
 
   return (
@@ -84,9 +74,7 @@ export function PartyControls({
           <div className="flex h-3 w-3 items-center justify-center rounded-full bg-[#ae1228] text-[8px] font-bold text-white sm:h-4 sm:w-4 sm:text-[10px]">
             B
           </div>
-          <span className="ml-[-3px] text-white">
-            {isLeaving ? 'Leaving...' : 'Leave Party'}
-          </span>
+          <span className="ml-[-3px] text-white">{isLeaving ? 'Leaving...' : 'Leave Party'}</span>
         </button>
 
         <button
@@ -100,9 +88,7 @@ export function PartyControls({
           <div className="flex h-3 w-3 items-center justify-center rounded-full bg-[#0c71ba] text-[8px] font-bold text-white sm:h-4 sm:w-4 sm:text-[10px]">
             X
           </div>
-          <span className="ml-[-3px] text-white">
-            {isMuted ? 'Unmute' : 'Mute'}
-          </span>
+          <span className="ml-[-3px] text-white">{isMuted ? 'Unmute' : 'Mute'}</span>
         </button>
 
         <button

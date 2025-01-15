@@ -51,7 +51,7 @@ export function PartyControls({
   const handleJoin = async () => {
     if (isJoining) return;
     setIsJoining(true);
-    
+
     try {
       const lastUsedData = useFormStore.getState().lastUsedData;
       const storedUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
@@ -62,15 +62,15 @@ export function PartyControls({
           action: 'joinParty',
           metadata: {
             lastUsedData,
-            storedUser
-          }
+            storedUser,
+          },
         });
 
         // Use lastUsedData if available, otherwise use storedUser
         const userData = lastUsedData || {
           name: storedUser.name,
           avatar: storedUser.avatar,
-          status: storedUser.status || 'Online'
+          status: storedUser.status || 'Online',
         };
 
         // Call onJoin directly without showing modal
@@ -80,7 +80,7 @@ export function PartyControls({
 
       // Only show the new user modal if we have no prior data
       logger.info('No existing user data, showing join modal', {
-        action: 'joinParty'
+        action: 'joinParty',
       });
       showModal('join');
     } finally {
@@ -99,9 +99,7 @@ export function PartyControls({
           <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#55b611] text-[10px] font-bold text-white">
             A
           </div>
-          <span>
-            {isJoining ? 'Joining...' : 'Join Party'}
-          </span>
+          <span>{isJoining ? 'Joining...' : 'Join Party'}</span>
         </button>
 
         <button
@@ -112,15 +110,13 @@ export function PartyControls({
           <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#ae1228] text-[10px] font-bold text-white">
             B
           </div>
-          <span>
-            {isLeaving ? 'Leaving...' : 'Leave Party'}
-          </span>
+          <span>{isLeaving ? 'Leaving...' : 'Leave Party'}</span>
         </button>
 
         <button
           onClick={() => {
             logger.info('Toggling mute', {
-              action: 'toggleMute'
+              action: 'toggleMute',
             });
             onToggleMute();
           }}
@@ -130,20 +126,18 @@ export function PartyControls({
           <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#0c71ba] text-[10px] font-bold text-white">
             X
           </div>
-          <span>
-            {isMuted ? 'Unmute' : 'Mute'}
-          </span>
+          <span>{isMuted ? 'Unmute' : 'Mute'}</span>
         </button>
 
         <button
           onClick={() => {
             logger.info('Opening edit modal', {
-              action: 'openEditModal'
+              action: 'openEditModal',
             });
             showModal('edit', {
               name: currentUser?.name || '',
               avatar: currentUser?.avatar || '',
-              status: currentUser?.game || ''
+              status: currentUser?.game || '',
             });
           }}
           className={buttonClass(true, false)}
