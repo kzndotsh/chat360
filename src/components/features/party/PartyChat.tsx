@@ -63,7 +63,7 @@ export function PartyChat() {
         if (mounted && logger) {
           logger.error('Initialization error', {
             action: 'init',
-            error: error as Error,
+            metadata: { error: error as Error },
           });
         }
         Sentry.captureException(error);
@@ -216,7 +216,7 @@ export function PartyChat() {
               showModal('edit', {
                 name: currentUser?.name || '',
                 avatar: currentUser?.avatar || storedAvatar || AVATARS[0],
-                status: currentUser?.game || '',
+                game: currentUser?.game || '',
               });
             }}
             className="group flex flex-col items-center"
@@ -253,8 +253,8 @@ export function PartyChat() {
           currentUser={currentUser}
           isMuted={isMuted}
           micPermissionDenied={micPermissionDenied}
-          onJoin={async (name, avatar, status) => {
-            await handleJoinParty(name, avatar, status);
+          onJoin={async (name, avatar, game) => {
+            await handleJoinParty(name, avatar, game);
           }}
           onLeave={handleLeaveParty}
           onToggleMute={handleToggleMute}

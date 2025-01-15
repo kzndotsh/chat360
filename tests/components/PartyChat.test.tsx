@@ -45,14 +45,14 @@ describe('PartyChat', () => {
   const mockInitialize = vi.fn();
 
   // Update the mock user object to use constants
-  const mockUser: PartyMember = {
+  const mockUser = {
     id: '1',
-    name: 'Test',
+    name: 'Test User',
     avatar: AVATARS[0] ?? 'https://i.imgur.com/LCycgcq.png',
     game: 'Game',
     isActive: true,
     muted: false,
-  };
+  } satisfies PartyMember;
 
   const mockFormStore = {
     formData: { name: '', avatar: '', game: '' },

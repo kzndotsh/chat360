@@ -5,7 +5,7 @@ type ModalType = 'join' | 'edit' | null;
 interface ModalData {
   name?: string;
   avatar?: string;
-  status?: string;
+  game?: string;
 }
 
 interface ModalStore {

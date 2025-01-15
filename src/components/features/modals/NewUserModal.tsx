@@ -12,11 +12,11 @@ import { useFormStore } from '@/lib/stores/useFormStore';
 interface FormData {
   name: string;
   avatar: string;
-  status: string;
+  game: string;
 }
 
 interface NewUserModalProps {
-  onJoin: (name: string, avatar: string, status: string) => Promise<void>;
+  onJoin: (name: string, avatar: string, game: string) => Promise<void>;
   onCancel: () => void;
   isSubmitting: boolean;
 }
@@ -32,7 +32,7 @@ export const NewUserModal: React.FC<NewUserModalProps> = ({ onJoin, onCancel, is
     defaultValues: {
       name: lastUsedData?.name || '',
       avatar: lastUsedData?.avatar || AVATARS[0],
-      status: lastUsedData?.status || STATUSES[0],
+      game: lastUsedData?.game || STATUSES[0],
     },
   });
 
@@ -56,7 +56,7 @@ export const NewUserModal: React.FC<NewUserModalProps> = ({ onJoin, onCancel, is
 
       try {
         logger.info('Calling onJoin', context);
-        await onJoin(data.name.trim(), data.avatar, data.status);
+        await onJoin(data.name.trim(), data.avatar, data.game);
         logger.info('Form submitted successfully', context);
       } catch (error) {
         logger.error(`Form submission failed: ${error}`, {
@@ -142,18 +142,18 @@ export const NewUserModal: React.FC<NewUserModalProps> = ({ onJoin, onCancel, is
 
             <div>
               <label
-                htmlFor="status"
+                htmlFor="game"
                 className="mb-1 block text-sm font-medium text-[#161718]"
               >
-                Status
+                Current Game
               </label>
               <Controller
-                name="status"
+                name="game"
                 control={control}
                 render={({ field }) => (
                   <Select
                     {...field}
-                    id="status"
+                    id="game"
                     className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-black transition-colors focus:border-[#616b83] focus:outline-none focus:ring-1 focus:ring-[#616b83]"
                     disabled={isSubmitting}
                   >

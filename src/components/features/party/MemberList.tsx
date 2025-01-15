@@ -141,12 +141,12 @@ const MemberListItem = memo(function MemberListItem({
         </svg>
       </div>
       <div className="ml-[59px] flex flex-1 items-center">
-        <span
+        <div
+          className="truncate text-sm text-gray-600"
           data-testid="member-game"
-          className="truncate pl-2 text-left text-[1.35rem] font-medium leading-tight text-[#282b2f]"
         >
           {member.game || 'Not playing'}
-        </span>
+        </div>
       </div>
     </div>
   );

@@ -9,12 +9,12 @@ import { AVATARS, STATUSES } from '@/lib/config/constants';
 interface FormData {
   name: string;
   avatar: string;
-  status: string;
+  game: string;
 }
 
 interface EditProfileModalProps {
   initialData: FormData;
-  onSubmit: (username: string, avatar: string, status: string) => Promise<void>;
+  onSubmit: (username: string, avatar: string, game: string) => Promise<void>;
   onCancel: () => void;
   isSubmitting: boolean;
 }
@@ -43,20 +43,20 @@ export function EditProfileModal({
     const currentFormData = JSON.stringify({
       name: initialData.name,
       avatar: initialData.avatar,
-      status: initialData.status,
+      game: initialData.game,
     });
 
     if (currentFormData !== lastFormData.current) {
       reset(initialData);
       lastFormData.current = currentFormData;
     }
-  }, [initialData.name, initialData.avatar, initialData.status, reset]);
+  }, [initialData.name, initialData.avatar, initialData.game, reset, initialData]);
 
   const handleFormSubmit = useCallback(
     async (data: FormData) => {
       if (isSubmitting) return;
       try {
-        await onSubmit(data.name.trim(), data.avatar, data.status);
+        await onSubmit(data.name.trim(), data.avatar, data.game);
       } catch {
         // Error handling is done in the parent component
       }
@@ -132,18 +132,18 @@ export function EditProfileModal({
 
         <div>
           <label
-            htmlFor="status"
+            htmlFor="game"
             className="mb-1 block text-sm font-medium text-[#161718]"
           >
-            Status
+            Current Game
           </label>
           <Controller
-            name="status"
+            name="game"
             control={control}
             render={({ field }) => (
               <Select
                 {...field}
-                id="status"
+                id="game"
                 className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-black transition-colors focus:border-[#616b83] focus:outline-none focus:ring-1 focus:ring-[#616b83]"
               >
                 {STATUSES.map((status) => (

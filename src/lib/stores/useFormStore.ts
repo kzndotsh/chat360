@@ -5,7 +5,7 @@ import { logger } from '@/lib/utils/logger';
 interface FormData {
   name: string;
   avatar: string;
-  status: string;
+  game: string;
 }
 
 interface FormStore {
@@ -24,7 +24,7 @@ interface FormStore {
 const initialFormState: FormData = {
   name: '',
   avatar: AVATARS[0] || 'default-avatar',
-  status: STATUSES[0] || 'online',
+  game: STATUSES[0] || 'online',
 };
 
 export const useFormStore = create<FormStore>((set, get) => ({
@@ -33,7 +33,7 @@ export const useFormStore = create<FormStore>((set, get) => ({
   errors: {
     name: undefined,
     avatar: undefined,
-    status: undefined,
+    game: undefined,
   },
   isSubmitting: false,
   setFormData: (data) => {
@@ -46,7 +46,7 @@ export const useFormStore = create<FormStore>((set, get) => ({
       errors: {
         name: undefined,
         avatar: undefined,
-        status: undefined,
+        game: undefined,
       },
     }));
   },
@@ -73,7 +73,7 @@ export const useFormStore = create<FormStore>((set, get) => ({
       errors: {
         name: undefined,
         avatar: undefined,
-        status: undefined,
+        game: undefined,
       },
       isSubmitting: false,
     });
@@ -91,7 +91,7 @@ export const useFormStore = create<FormStore>((set, get) => ({
           formData: {
             name: data.name || state.formData.name,
             avatar: data.avatar || state.formData.avatar,
-            status: data.status || state.formData.status,
+            game: data.game || state.formData.game,
           },
           lastUsedData: data,
         }));
