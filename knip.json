@@ -1,0 +1,15 @@
+{
+  "$schema": "https://unpkg.com/knip@latest/schema.json",
+  "entry": ["src/app/**/*.{ts,tsx}", "src/pages/**/*.{ts,tsx}", "src/components/**/*.{ts,tsx}"],
+  "project": ["**/*.{ts,tsx}"],
+  "ignoreDependencies": ["@types/*", "prettier-plugin-tailwindcss"],
+  "ignore": ["**/*.d.ts", "**/*.test.{ts,tsx}", "**/*.spec.{ts,tsx}"],
+  "ignoreExportsUsedInFile": true,
+  "rules": {
+    "classMembers": "warn",
+    "exports": "error",
+    "files": "error",
+    "types": "error",
+    "dependencies": "error"
+  }
+}

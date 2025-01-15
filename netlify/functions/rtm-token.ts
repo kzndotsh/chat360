@@ -1,5 +1,5 @@
 import { Handler } from '@netlify/functions';
-import { RtmTokenBuilder, Role as RtmRole } from 'agora-token';
+import { RtmTokenBuilder } from 'agora-token';
 
 const APP_ID = process.env.NEXT_PUBLIC_AGORA_APP_ID;
 const APP_CERTIFICATE = process.env.AGORA_APP_CERTIFICATE;
@@ -64,18 +64,11 @@ export const handler: Handler = async (event) => {
     }
 
     // Generate token
-    const role = RtmRole.Rtm_User;
     const expirationTimeInSeconds = 3600;
     const currentTimestamp = Math.floor(Date.now() / 1000);
     const privilegeExpiredTs = currentTimestamp + expirationTimeInSeconds;
 
-    const token = RtmTokenBuilder.buildToken(
-      APP_ID,
-      APP_CERTIFICATE,
-      uid,
-      role,
-      privilegeExpiredTs
-    );
+    const token = RtmTokenBuilder.buildToken(APP_ID, APP_CERTIFICATE, uid, privilegeExpiredTs);
 
     return {
       statusCode: 200,
