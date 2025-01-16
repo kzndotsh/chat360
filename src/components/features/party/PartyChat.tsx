@@ -1,7 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import * as Sentry from '@sentry/react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import Image from 'next/image';
 import { Card } from '@/components/ui/card';
 import { ModalManager } from '@/components/features/modals/ModalManager';
@@ -10,97 +9,51 @@ import { PartyHeader } from '@/components/features/party/PartyHeader';
 import { PartyControls } from '@/components/features/party/PartyControls';
 import { usePartyState } from '@/lib/hooks/usePartyState';
 import Clock from '@/components/features/party/Clock';
-import { BACKGROUND_VIDEO_URL, AVATARS } from '@/lib/config/constants';
+import { BACKGROUND_VIDEO_URL } from '@/lib/config/constants';
 import { useModalStore } from '@/lib/stores/useModalStore';
 import { logger } from '@/lib/utils/logger';
-import { useFormStore } from '@/lib/stores/useFormStore';
 
 export function PartyChat() {
+  // 1. External store hooks
   const showModal = useModalStore((state) => state.showModal);
+
+  // 2. State hooks
   const [videoError, setVideoError] = useState(false);
-  const [isLeaving, setIsLeaving] = useState(false);
+
+  // 3. Refs
+  const loggerRef = useRef(logger);
+
+  // 4. Custom hooks
   const {
     members,
     currentUser,
-    storedAvatar,
-    isMuted,
-    micPermissionDenied,
-    volumeLevels,
+    isInitializing,
+    partyState,
+    modalLocked,
     joinParty,
     leaveParty,
     editProfile,
-    toggleMute,
-    initialize,
-    requestMicrophonePermission,
   } = usePartyState();
 
-  const { resetForm } = useFormStore();
+  // Track if we just left the party to prevent auto-showing modal
+  const [justLeft, setJustLeft] = useState(false);
 
-  const loggerRef = useRef(logger);
-
-  useEffect(() => {
-    let mounted = true;
-    const abortController = new AbortController();
-    const logger = loggerRef.current;
-
-    const init = async () => {
-      try {
-        if (!mounted || !currentUser) return;
-
-        if (logger) {
-          logger.info('Initializing component', {
-            action: 'init',
-          });
-        }
-
-        await initialize();
-
-        if (mounted && logger) {
-          logger.info('Initialization complete', {
-            action: 'init',
-          });
-        }
-      } catch (error) {
-        if (mounted && logger) {
-          logger.error('Initialization error', {
-            action: 'init',
-            metadata: { error: error as Error },
-          });
-        }
-        Sentry.captureException(error);
-        showModal('join');
-      }
-    };
-
-    init();
-
-    return () => {
-      mounted = false;
-      abortController.abort();
-      if (logger) {
-        logger.info('Component unmounting', {
-          action: 'useEffect: cleanup',
-        });
-      }
-      resetForm();
-    };
-  }, [initialize, showModal, currentUser, resetForm]);
-
+  // 5. Callbacks
   const handleJoinParty = useCallback(
     async (username: string, avatar: string, game: string) => {
-      logger.info('Attempting to join party', {
+      loggerRef.current.info('Attempting to join party', {
         action: 'joinParty',
         metadata: { username, avatar, game },
       });
 
       try {
         await joinParty(username, avatar, game);
-        logger.info('Successfully joined party', {
+        loggerRef.current.info('Successfully joined party', {
           action: 'joinParty',
           metadata: { username },
         });
       } catch (error) {
-        logger.error('Failed to join party', {
+        loggerRef.current.error('Failed to join party', {
           action: 'joinParty',
           metadata: { error: error instanceof Error ? error : new Error(String(error)) },
         });
@@ -110,21 +63,45 @@ export function PartyChat() {
     [joinParty]
   );
 
+  const handleLeaveParty = useCallback(async () => {
+    loggerRef.current.info('Attempting to leave party', { action: 'leaveParty' });
+
+    try {
+      setJustLeft(true);
+      await leaveParty();
+      loggerRef.current.info('Successfully left party', { action: 'leaveParty' });
+    } catch (error) {
+      loggerRef.current.error('Failed to leave party', {
+        action: 'leaveParty',
+        metadata: { error: error instanceof Error ? error : new Error(String(error)) },
+      });
+      throw error;
+    }
+  }, [leaveParty]);
+
+  const handleToggleMute = useCallback(async () => {
+    return Promise.resolve();
+  }, []);
+
+  const handleRequestMicrophonePermission = useCallback(async () => {
+    return Promise.resolve(false);
+  }, []);
+
   const handleEditProfile = useCallback(
     async (username: string, avatar: string, game: string) => {
-      logger.info('Attempting to edit profile', {
+      loggerRef.current.info('Attempting to edit profile', {
         action: 'editProfile',
         metadata: { username, avatar, game },
       });
 
       try {
         await editProfile(username, avatar, game);
-        logger.info('Successfully edited profile', {
+        loggerRef.current.info('Successfully edited profile', {
           action: 'editProfile',
           metadata: { username },
         });
       } catch (error) {
-        logger.error('Failed to edit profile', {
+        loggerRef.current.error('Failed to edit profile', {
           action: 'editProfile',
           metadata: { error: error instanceof Error ? error : new Error(String(error)) },
         });
@@ -134,46 +111,22 @@ export function PartyChat() {
     [editProfile]
   );
 
-  const handleLeaveParty = useCallback(async () => {
-    logger.info('Attempting to leave party', { action: 'leaveParty' });
-
-    try {
-      setIsLeaving(true);
-      await leaveParty();
-      logger.info('Successfully left party', { action: 'leaveParty' });
-    } catch (error) {
-      logger.error('Failed to leave party', {
-        action: 'leaveParty',
-        metadata: { error: error instanceof Error ? error : new Error(String(error)) },
-      });
-      throw error;
-    } finally {
-      setIsLeaving(false);
+  useEffect(() => {
+    // Only show join modal on initial load, not after leaving
+    if (!currentUser && !isInitializing && partyState !== 'leaving' && !modalLocked && !justLeft) {
+      showModal('join');
     }
-  }, [leaveParty]);
+  }, [currentUser, showModal, isInitializing, partyState, modalLocked, justLeft]);
 
-  const handleToggleMute = useCallback(async () => {
-    logger.info('Toggling mute', {
-      action: 'toggleMute',
-      metadata: { currentUser },
-    });
-    try {
-      await toggleMute();
-      logger.info('Mute toggled successfully', {
-        action: 'toggleMute',
-        metadata: { currentUser },
-      });
-    } catch (error) {
-      logger.error('Error toggling mute', {
-        action: 'toggleMute',
-        metadata: { error: error as Error },
-      });
-      Sentry.captureException(error);
+  // Reset justLeft when currentUser changes to true
+  useEffect(() => {
+    if (currentUser) {
+      setJustLeft(false);
     }
-  }, [toggleMute, currentUser]);
+  }, [currentUser]);
 
   return (
-    <div 
+    <div
       className="relative flex min-h-screen items-center justify-center overflow-hidden bg-black"
       data-testid="party-chat"
     >
@@ -192,7 +145,7 @@ export function PartyChat() {
             style={{ filter: 'blur(6px)' }}
             onError={() => {
               setVideoError(true);
-              logger.error('Video playback error', {
+              loggerRef.current.error('Video playback error', {
                 action: 'videoPlayback',
                 metadata: { elementId: 'xbox-bg', url: BACKGROUND_VIDEO_URL },
               });
@@ -211,32 +164,29 @@ export function PartyChat() {
       <div className="relative z-20 mx-auto w-full max-w-[825px] p-4 sm:p-6">
         <div className="mb-2 flex items-end justify-between">
           <h1 className="pl-[30px] text-lg text-white">$360</h1>
-          <button
-            onClick={() => {
-              logger.info('Opening edit modal', {
-                action: 'openEditModal',
-                metadata: {
-                  currentUser,
-                  storedAvatar,
-                },
-              });
-              showModal('edit', {
-                name: currentUser?.name || '',
-                avatar: currentUser?.avatar || storedAvatar || AVATARS[0],
-                game: currentUser?.game || '',
-              });
-            }}
-            className="group flex flex-col items-center"
-          >
-            <Image
-              src={currentUser?.avatar ?? storedAvatar ?? AVATARS[0] ?? ''}
-              alt="Profile"
-              width={64}
-              height={64}
-              className="mb-1 h-[47px] w-[47px] object-cover transition-transform duration-200 ease-in-out group-hover:scale-110 group-hover:shadow-lg sm:h-[64px] sm:w-[64px]"
-            />
-            <div className="h-1 w-full scale-x-0 bg-white transition-transform duration-200 ease-in-out group-hover:scale-x-100" />
-          </button>
+          {currentUser && (
+            <button
+              onClick={() => {
+                loggerRef.current.info('Opening edit modal', {
+                  action: 'openEditModal',
+                  metadata: {
+                    currentUser,
+                  },
+                });
+                showModal('edit');
+              }}
+              className="group flex flex-col items-center"
+            >
+              <Image
+                src={currentUser.avatar}
+                alt="Profile"
+                width={64}
+                height={64}
+                className="mb-1 h-[47px] w-[47px] object-cover transition-transform duration-200 ease-in-out group-hover:scale-110 group-hover:shadow-lg sm:h-[64px] sm:w-[64px]"
+              />
+              <div className="h-1 w-full scale-x-0 bg-white transition-transform duration-200 ease-in-out group-hover:scale-x-100" />
+            </button>
+          )}
           <div className="pr-[30px] text-right text-white">
             <span className="text-lg">
               <Clock />
@@ -250,30 +200,26 @@ export function PartyChat() {
             <MemberList
               members={members}
               currentUserId={currentUser?.id}
-              volumeLevels={volumeLevels}
-              toggleMute={() => handleToggleMute()}
+              toggleMute={handleToggleMute}
             />
           </div>
         </Card>
 
         <PartyControls
           currentUser={currentUser}
-          isLeaving={isLeaving}
-          isMuted={isMuted}
-          micPermissionDenied={micPermissionDenied}
-          onJoin={async (name, avatar, game) => {
-            await handleJoinParty(name, avatar, game);
-          }}
+          isLeaving={partyState === 'leaving'}
+          isMuted={false}
+          onJoin={handleJoinParty}
           onLeave={handleLeaveParty}
           onToggleMute={handleToggleMute}
-          onRequestMicrophonePermission={requestMicrophonePermission}
+          onRequestMicrophonePermission={handleRequestMicrophonePermission}
+        />
+
+        <ModalManager
+          onJoinParty={handleJoinParty}
+          onEditProfile={handleEditProfile}
         />
       </div>
-
-      <ModalManager
-        onJoinParty={handleJoinParty}
-        onEditProfile={handleEditProfile}
-      />
     </div>
   );
 }

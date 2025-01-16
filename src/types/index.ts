@@ -3,7 +3,7 @@ export interface PartyMember {
   name: string;
   avatar: string;
   game: string;
-  isActive: boolean;
+  is_active: boolean;
   muted: boolean;
   agora_uid?: number | null;
   created_at?: string;

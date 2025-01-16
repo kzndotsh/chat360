@@ -37,6 +37,32 @@ export interface Database {
           created_at?: string;
           agora_uid?: number | null;
         };
+        Relationships: [];
+      };
+    };
+    Views: Record<string, never>;
+    Functions: {
+      get_active_members: {
+        Args: { stale_threshold: string };
+        Returns: {
+          id: string;
+          name: string;
+          avatar: string;
+          game: string;
+          is_active: boolean;
+          muted: boolean;
+          agora_uid: number | null;
+          last_seen: string;
+          created_at: string;
+        }[];
+      };
+      update_last_seen: {
+        Args: Record<string, never>;
+        Returns: void;
+      };
+      cleanup_inactive_members: {
+        Args: Record<string, never>;
+        Returns: void;
       };
     };
   };

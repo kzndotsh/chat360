@@ -86,7 +86,7 @@ export async function POST(req: Request) {
         channelName,
         uid: finalUid,
         privilegeExpireTimestamp,
-        tokenExpireTimestamp
+        tokenExpireTimestamp,
       });
       throw tokenError;
     }
@@ -95,9 +95,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid JSON format' }, { status: 400 });
     }
     console.error('Error in token generation:', error);
-    return NextResponse.json({ 
-      error: 'Failed to generate token',
-      details: error instanceof Error ? error.message : String(error)
-    }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: 'Failed to generate token',
+        details: error instanceof Error ? error.message : String(error),
+      },
+      { status: 500 }
+    );
   }
 }

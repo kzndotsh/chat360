@@ -3,8 +3,10 @@
 import React, { memo } from 'react';
 import { PartyMember } from '@/types';
 import Image from 'next/image';
-import { BsMicFill, BsMicMuteFill } from 'react-icons/bs';
-import { HiMicrophone } from 'react-icons/hi';
+import { BsMicMuteFill } from 'react-icons/bs';
+import { IoVolumeOffSharp } from 'react-icons/io5';
+import { IoVolumeHighSharp } from 'react-icons/io5';
+import { IoVolumeMediumSharp } from 'react-icons/io5';
 
 interface MemberListProps {
   members: PartyMember[];
@@ -40,20 +42,30 @@ const MemberListItem = memo(function MemberListItem({
     // No volume - much higher threshold for background noise (above your PC fan level of ~39)
     if (volumeLevel <= 45) {
       return (
-        <BsMicFill
+        <IoVolumeOffSharp
           className="h-8 w-8 text-[#282b2f]"
           data-testid="microphone-icon"
-          data-volume="0"
+          data-volume={volumeLevel}
         />
       );
     }
 
-    // Any volume above 45 shows the active mic icon
+    if (volumeLevel <= 65) {
+      return (
+        <IoVolumeMediumSharp
+          className="h-8 w-8 text-[#282b2f]"
+          data-testid="microphone-icon"
+          data-volume={volumeLevel}
+        />
+      );
+    }
+
+    // Any volume above 65
     return (
-      <HiMicrophone
+      <IoVolumeHighSharp
         className="h-8 w-8 text-[#282b2f]"
         data-testid="microphone-icon"
-        data-volume={volumeLevel <= 65 ? "1" : volumeLevel <= 85 ? "2" : "3"}
+        data-volume={volumeLevel}
       />
     );
   };
@@ -69,7 +81,7 @@ const MemberListItem = memo(function MemberListItem({
           onClick={toggleMute}
           className="ml-5 flex h-9 w-9 items-center justify-center text-[#161718] hover:text-gray-700"
           aria-label={member.muted ? 'Unmute' : 'Mute'}
-          disabled={member.id !== currentUserId || !member.isActive}
+          disabled={member.id !== currentUserId || !member.is_active}
         >
           {getMicIcon(member, volumeLevel)}
         </button>
@@ -92,7 +104,7 @@ const MemberListItem = memo(function MemberListItem({
       <div className="ml-[-50px] flex w-[23px] items-center justify-center tracking-normal">
         <svg
           className="h-6 w-6"
-          fill={member.isActive ? '#acd43b' : '#6B717D'}
+          fill={member.is_active ? '#acd43b' : '#6B717D'}
           viewBox="0 0 3000 3000"
           xmlns="http://www.w3.org/2000/svg"
         >
@@ -102,7 +114,7 @@ const MemberListItem = memo(function MemberListItem({
       </div>
       <div className="ml-[59px] flex flex-1 items-center">
         <div
-          className="truncate text-sm text-gray-600"
+          className="truncate text-[1.35rem] font-medium leading-tight text-[#282b2f]"
           data-testid="member-game"
         >
           {member.game || 'Not playing'}

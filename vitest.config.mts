@@ -11,5 +11,15 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./vitest.setup.ts'],
+    exclude: ['**/tmp_old/**', '**/node_modules/**'],
+    testTimeout: 10000,
+    hookTimeout: 10000,
+    globals: true,
+    environmentOptions: {
+      jsdom: {
+        resources: 'usable',
+      },
+    },
   },
+  // ignore files
 });

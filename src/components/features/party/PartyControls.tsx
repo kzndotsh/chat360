@@ -28,6 +28,7 @@ export function PartyControls({
   onRequestMicrophonePermission,
 }: PartyControlsProps) {
   const showModal = useModalStore((state) => state.showModal);
+  const hideModal = useModalStore((state) => state.hideModal);
   const [isLoading, setIsLoading] = useState(false);
   const [isTogglingMute, setIsTogglingMute] = useState(false);
 
@@ -70,6 +71,8 @@ export function PartyControls({
 
   const handleLeaveClick = useCallback(async () => {
     try {
+      hideModal();
+      localStorage.removeItem('currentUser');
       await onLeave();
     } catch (err) {
       logger.error('Failed to leave party', {
@@ -77,7 +80,7 @@ export function PartyControls({
         metadata: { error: err instanceof Error ? err : new Error(String(err)) },
       });
     }
-  }, [onLeave]);
+  }, [onLeave, hideModal]);
 
   const handleMuteClick = useCallback(async () => {
     if (isTogglingMute) return;
@@ -107,13 +110,15 @@ export function PartyControls({
         : 'cursor-not-allowed opacity-50'
     } text-white transition-opacity`;
 
+  const isActive = currentUser?.is_active ?? false;
+
   return (
     <div className="flex flex-col">
       <div className="flex items-center justify-start gap-6 px-4 py-2">
         <button
           onClick={handleJoinClick}
-          className={buttonClass(!currentUser?.isActive ?? true, isLoading)}
-          disabled={(currentUser?.isActive ?? false) || isLoading}
+          className={buttonClass(!isActive && !isLoading && !isLeaving, isLoading)}
+          disabled={isActive || isLoading || isLeaving}
         >
           <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#55b611] text-[10px] font-bold text-white">
             A
@@ -123,8 +128,8 @@ export function PartyControls({
 
         <button
           onClick={handleLeaveClick}
-          className={buttonClass(currentUser?.isActive ?? false, isLeaving)}
-          disabled={!currentUser?.isActive || isLeaving}
+          className={buttonClass(isActive && !isLeaving, isLeaving)}
+          disabled={!isActive || isLeaving}
         >
           <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#ae1228] text-[10px] font-bold text-white">
             X
@@ -134,25 +139,19 @@ export function PartyControls({
 
         <button
           onClick={handleMuteClick}
-          className={buttonClass(currentUser?.isActive ?? false, isTogglingMute)}
-          disabled={!currentUser?.isActive || isTogglingMute}
+          className={buttonClass(isActive && !isTogglingMute, isTogglingMute)}
+          disabled={!isActive || isTogglingMute}
         >
           <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#0c71ba] text-[10px] font-bold text-white">
             Y
           </div>
-          <span>
-            {micPermissionDenied
-              ? 'Enable Microphone'
-              : isMuted
-              ? 'Unmute'
-              : 'Mute'}
-          </span>
+          <span>{micPermissionDenied ? 'Enable Microphone' : isMuted ? 'Unmute' : 'Mute'}</span>
         </button>
 
         <button
           onClick={handleEditClick}
-          className={buttonClass(currentUser?.isActive ?? false, false)}
-          disabled={!currentUser?.isActive}
+          className={buttonClass(isActive, false)}
+          disabled={!isActive}
         >
           <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#e09a23] text-[10px] font-bold text-white">
             B
