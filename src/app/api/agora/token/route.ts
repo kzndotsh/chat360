@@ -13,12 +13,10 @@ export async function POST(req: Request) {
     }
 
     if (!appId || !appCertificate) {
-      console.error('Agora credentials missing:', { appId, appCertificate });
       return NextResponse.json({ error: 'Agora credentials not configured' }, { status: 500 });
     }
 
     if (appId.trim() === '' || appCertificate.trim() === '') {
-      console.error('Invalid Agora credentials:', { appId, appCertificate });
       return NextResponse.json({ error: 'Invalid Agora credentials' }, { status: 500 });
     }
 
@@ -57,50 +55,32 @@ export async function POST(req: Request) {
 
     const finalUid = uid || 0;
 
-    try {
-      // Build token with uid
-      const token = RtcTokenBuilder.buildTokenWithUid(
-        appId,
-        appCertificate,
-        channelName,
-        finalUid,
-        RtcRole.PUBLISHER,
-        privilegeExpireTimestamp,
-        tokenExpireTimestamp
-      );
+    // Build token with uid
+    const token = RtcTokenBuilder.buildTokenWithUid(
+      appId,
+      appCertificate,
+      channelName,
+      finalUid,
+      RtcRole.PUBLISHER,
+      privilegeExpireTimestamp,
+      tokenExpireTimestamp
+    );
 
-      return NextResponse.json({
-        token,
-        channelName,
-        uid: finalUid,
-        role: RtcRole.PUBLISHER,
-        privileges: {
-          tokenExpireTimestamp,
-          privilegeExpireTimestamp,
-        },
-      });
-    } catch (tokenError) {
-      console.error('Error generating token:', tokenError);
-      console.error('Token generation params:', {
-        appId,
-        channelName,
-        uid: finalUid,
-        privilegeExpireTimestamp,
+    return NextResponse.json({
+      token,
+      channelName,
+      uid: finalUid,
+      role: RtcRole.PUBLISHER,
+      privileges: {
         tokenExpireTimestamp,
-      });
-      throw tokenError;
-    }
+        privilegeExpireTimestamp,
+      },
+    });
   } catch (error) {
     if (error instanceof SyntaxError) {
       return NextResponse.json({ error: 'Invalid JSON format' }, { status: 400 });
     }
-    console.error('Error in token generation:', error);
-    return NextResponse.json(
-      {
-        error: 'Failed to generate token',
-        details: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
+    console.error('Error generating token:', error);
+    return NextResponse.json({ error: 'Failed to generate token' }, { status: 500 });
   }
 }

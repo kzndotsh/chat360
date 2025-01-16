@@ -1,34 +1,44 @@
-export type PartyMember = {
+import { VoiceStatus } from '@/components/ui/VoiceStatusIcon';
+
+export interface PartyMember {
   id: string;
   name: string;
-  avatar: string;
-  game: string;
-  is_active: boolean;
-  muted: boolean;
-  created_at: string;
-  last_seen: string;
-  agora_uid?: number | null;
-};
+  avatar_url?: string;
+  avatar?: string; // For backward compatibility
+  game?: string;
+  muted?: boolean;
+  agora_uid?: string;
+  is_active?: boolean;
+  voiceStatus: VoiceStatus;
+  deafenedUsers?: string[]; // Array of user IDs that this member has deafened
+  created_at?: string;
+  last_seen?: string;
+}
 
-export type PresenceMemberState = {
+export interface Party {
   id: string;
   name: string;
-  avatar: string;
-  game: string;
-  online_at: string;
-  muted: boolean;
-  agoraUid?: number | null;
-};
-
-export type PartyState = {
-  currentUser: PartyMember | null;
+  host_id: string;
   members: PartyMember[];
-  isInitializing: boolean;
-  isLeavingParty: boolean;
-  modalLocked: boolean;
-};
+  created_at: string;
+  updated_at: string;
+  channel_name: string; // Agora channel name
+}
 
-export type PartyActions = {
-  joinParty: (name: string, avatar: string, game: string) => Promise<void>;
-  leaveParty: () => Promise<void>;
-};
+export interface PartyPresence {
+  online_at: string;
+  voiceStatus: VoiceStatus;
+  deafenedUsers: string[];
+}
+
+export interface PresenceMemberState {
+  id: string;
+  name: string;
+  avatar: string;
+  game: string;
+  muted: boolean;
+  agoraUid: string;
+  online_at: string;
+  voiceStatus: VoiceStatus;
+  deafenedUsers?: string[];
+}

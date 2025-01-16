@@ -1,14 +1,16 @@
-import '@/styles/globals.css';
-
+import { ReactNode } from 'react';
 import type { Viewport } from 'next';
 import type { Metadata } from 'next';
-
 import { Inter } from 'next/font/google';
+import { ClientProviders } from '@/components/providers/ClientProviders';
+import { ErrorBoundaryProvider } from '@/components/providers/ErrorBoundaryProvider';
+import '@/styles/globals.css';
 
 const inter = Inter({
   subsets: ['latin'],
   display: 'swap',
   variable: '--font-inter',
+  preload: false,
 });
 
 export const metadata: Metadata = {
@@ -109,14 +111,28 @@ export const viewport: Viewport = {
   themeColor: 'black',
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+interface RootLayoutProps {
+  children: ReactNode;
+}
+
+export default function RootLayout({ children }: RootLayoutProps) {
   return (
     <html
       lang="en"
       className={`${inter.variable} font-sans`}
+      suppressHydrationWarning
     >
-      <body>
-        <main>{children}</main>
+      <head>
+        <meta charSet="utf-8" />
+        <meta
+          name="viewport"
+          content="width=device-width, initial-scale=1"
+        />
+      </head>
+      <body suppressHydrationWarning>
+        <ErrorBoundaryProvider>
+          <ClientProviders>{children}</ClientProviders>
+        </ErrorBoundaryProvider>
       </body>
     </html>
   );

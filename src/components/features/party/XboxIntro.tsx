@@ -13,38 +13,68 @@ interface XboxIntroProps {
 export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isMuted, setIsMuted] = useState(false);
+  const loggerRef = useRef(logger);
 
   useEffect(() => {
     const videoElement = videoRef.current;
 
     if (videoElement) {
       const attemptPlay = async () => {
+        loggerRef.current.info('Attempting to play intro video', {
+          component: 'XboxIntro',
+          action: 'playVideo',
+          metadata: {
+            url: INTRO_VIDEO_URL,
+            muted: false,
+            videoElement: videoElement.outerHTML,
+          },
+        });
+
         try {
           await videoElement.play();
           setIsMuted(false);
-          logger.info('Video playing with sound.', {
-            component: 'XboxIntro.tsx',
-            action: 'attemptPlay',
+          loggerRef.current.info('Successfully started video playback with sound', {
+            component: 'XboxIntro',
+            action: 'playVideo',
+            metadata: {
+              status: 'success',
+              muted: false,
+              url: INTRO_VIDEO_URL,
+            },
           });
         } catch (error) {
-          logger.warn(`Autoplay with sound failed: ${error}`, {
-            component: 'XboxIntro.tsx',
-            action: 'attemptPlay',
-            metadata: { error },
+          loggerRef.current.warn('Autoplay with sound failed, attempting muted playback', {
+            component: 'XboxIntro',
+            action: 'playVideo',
+            metadata: {
+              error: error instanceof Error ? error : new Error(String(error)),
+              url: INTRO_VIDEO_URL,
+            },
           });
+
           videoElement.muted = true;
           setIsMuted(true);
+
           try {
             await videoElement.play();
-            logger.info('Video playing muted.', {
-              component: 'XboxIntro.tsx',
-              action: 'attemptPlay',
+            loggerRef.current.info('Successfully started video playback muted', {
+              component: 'XboxIntro',
+              action: 'playVideo',
+              metadata: {
+                status: 'success',
+                muted: true,
+                url: INTRO_VIDEO_URL,
+              },
             });
           } catch (mutedError) {
-            logger.error(`Autoplay even when muted failed: ${mutedError}`, {
-              component: 'XboxIntro.tsx',
-              action: 'attemptPlay',
-              metadata: { error: mutedError },
+            loggerRef.current.error('Failed to play video even when muted', {
+              component: 'XboxIntro',
+              action: 'playVideo',
+              metadata: {
+                error: mutedError instanceof Error ? mutedError : new Error(String(mutedError)),
+                url: INTRO_VIDEO_URL,
+                videoElement: videoElement.outerHTML,
+              },
             });
           }
         }
@@ -53,9 +83,10 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
       attemptPlay();
 
       videoElement.onended = () => {
-        logger.info('Video ended.', {
-          component: 'XboxIntro.tsx',
-          action: 'videoElement.onended',
+        loggerRef.current.info('Video playback ended', {
+          component: 'XboxIntro',
+          action: 'videoEnded',
+          metadata: { url: INTRO_VIDEO_URL },
         });
         onIntroEnd();
       };
@@ -63,20 +94,30 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
   }, [onIntroEnd]);
 
   const handleSkip = () => {
-    logger.info('Intro skipped.', {
-      component: 'XboxIntro.tsx',
-      action: 'handleSkip',
+    loggerRef.current.info('User skipped intro video', {
+      component: 'XboxIntro',
+      action: 'skipVideo',
+      metadata: {
+        url: INTRO_VIDEO_URL,
+        currentTime: videoRef.current?.currentTime,
+      },
     });
     onIntroEnd();
   };
 
   const toggleMute = () => {
     if (videoRef.current) {
-      videoRef.current.muted = !videoRef.current.muted;
-      setIsMuted(!isMuted);
-      logger.info(`Mute toggled to ${!isMuted}.`, {
-        component: 'XboxIntro.tsx',
+      const newMutedState = !videoRef.current.muted;
+      videoRef.current.muted = newMutedState;
+      setIsMuted(newMutedState);
+      loggerRef.current.info('Video mute state toggled', {
+        component: 'XboxIntro',
         action: 'toggleMute',
+        metadata: {
+          muted: newMutedState,
+          currentTime: videoRef.current.currentTime,
+          url: INTRO_VIDEO_URL,
+        },
       });
     }
   };
@@ -91,6 +132,17 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
         loop={false}
         role="video"
         aria-label="Xbox intro video"
+        onError={(e) => {
+          loggerRef.current.error('Video playback error', {
+            component: 'XboxIntro',
+            action: 'videoError',
+            metadata: {
+              error: e.currentTarget.error,
+              url: INTRO_VIDEO_URL,
+              videoElement: e.currentTarget.outerHTML,
+            },
+          });
+        }}
       />
       <div className="absolute bottom-4 right-4 flex space-x-2">
         <Button

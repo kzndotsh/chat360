@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useRef, useEffect } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import Image from 'next/image';
 import { BaseModal } from './BaseModal';
@@ -23,11 +23,13 @@ interface NewUserModalProps {
 
 export const NewUserModal: React.FC<NewUserModalProps> = ({ onJoin, onCancel, isSubmitting }) => {
   const { lastUsedData } = useFormStore();
+  const loggerRef = useRef(logger);
 
   const {
     control,
     handleSubmit,
     formState: { errors },
+    watch,
   } = useForm<FormData>({
     defaultValues: {
       name: lastUsedData?.name || '',
@@ -36,49 +38,108 @@ export const NewUserModal: React.FC<NewUserModalProps> = ({ onJoin, onCancel, is
     },
   });
 
+  const formValues = watch();
+
+  // Log form validation errors
+  useEffect(() => {
+    if (Object.keys(errors).length > 0) {
+      loggerRef.current.warn('Form validation errors in new user modal', {
+        component: 'NewUserModal',
+        action: 'formValidation',
+        metadata: { errors },
+      });
+    }
+  }, [errors]);
+
+  // Log form value changes
+  useEffect(() => {
+    loggerRef.current.debug('New user form values updated', {
+      component: 'NewUserModal',
+      action: 'formUpdate',
+      metadata: {
+        formValues,
+        usedLastSavedData: !!lastUsedData,
+      },
+    });
+  }, [formValues, lastUsedData]);
+
   const handleFormSubmit = useCallback(
     async (data: FormData) => {
-      const context = {
-        component: 'NewUserModal',
-        action: 'handleFormSubmit',
-        metadata: {
-          formData: data,
-          isSubmitting,
-        },
-      };
-
-      logger.info('Form validation started', context);
-
       if (isSubmitting) {
-        logger.info('Form submission already in progress, skipping', context);
+        loggerRef.current.debug('New user form submission blocked - already submitting', {
+          component: 'NewUserModal',
+          action: 'formSubmit',
+          metadata: {
+            isSubmitting,
+            formData: data,
+          },
+        });
         return;
       }
 
+      loggerRef.current.info('Submitting new user form', {
+        component: 'NewUserModal',
+        action: 'formSubmit',
+        metadata: {
+          formData: data,
+          usedLastSavedData: !!lastUsedData,
+        },
+      });
+
       try {
-        logger.info('Calling onJoin', context);
         await onJoin(data.name.trim(), data.avatar, data.game);
-        logger.info('Form submitted successfully', context);
+        loggerRef.current.info('New user form submitted successfully', {
+          component: 'NewUserModal',
+          action: 'formSubmit',
+          metadata: { formData: data },
+        });
       } catch (error) {
-        logger.error(`Form submission failed: ${error}`, {
-          ...context,
+        loggerRef.current.error('New user form submission failed', {
+          component: 'NewUserModal',
+          action: 'formSubmit',
           metadata: {
-            ...context.metadata,
-            error,
+            error: error instanceof Error ? error : new Error(String(error)),
+            formData: data,
           },
         });
         Sentry.captureException(error, {
-          extra: context.metadata,
+          extra: { formData: data },
         });
-        console.error('Form submission failed:', error);
         throw error;
       }
     },
-    [onJoin, isSubmitting]
+    [onJoin, isSubmitting, lastUsedData]
+  );
+
+  const handleCancel = useCallback(() => {
+    loggerRef.current.info('New user form cancelled', {
+      component: 'NewUserModal',
+      action: 'formCancel',
+      metadata: {
+        hasFormData: Object.values(formValues).some(Boolean),
+        formValues,
+      },
+    });
+    onCancel();
+  }, [onCancel, formValues]);
+
+  const handleAvatarSelect = useCallback(
+    (avatar: string) => {
+      loggerRef.current.debug('Avatar selected in new user form', {
+        component: 'NewUserModal',
+        action: 'selectAvatar',
+        metadata: {
+          selectedAvatar: avatar,
+          previousAvatar: formValues.avatar,
+        },
+      });
+    },
+    [formValues.avatar]
   );
 
   return (
     <BaseModal
-      onClose={onCancel}
+      onClose={handleCancel}
       isSubmitting={isSubmitting}
     >
       <div className="space-y-4">
@@ -121,7 +182,10 @@ export const NewUserModal: React.FC<NewUserModalProps> = ({ onJoin, onCancel, is
                       <button
                         key={index}
                         type="button"
-                        onClick={() => onChange(avatar)}
+                        onClick={() => {
+                          handleAvatarSelect(avatar);
+                          onChange(avatar);
+                        }}
                         disabled={isSubmitting}
                         className={`h-12 w-12 overflow-hidden rounded-md ${
                           value === avatar ? 'ring-[3px] ring-[#55b611]' : ''
@@ -175,23 +239,23 @@ export const NewUserModal: React.FC<NewUserModalProps> = ({ onJoin, onCancel, is
               type="button"
               onClick={onCancel}
               disabled={isSubmitting}
-              className="flex items-center gap-2 rounded-none border-2 border-[#ae1228] px-4 py-2 text-[#ae1228] transition-colors hover:bg-[#ae1228] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex items-center gap-0 opacity-80 transition-opacity hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-50 sm:gap-2"
             >
-              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#ae1228] text-xs font-bold text-white">
+              <div className="h-3 w-3 rounded-full bg-[#ae1228] text-[8px] font-bold leading-3 text-white sm:h-4 sm:w-4 sm:text-[10px] sm:leading-4">
                 B
               </div>
-              Cancel
+              <span className="text-sm text-[#161718] sm:text-base">Cancel</span>
             </button>
 
             <button
               type="submit"
               disabled={isSubmitting}
-              className="flex items-center gap-2 rounded-none border-2 border-[#55b611] px-4 py-2 text-[#55b611] transition-colors hover:bg-[#55b611] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex items-center gap-0 opacity-80 transition-opacity hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-50 sm:gap-2"
             >
-              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#55b611] text-xs font-bold text-white">
+              <div className="h-3 w-3 rounded-full bg-[#70b603] text-[8px] font-bold leading-3 text-white sm:h-4 sm:w-4 sm:text-[10px] sm:leading-4">
                 A
               </div>
-              {isSubmitting ? 'Joining...' : 'Join Party'}
+              <span className="text-sm text-[#161718] sm:text-base">{isSubmitting ? 'Joining...' : 'Join Party'}</span>
             </button>
           </div>
         </form>

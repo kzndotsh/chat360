@@ -8,6 +8,7 @@ import { MemberList } from '@/components/features/party/MemberList';
 import { PartyHeader } from '@/components/features/party/PartyHeader';
 import { PartyControls } from '@/components/features/party/PartyControls';
 import { usePartyState } from '@/lib/hooks/usePartyState';
+import { useVoiceChat } from '@/lib/hooks/useVoiceChat';
 import Clock from '@/components/features/party/Clock';
 import { BACKGROUND_VIDEO_URL } from '@/lib/config/constants';
 import { useModalStore } from '@/lib/stores/useModalStore';
@@ -16,76 +17,65 @@ import { logger } from '@/lib/utils/logger';
 export function PartyChat() {
   // 1. External store hooks
   const showModal = useModalStore((state) => state.showModal);
+  const {
+    volumeLevels,
+    toggleMute: onToggleMute,
+    leaveVoice: onLeave,
+  } = useVoiceChat();
+  const { currentUser, members, partyState } = usePartyState();
+  const isLeaving = partyState === 'leaving';
 
   // 2. State hooks
   const [videoError, setVideoError] = useState(false);
+  const [justLeft, setJustLeft] = useState(false);
+  const [joinInProgress, setJoinInProgress] = useState(false);
 
   // 3. Refs
   const loggerRef = useRef(logger);
+  const joinStateRef = useRef({
+    isJoining: false,
+    hasJoined: false,
+  });
 
   // 4. Custom hooks
-  const {
-    members,
-    currentUser,
-    isInitializing,
-    partyState,
-    modalLocked,
-    joinParty,
-    leaveParty,
-    editProfile,
-  } = usePartyState();
-
-  // Track if we just left the party to prevent auto-showing modal
-  const [justLeft, setJustLeft] = useState(false);
+  const { isInitializing, modalLocked, joinParty, editProfile } = usePartyState();
 
   // 5. Callbacks
   const handleJoinParty = useCallback(
     async (username: string, avatar: string, game: string) => {
+      if (joinInProgress || joinStateRef.current.isJoining) return;
+      
+      setJoinInProgress(true);
+      joinStateRef.current.isJoining = true;
+
       loggerRef.current.info('Attempting to join party', {
+        component: 'PartyChat',
         action: 'joinParty',
         metadata: { username, avatar, game },
       });
 
       try {
         await joinParty(username, avatar, game);
+        joinStateRef.current.hasJoined = true;
         loggerRef.current.info('Successfully joined party', {
+          component: 'PartyChat',
           action: 'joinParty',
           metadata: { username },
         });
       } catch (error) {
         loggerRef.current.error('Failed to join party', {
+          component: 'PartyChat',
           action: 'joinParty',
           metadata: { error: error instanceof Error ? error : new Error(String(error)) },
         });
         throw error;
+      } finally {
+        setJoinInProgress(false);
+        joinStateRef.current.isJoining = false;
       }
     },
-    [joinParty]
+    [joinParty, joinInProgress]
   );
-
-  const handleLeaveParty = useCallback(async () => {
-    loggerRef.current.info('Attempting to leave party', { action: 'leaveParty' });
-
-    try {
-      setJustLeft(true);
-      await leaveParty();
-      loggerRef.current.info('Successfully left party', { action: 'leaveParty' });
-    } catch (error) {
-      loggerRef.current.error('Failed to leave party', {
-        action: 'leaveParty',
-        metadata: { error: error instanceof Error ? error : new Error(String(error)) },
-      });
-      throw error;
-    }
-  }, [leaveParty]);
-
-  const handleToggleMute = useCallback(async () => {
-    return Promise.resolve();
-  }, []);
-
-  const handleRequestMicrophonePermission = useCallback(async () => {
-    return Promise.resolve(false);
-  }, []);
 
   const handleEditProfile = useCallback(
     async (username: string, avatar: string, game: string) => {
@@ -113,17 +103,66 @@ export function PartyChat() {
 
   useEffect(() => {
     // Only show join modal on initial load, not after leaving
-    if (!currentUser && !isInitializing && partyState !== 'leaving' && !modalLocked && !justLeft) {
-      showModal('join');
-    }
-  }, [currentUser, showModal, isInitializing, partyState, modalLocked, justLeft]);
+    if (
+      !currentUser && 
+      !isInitializing && 
+      !modalLocked && 
+      !justLeft && 
+      !joinInProgress &&
+      !joinStateRef.current.isJoining &&
+      !joinStateRef.current.hasJoined &&
+      partyState !== 'leaving' && 
+      partyState !== 'joined' && 
+      partyState !== 'joining'
+    ) {
+      const timeoutId = setTimeout(() => {
+        // Double check state before showing modal
+        if (joinStateRef.current.hasJoined || joinStateRef.current.isJoining) return;
 
-  // Reset justLeft when currentUser changes to true
+        loggerRef.current.debug('Showing join modal', {
+          component: 'PartyChat',
+          action: 'showJoinModal',
+          metadata: { 
+            isInitializing, 
+            partyState, 
+            modalLocked, 
+            justLeft, 
+            joinInProgress,
+            joinState: joinStateRef.current 
+          },
+        });
+        showModal('join');
+      }, 100);
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [currentUser, showModal, isInitializing, partyState, modalLocked, justLeft, joinInProgress]);
+
+  // Reset states when currentUser changes
   useEffect(() => {
     if (currentUser) {
+      loggerRef.current.debug('Resetting join states', {
+        component: 'PartyChat',
+        action: 'resetStates',
+        metadata: { currentUser },
+      });
       setJustLeft(false);
+      joinStateRef.current = {
+        isJoining: false,
+        hasJoined: true,
+      };
     }
   }, [currentUser]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      joinStateRef.current = {
+        isJoining: false,
+        hasJoined: false,
+      };
+    };
+  }, []);
 
   return (
     <div
@@ -146,8 +185,13 @@ export function PartyChat() {
             onError={() => {
               setVideoError(true);
               loggerRef.current.error('Video playback error', {
+                component: 'PartyChat',
                 action: 'videoPlayback',
-                metadata: { elementId: 'xbox-bg', url: BACKGROUND_VIDEO_URL },
+                metadata: {
+                  elementId: 'xbox-bg',
+                  url: BACKGROUND_VIDEO_URL,
+                  videoElement: document.getElementById('xbox-bg')?.outerHTML,
+                },
               });
             }}
           >
@@ -178,7 +222,7 @@ export function PartyChat() {
               className="group flex flex-col items-center"
             >
               <Image
-                src={currentUser.avatar}
+                src={currentUser.avatar || 'https://i.imgur.com/LCycgcq.png'}
                 alt="Profile"
                 width={64}
                 height={64}
@@ -200,19 +244,18 @@ export function PartyChat() {
             <MemberList
               members={members}
               currentUserId={currentUser?.id}
-              toggleMute={handleToggleMute}
+              toggleMute={onToggleMute}
+              volumeLevels={volumeLevels}
             />
           </div>
         </Card>
 
         <PartyControls
           currentUser={currentUser}
-          isLeaving={partyState === 'leaving'}
-          isMuted={false}
-          onJoin={handleJoinParty}
-          onLeave={handleLeaveParty}
-          onToggleMute={handleToggleMute}
-          onRequestMicrophonePermission={handleRequestMicrophonePermission}
+          isLeaving={isLeaving}
+          onLeave={onLeave}
+          partyState={partyState}
+          joinParty={joinParty}
         />
 
         <ModalManager

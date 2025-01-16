@@ -1,7 +1,8 @@
 'use client';
 
-import React, { memo } from 'react';
+import React, { memo, useRef, useEffect } from 'react';
 import { useCurrentTime } from '@/lib/hooks/useCurrentTime';
+import { logger } from '@/lib/utils/logger';
 
 const TIME_FORMAT_OPTIONS = {
   hour: 'numeric' as const,
@@ -11,6 +12,20 @@ const TIME_FORMAT_OPTIONS = {
 
 function Clock() {
   const currentTime = useCurrentTime();
+  const loggerRef = useRef(logger);
+
+  useEffect(() => {
+    if (!currentTime || isNaN(currentTime.getTime())) {
+      loggerRef.current.warn('Invalid time value detected', {
+        component: 'Clock',
+        action: 'timeUpdate',
+        metadata: {
+          currentTime: currentTime?.toISOString(),
+          timestamp: Date.now(),
+        },
+      });
+    }
+  }, [currentTime]);
 
   // Handle invalid dates
   if (!currentTime || isNaN(currentTime.getTime())) {

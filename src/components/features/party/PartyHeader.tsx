@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { UserIcon } from './icons/UserIcon';
 import { Chat360Icon } from './icons/Chat360Icon';
 import { TbBrandX } from 'react-icons/tb';
@@ -36,6 +36,69 @@ const HeaderButton = ({
 
 export function PartyHeader({ membersCount }: PartyHeaderProps) {
   const [copyStatus, setCopyStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const loggerRef = useRef(logger);
+
+  const handleCopyURL = async () => {
+    loggerRef.current.info('Attempting to copy party URL', {
+      component: 'PartyHeader',
+      action: 'copyURL',
+      metadata: { url: window.location.href },
+    });
+
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopyStatus('success');
+      loggerRef.current.info('Successfully copied party URL', {
+        component: 'PartyHeader',
+        action: 'copyURL',
+        metadata: { status: 'success', url: window.location.href },
+      });
+      setTimeout(() => {
+        setCopyStatus('idle');
+        loggerRef.current.debug('Reset copy status', {
+          component: 'PartyHeader',
+          action: 'resetCopyStatus',
+        });
+      }, 2000);
+    } catch (error) {
+      loggerRef.current.error('Failed to copy URL to clipboard', {
+        component: 'PartyHeader',
+        action: 'copyURL',
+        metadata: {
+          error: error instanceof Error ? error : new Error(String(error)),
+          url: window.location.href,
+        },
+      });
+      setCopyStatus('error');
+      setTimeout(() => {
+        setCopyStatus('idle');
+        loggerRef.current.debug('Reset copy status', {
+          component: 'PartyHeader',
+          action: 'resetCopyStatus',
+        });
+      }, 2000);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (e.key === 'Enter') {
+      loggerRef.current.debug('Copy URL triggered via keyboard', {
+        component: 'PartyHeader',
+        action: 'keyPress',
+        metadata: { key: e.key },
+      });
+      e.currentTarget.click();
+    }
+  };
+
+  // Log initial render with member count
+  React.useEffect(() => {
+    loggerRef.current.debug('Party header rendered', {
+      component: 'PartyHeader',
+      action: 'render',
+      metadata: { membersCount },
+    });
+  }, [membersCount]);
 
   return (
     <div
@@ -76,26 +139,8 @@ export function PartyHeader({ membersCount }: PartyHeaderProps) {
 
       <button
         className="flex h-[38px] w-full cursor-pointer items-center gap-2 bg-gradient-to-b from-[#70cc00] to-[#409202] pl-[30px] shadow-[inset_0_-2px_4px_rgba(0,0,0,0.1)] transition-all hover:brightness-110"
-        onClick={async () => {
-          try {
-            await navigator.clipboard.writeText(window.location.href);
-            setCopyStatus('success');
-            setTimeout(() => setCopyStatus('idle'), 2000);
-          } catch (error) {
-            logger.error('Failed to copy URL to clipboard', {
-              component: 'PartyHeader',
-              action: 'copyURL',
-              metadata: { error },
-            });
-            setCopyStatus('error');
-            setTimeout(() => setCopyStatus('idle'), 2000);
-          }
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.currentTarget.click();
-          }
-        }}
+        onClick={handleCopyURL}
+        onKeyDown={handleKeyDown}
         aria-label="Copy party URL"
         aria-live="polite"
       >

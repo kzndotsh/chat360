@@ -1,10 +1,11 @@
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import Image from 'next/image';
 import { BaseModal } from './BaseModal';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { AVATARS, STATUSES } from '@/lib/config/constants';
+import { logger } from '@/lib/utils/logger';
 
 interface FormData {
   name: string;
@@ -30,43 +31,135 @@ export function EditProfileModal({
     handleSubmit,
     formState: { errors },
     reset,
+    watch,
   } = useForm<FormData>({
     defaultValues: initialData,
     mode: 'onChange',
+    shouldUnregister: true,
   });
 
-  // Store the last form data to prevent unnecessary resets
-  const lastFormData = React.useRef('');
+  const loggerRef = useRef(logger);
+  const formValues = watch();
+  const mountedRef = useRef(false);
 
-  // Only reset form when initialData meaningfully changes
+  // Initialize form with current data when modal opens
   useEffect(() => {
-    const currentFormData = JSON.stringify({
-      name: initialData.name,
-      avatar: initialData.avatar,
-      game: initialData.game,
-    });
-
-    if (currentFormData !== lastFormData.current) {
-      reset(initialData);
-      lastFormData.current = currentFormData;
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      loggerRef.current.debug('Initializing form with data', {
+        component: 'EditProfileModal',
+        action: 'formInit',
+        metadata: { initialData },
+      });
     }
-  }, [initialData.name, initialData.avatar, initialData.game, reset, initialData]);
+    
+    // Always reset form with latest data
+    reset(initialData);
+  }, [initialData, reset]);
+
+  // Log form validation errors
+  useEffect(() => {
+    if (!mountedRef.current || Object.keys(errors).length === 0) return;
+    
+    loggerRef.current.warn('Form validation errors', {
+      component: 'EditProfileModal',
+      action: 'formValidation',
+      metadata: { errors },
+    });
+  }, [errors]);
+
+  // Log meaningful form value changes
+  useEffect(() => {
+    if (!mountedRef.current) return;
+
+    const hasChanges = JSON.stringify(formValues) !== JSON.stringify(initialData);
+    loggerRef.current.debug('Form values updated', {
+      component: 'EditProfileModal',
+      action: 'formUpdate',
+      metadata: {
+        formValues,
+        hasChanges,
+      },
+    });
+  }, [formValues, initialData]);
+
+  // Reset state on unmount
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+      reset({} as FormData);
+    };
+  }, [reset]);
 
   const handleFormSubmit = useCallback(
     async (data: FormData) => {
-      if (isSubmitting) return;
+      if (isSubmitting) {
+        loggerRef.current.debug('Form submission blocked - already submitting', {
+          component: 'EditProfileModal',
+          action: 'formSubmit',
+          metadata: { isSubmitting },
+        });
+        return;
+      }
+
+      loggerRef.current.info('Submitting profile edit form', {
+        component: 'EditProfileModal',
+        action: 'formSubmit',
+        metadata: {
+          formData: data,
+          hasChanges: JSON.stringify(data) !== JSON.stringify(initialData),
+        },
+      });
+
       try {
         await onSubmit(data.name.trim(), data.avatar, data.game);
-      } catch {
-        // Error handling is done in the parent component
+        loggerRef.current.info('Profile edit form submitted successfully', {
+          component: 'EditProfileModal',
+          action: 'formSubmit',
+          metadata: { formData: data },
+        });
+      } catch (error) {
+        loggerRef.current.error('Profile edit form submission failed', {
+          component: 'EditProfileModal',
+          action: 'formSubmit',
+          metadata: {
+            error: error instanceof Error ? error : new Error(String(error)),
+            formData: data,
+          },
+        });
       }
     },
-    [onSubmit, isSubmitting]
+    [onSubmit, isSubmitting, initialData]
+  );
+
+  const handleCancel = useCallback(() => {
+    loggerRef.current.info('Profile edit cancelled', {
+      component: 'EditProfileModal',
+      action: 'formCancel',
+      metadata: {
+        hasUnsavedChanges: JSON.stringify(formValues) !== JSON.stringify(initialData),
+      },
+    });
+    onCancel();
+  }, [onCancel, formValues, initialData]);
+
+  const handleAvatarSelect = useCallback(
+    (avatar: string) => {
+      loggerRef.current.debug('Avatar selected', {
+        component: 'EditProfileModal',
+        action: 'selectAvatar',
+        metadata: {
+          selectedAvatar: avatar,
+          previousAvatar: formValues.avatar,
+        },
+      });
+    },
+    [formValues.avatar]
   );
 
   return (
     <BaseModal
-      onClose={onCancel}
+      onClose={handleCancel}
       isSubmitting={isSubmitting}
     >
       <div className="mb-4 flex items-center justify-between">
@@ -112,7 +205,10 @@ export function EditProfileModal({
                   <button
                     key={index}
                     type="button"
-                    onClick={() => onChange(avatar)}
+                    onClick={() => {
+                      handleAvatarSelect(avatar);
+                      onChange(avatar);
+                    }}
                     className={`h-12 w-12 overflow-hidden rounded-md ${
                       value === avatar ? 'ring-[3px] ring-[#55b611]' : ''
                     }`}

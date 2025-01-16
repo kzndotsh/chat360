@@ -14,6 +14,7 @@ export interface Database {
           last_seen: string;
           created_at: string;
           agora_uid: number | null;
+          deafened_users: string[];
         };
         Insert: {
           id?: string;
@@ -25,6 +26,7 @@ export interface Database {
           last_seen?: string;
           created_at?: string;
           agora_uid?: number | null;
+          deafened_users?: string[];
         };
         Update: {
           id?: string;
@@ -36,6 +38,7 @@ export interface Database {
           last_seen?: string;
           created_at?: string;
           agora_uid?: number | null;
+          deafened_users?: string[];
         };
         Relationships: [];
       };
@@ -54,6 +57,7 @@ export interface Database {
           agora_uid: number | null;
           last_seen: string;
           created_at: string;
+          deafened_users: string[];
         }[];
       };
       update_last_seen: {
