@@ -161,6 +161,7 @@ export function useVoiceChat() {
         hasPermission: hasAudioPermission,
         isConnected,
         hasError: !!error,
+        clientState: client?.connectionState,
       },
     });
 
@@ -193,13 +194,32 @@ export function useVoiceChat() {
       loggerRef.current.debug('Attempting to join voice chat', {
         component: 'useVoiceChat',
         action: 'connect',
+        metadata: {
+          clientState: client?.connectionState,
+        },
       });
 
       await joinVoice();
 
+      // Wait longer for connection to establish
+      loggerRef.current.debug('Waiting for connection to establish', {
+        component: 'useVoiceChat',
+        action: 'connect',
+      });
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      // Verify connection
+      if (!isConnected || client?.connectionState !== 'CONNECTED') {
+        throw new Error('Failed to establish connection');
+      }
+
       loggerRef.current.info('Successfully connected to voice chat', {
         component: 'useVoiceChat',
         action: 'connect',
+        metadata: {
+          clientState: client?.connectionState,
+          isConnected,
+        },
       });
     } catch (err) {
       const connectError = {
@@ -209,17 +229,38 @@ export function useVoiceChat() {
       };
       setError(connectError);
 
-      // Attempt retry
-      const success = await retryOperation(joinVoice);
+      // Attempt retry with increased timeout
+      const success = await retryOperation(async () => {
+        await joinVoice();
+        // Wait longer for connection to establish
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        // Verify connection
+        if (!isConnected || client?.connectionState !== 'CONNECTED') {
+          throw new Error('Failed to establish connection');
+        }
+      });
+
       if (!success) {
         loggerRef.current.error('Failed to connect to voice chat after retries', {
           component: 'useVoiceChat',
           action: 'connect',
-          metadata: { error: err },
+          metadata: {
+            error: err,
+            clientState: client?.connectionState,
+            isConnected,
+          },
         });
       }
     }
-  }, [joinVoice, requestAudioPermission, hasAudioPermission, isConnected, error, retryOperation]);
+  }, [
+    joinVoice,
+    requestAudioPermission,
+    hasAudioPermission,
+    isConnected,
+    error,
+    retryOperation,
+    client,
+  ]);
 
   // Auto-join with better state handling
   useEffect(() => {
@@ -233,6 +274,7 @@ export function useVoiceChat() {
         metadata: {
           userId: currentUser.id,
           hasPermission: hasAudioPermission,
+          clientState: client?.connectionState,
         },
       });
 
@@ -253,22 +295,44 @@ export function useVoiceChat() {
                 action: 'autoJoin',
               });
 
-              // Add a delay to ensure everything is ready
+              // Add a longer delay to ensure everything is ready
               timeoutId = setTimeout(async () => {
                 if (isStale) return;
 
                 try {
                   await connect();
+
+                  // Wait for connection to establish
+                  await new Promise((resolve) => setTimeout(resolve, 2000));
+
+                  // Verify connection
+                  if (!isConnected || client?.connectionState !== 'CONNECTED') {
+                    throw new Error('Failed to establish connection');
+                  }
+
+                  loggerRef.current.debug('Successfully connected to voice chat', {
+                    component: 'useVoiceChat',
+                    action: 'autoJoin',
+                    metadata: {
+                      userId: currentUser.id,
+                      clientState: client?.connectionState,
+                    },
+                  });
                 } catch (err) {
                   if (!isStale) {
                     loggerRef.current.error('Failed to auto-join voice chat', {
                       component: 'useVoiceChat',
                       action: 'autoJoin',
-                      metadata: { error: err },
+                      metadata: {
+                        error: err,
+                        clientState: client?.connectionState,
+                      },
                     });
+                    // Reset cleanup flag to allow retry
+                    cleanupInProgressRef.current = false;
                   }
                 }
-              }, 1000);
+              }, 2000);
             } else {
               loggerRef.current.warn('Microphone permission denied during auto-join', {
                 component: 'useVoiceChat',
@@ -292,16 +356,38 @@ export function useVoiceChat() {
 
           try {
             await connect();
+
+            // Wait for connection to establish
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+
+            // Verify connection
+            if (!isConnected || client?.connectionState !== 'CONNECTED') {
+              throw new Error('Failed to establish connection');
+            }
+
+            loggerRef.current.debug('Successfully connected to voice chat', {
+              component: 'useVoiceChat',
+              action: 'autoJoin',
+              metadata: {
+                userId: currentUser.id,
+                clientState: client?.connectionState,
+              },
+            });
           } catch (err) {
             if (!isStale) {
               loggerRef.current.error('Failed to auto-join voice chat', {
                 component: 'useVoiceChat',
                 action: 'autoJoin',
-                metadata: { error: err },
+                metadata: {
+                  error: err,
+                  clientState: client?.connectionState,
+                },
               });
+              // Reset cleanup flag to allow retry
+              cleanupInProgressRef.current = false;
             }
           }
-        }, 1000);
+        }, 2000);
       }
     }
 
@@ -309,7 +395,15 @@ export function useVoiceChat() {
       isStale = true;
       if (timeoutId) clearTimeout(timeoutId);
     };
-  }, [partyState, currentUser, isConnected, connect, hasAudioPermission, requestAudioPermission]);
+  }, [
+    partyState,
+    currentUser,
+    isConnected,
+    connect,
+    hasAudioPermission,
+    requestAudioPermission,
+    client,
+  ]);
 
   // Sync cleanup with party state
   useEffect(() => {

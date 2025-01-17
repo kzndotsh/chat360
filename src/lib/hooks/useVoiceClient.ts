@@ -96,6 +96,7 @@ export function useVoiceClient() {
         metadata: {
           hasUser: !!currentUser?.id,
           hasClient: !!client,
+          clientState: client?.connectionState,
         },
       });
       return;
@@ -104,12 +105,22 @@ export function useVoiceClient() {
     loggerRef.current.info('Attempting to join voice chat', {
       component: 'useVoiceClient',
       action: 'joinVoice',
-      metadata: { userId: currentUser.id },
+      metadata: {
+        userId: currentUser.id,
+        clientState: client.connectionState,
+      },
     });
 
     try {
       // Ensure we're in a clean state
       if (client.connectionState !== 'DISCONNECTED') {
+        loggerRef.current.debug('Cleaning up existing connection', {
+          component: 'useVoiceClient',
+          action: 'joinVoice',
+          metadata: {
+            currentState: client.connectionState,
+          },
+        });
         await client.leave().catch((error) => {
           loggerRef.current.warn('Error during pre-join cleanup', {
             component: 'useVoiceClient',
@@ -117,6 +128,8 @@ export function useVoiceClient() {
             metadata: { error },
           });
         });
+        // Wait for disconnect to complete
+        await new Promise((resolve) => setTimeout(resolve, 1000));
       }
 
       // Fetch new token
@@ -131,7 +144,24 @@ export function useVoiceClient() {
         throw new Error('Agora App ID not configured');
       }
 
+      loggerRef.current.debug('Joining Agora channel', {
+        component: 'useVoiceClient',
+        action: 'joinVoice',
+        metadata: {
+          userId: currentUser.id,
+          numericUid: tokenData.uid,
+        },
+      });
+
       await client.join(appId, 'main', tokenData.token, tokenData.uid);
+
+      // Wait for connection to establish
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      // Verify connection state
+      if (client.connectionState !== 'CONNECTED') {
+        throw new Error('Failed to establish connection');
+      }
 
       setIsConnected(true);
 
@@ -141,6 +171,7 @@ export function useVoiceClient() {
         metadata: {
           userId: currentUser.id,
           numericUid: tokenData.uid,
+          clientState: client.connectionState,
         },
       });
     } catch (error) {
@@ -150,6 +181,7 @@ export function useVoiceClient() {
         metadata: {
           error,
           status: error instanceof Error ? error.message : 'Unknown error',
+          clientState: client.connectionState,
         },
       });
       setIsConnected(false);
@@ -232,11 +264,14 @@ export function useVoiceClient() {
         metadata: {
           state,
           userId: currentUser?.id,
+          previousState: client.connectionState,
         },
       });
 
       if (state === 'DISCONNECTED') {
         setIsConnected(false);
+      } else if (state === 'CONNECTED') {
+        setIsConnected(true);
       }
     };
 
