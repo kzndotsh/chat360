@@ -25,8 +25,6 @@ export function PartyChat() {
     partyState,
     leaveParty,
     joinParty: joinPartyState,
-    isInitializing,
-    modalLocked,
     editProfile,
   } = usePartyState();
   const { initialize: initializePresence } = usePresence();
@@ -34,87 +32,22 @@ export function PartyChat() {
 
   // 2. State hooks
   const [videoError, setVideoError] = useState(false);
-  const [justLeft, setJustLeft] = useState(false);
-  const [joinInProgress, setJoinInProgress] = useState(false);
 
   // 3. Refs
   const loggerRef = useRef(logger);
-  const joinStateRef = useRef({
-    isJoining: false,
-    hasJoined: false,
-  });
-
-  // 4. Effects
-  useEffect(() => {
-    // Only show join modal on initial load, not after leaving
-    if (
-      !currentUser &&
-      !isInitializing &&
-      !modalLocked &&
-      !justLeft &&
-      !joinInProgress &&
-      !joinStateRef.current.isJoining &&
-      !joinStateRef.current.hasJoined &&
-      partyState !== 'leaving' &&
-      partyState !== 'joined' &&
-      partyState !== 'joining'
-    ) {
-      const timeoutId = setTimeout(() => {
-        // Double check state before showing modal
-        if (joinStateRef.current.hasJoined || joinStateRef.current.isJoining) return;
-
-        loggerRef.current.debug('Showing join modal', {
-          component: 'PartyChat',
-          action: 'showJoinModal',
-          metadata: {
-            isInitializing,
-            partyState,
-            modalLocked,
-            justLeft,
-            joinInProgress,
-            joinState: joinStateRef.current,
-          },
-        });
-        showModal('join');
-      }, 100);
-
-      return () => clearTimeout(timeoutId);
-    }
-  }, [currentUser, showModal, isInitializing, partyState, modalLocked, justLeft, joinInProgress]);
-
-  // Reset states when currentUser changes
-  useEffect(() => {
-    if (currentUser) {
-      loggerRef.current.debug('Resetting join states', {
-        component: 'PartyChat',
-        action: 'resetStates',
-        metadata: { currentUser },
-      });
-      setJustLeft(false);
-      joinStateRef.current = {
-        isJoining: false,
-        hasJoined: true,
-      };
-    }
-  }, [currentUser]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      joinStateRef.current = {
-        isJoining: false,
-        hasJoined: false,
-      };
-    };
-  }, []);
 
   // 5. Callbacks
   const handleJoinParty = useCallback(
     async (username: string, avatar: string, game: string) => {
-      if (joinInProgress || joinStateRef.current.isJoining) return;
-
-      setJoinInProgress(true);
-      joinStateRef.current.isJoining = true;
+      // Only allow join if not already in party
+      if (partyState !== 'idle') {
+        loggerRef.current.debug('Join blocked - party state not idle', {
+          component: 'PartyChat',
+          action: 'joinParty',
+          metadata: { partyState },
+        });
+        return;
+      }
 
       loggerRef.current.info('Attempting to join party', {
         component: 'PartyChat',
@@ -124,7 +57,6 @@ export function PartyChat() {
 
       try {
         await joinPartyState(username, avatar, game);
-        joinStateRef.current.hasJoined = true;
         loggerRef.current.info('Successfully joined party', {
           component: 'PartyChat',
           action: 'joinParty',
@@ -137,12 +69,9 @@ export function PartyChat() {
           metadata: { error: error instanceof Error ? error : new Error(String(error)) },
         });
         throw error;
-      } finally {
-        setJoinInProgress(false);
-        joinStateRef.current.isJoining = false;
       }
     },
-    [joinPartyState, joinInProgress]
+    [joinPartyState, partyState]
   );
 
   const handleEditProfile = useCallback(
@@ -211,20 +140,14 @@ export function PartyChat() {
         action: 'leaveParty',
       });
 
-      // Set justLeft to prevent auto-rejoin
-      setJustLeft(true);
-
-      // Reset join states
-      joinStateRef.current = {
-        isJoining: false,
-        hasJoined: false,
-      };
+      let voiceDisconnectError = null;
 
       // First disconnect from voice chat
       try {
         await disconnect();
       } catch (voiceError) {
-        // Log but continue with party leave
+        // Store voice error but continue with party leave
+        voiceDisconnectError = voiceError;
         loggerRef.current.error('Failed to disconnect from voice chat', {
           component: 'PartyChat',
           action: 'disconnect',
@@ -237,6 +160,11 @@ export function PartyChat() {
       // Then leave party
       await leaveParty();
 
+      // If we had a voice error but party leave succeeded, still throw the voice error
+      if (voiceDisconnectError) {
+        throw voiceDisconnectError;
+      }
+
       loggerRef.current.info('Successfully completed party leave sequence', {
         component: 'PartyChat',
         action: 'leaveParty',
@@ -247,8 +175,6 @@ export function PartyChat() {
         action: 'leaveParty',
         metadata: { error: error instanceof Error ? error : new Error(String(error)) },
       });
-      // Reset justLeft on error
-      setJustLeft(false);
       throw error;
     }
   }, [disconnect, leaveParty, isLeaving]);

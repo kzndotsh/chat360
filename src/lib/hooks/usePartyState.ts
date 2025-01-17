@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { supabase } from '@/lib/api/supabase';
+import { supabase, getGlobalPresenceChannel } from '@/lib/api/supabase';
 import { logger } from '@/lib/utils/logger';
 import type { PartyMember } from '@/lib/types/party';
 import { usePresence } from './usePresence';
@@ -16,6 +16,7 @@ export function usePartyState() {
   // Core state
   const [currentUser, setCurrentUser] = useState<PartyMember | null>(null);
   const [partyState, setPartyState] = useState<PartyState>('idle');
+  const [isRestoringSession, setIsRestoringSession] = useState(false);
 
   // Refs
   const mountedRef = useRef(true);
@@ -180,40 +181,63 @@ export function usePartyState() {
         // Update state and store user data first
         if (mountedRef.current) {
           setCurrentUser(newMember);
-          setPartyState('joined');
+          localStorage.setItem('currentUser', JSON.stringify(newMember));
+          localStorage.setItem('partyState', 'joined');
+        }
+
+        // Initialize presence first
+        await initializePresence(newMember);
+
+        // Wait for Agora client to be ready
+        loggerRef.current.debug('Waiting for Agora client before completing join', {
+          ...LOG_CONTEXT,
+          action: 'joinParty',
+          metadata: { userId: newMember.id },
+        });
+
+        // Small delay to ensure Agora client is ready
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
+        // Then set party state to joined
+        if (mountedRef.current) {
+          const prevState = partyState;
+          const stateSnapshot = {
+            currentUser: newMember,
+            partyState: 'joined' as const,
+            isInitializing: false,
+            lastInitTime: Date.now(),
+          };
+
+          // Log state transition before making changes
           loggerRef.current.debug('Party state transition', {
             ...LOG_CONTEXT,
             action: 'joinParty',
             metadata: {
-              from: 'joining',
-              to: 'joined',
+              from: prevState,
+              to: stateSnapshot.partyState,
               userId: newMember.id,
-              stateSnapshot: {
-                currentUser: newMember,
-                partyState: 'joined',
-                isInitializing: false,
-              },
             },
           });
-          localStorage.setItem('currentUser', JSON.stringify(newMember));
-          localStorage.setItem('partyState', 'joined');
-          lastInitTimeRef.current = Date.now();
-        }
 
-        // Then initialize presence
-        await initializePresence(newMember);
+          // Update state and storage atomically
+          setPartyState(stateSnapshot.partyState);
+          localStorage.setItem('partyState', stateSnapshot.partyState);
+          lastInitTimeRef.current = stateSnapshot.lastInitTime;
 
-        loggerRef.current.info('Successfully joined party', {
-          ...LOG_CONTEXT,
-          action: 'joinParty',
-          metadata: {
-            member: newMember,
-            stateSnapshot: {
-              currentUser: newMember,
-              partyState: 'joined',
+          // Small delay to ensure state updates are processed
+          await new Promise((resolve) => setTimeout(resolve, 100));
+
+          // Log successful join with complete state snapshot
+          loggerRef.current.info('Successfully joined party', {
+            ...LOG_CONTEXT,
+            action: 'joinParty',
+            metadata: {
+              member: newMember,
+              stateSnapshot,
+              prevState,
             },
-          },
-        });
+          });
+        }
       } catch (error: unknown) {
         loggerRef.current.error('Failed to join party', {
           ...LOG_CONTEXT,
@@ -485,11 +509,28 @@ export function usePartyState() {
       // Clean up any existing presence first
       const restoreSession = async () => {
         try {
+          // Set restoration flag
+          setIsRestoringSession(true);
           // Set cleanup flag to prevent concurrent operations
           isCleaningUpRef.current = true;
 
           // Clean up any existing presence
           await cleanup();
+
+          // Get presence channel and check its state
+          const presenceChannel = await getGlobalPresenceChannel();
+          if (presenceChannel?.state === 'errored') {
+            loggerRef.current.warn('Presence channel in error state during session restore', {
+              ...LOG_CONTEXT,
+              action: 'restoreSession',
+              metadata: {
+                channelState: presenceChannel.state,
+                userId: parsedUser.id,
+              },
+            });
+            // Wait for channel to recover before proceeding
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+          }
 
           // Validate user in database
           const { data, error } = await supabase
@@ -537,6 +578,21 @@ export function usePartyState() {
             setPartyState('joining');
 
             try {
+              // Check presence channel state again before initializing
+              const presenceChannel = await getGlobalPresenceChannel();
+              if (presenceChannel?.state === 'errored') {
+                loggerRef.current.warn('Presence channel in error state before initializing presence', {
+                  ...LOG_CONTEXT,
+                  action: 'restoreSession',
+                  metadata: {
+                    channelState: presenceChannel.state,
+                    userId: updatedUser.id,
+                  },
+                });
+                // Wait for channel to recover before proceeding
+                await new Promise((resolve) => setTimeout(resolve, 2000));
+              }
+
               await initializePresence(updatedUser);
               if (mountedRef.current) {
                 setPartyState('joined');
@@ -584,6 +640,7 @@ export function usePartyState() {
         } finally {
           if (mountedRef.current) {
             isCleaningUpRef.current = false;
+            setIsRestoringSession(false);
           }
         }
       };
@@ -694,6 +751,7 @@ export function usePartyState() {
     isInitializing: isPresenceInitializing,
     partyState,
     modalLocked,
+    isRestoringSession,
     joinParty,
     leaveParty,
     editProfile,

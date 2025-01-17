@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { useVoicePermissions } from './useVoicePermissions';
+import { usePartyState } from './usePartyState';
 import { useVoiceClient } from './useVoiceClient';
 import { useVoiceTrack } from './useVoiceTrack';
 import { useVolumeMonitor } from './useVolumeMonitor';
-import { useVoicePermissions } from './useVoicePermissions';
-import { usePartyState } from './usePartyState';
 import { logger } from '@/lib/utils/logger';
+import type { IAgoraRTCClient } from 'agora-rtc-sdk-ng';
 
 export type VoiceChatError = {
   type: 'permission' | 'connection' | 'track' | 'unknown';
@@ -16,14 +17,19 @@ const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_DELAY = 1000;
 
 export function useVoiceChat() {
-  const [error, setError] = useState<VoiceChatError | null>(null);
-  const [isRetrying, setIsRetrying] = useState(false);
-  const retryAttemptsRef = useRef(0);
+  // Logger ref to avoid recreation
   const loggerRef = useRef(logger);
   const cleanupInProgressRef = useRef(false);
+  const retryAttemptsRef = useRef(0);
 
+  // State
+  const [error, setError] = useState<VoiceChatError | null>(null);
+  const [isRetrying, setIsRetrying] = useState(false);
+
+  // Hooks
   const { client, isConnected, joinVoice, leaveVoice } = useVoiceClient();
-  const { track, isLoadingMic, isMuted, toggleMute, stopTrack } = useVoiceTrack();
+  const typedClient = client as IAgoraRTCClient | undefined;
+  const { track, isMuted, toggleMute, stopTrack, createMicrophoneTrack } = useVoiceTrack();
   const { volumeLevels, deafenedUsers, toggleDeafenUser } = useVolumeMonitor();
   const { hasAudioPermission, requestAudioPermission } = useVoicePermissions();
   const { currentUser, partyState } = usePartyState();
@@ -150,288 +156,137 @@ export function useVoiceChat() {
         },
       });
     }
-  }, [leaveVoice, stopTrack, track, isConnected, error, retryOperation, partyState]);
+  }, [track, stopTrack, isConnected, leaveVoice, error, retryOperation, partyState]);
 
-  // Enhanced connect with retry logic
+  // Enhanced connect with better state handling
   const connect = useCallback(async () => {
-    loggerRef.current.debug('Attempting to connect to voice chat', {
-      component: 'useVoiceChat',
-      action: 'connect',
-      metadata: {
-        hasPermission: hasAudioPermission,
-        isConnected,
-        hasError: !!error,
-        clientState: client?.connectionState,
-      },
-    });
+    // Check dependencies first
+    if (!typedClient || !currentUser) {
+      loggerRef.current.error('Connect failed - missing dependencies', {
+        component: 'useVoiceChat',
+        action: 'connect',
+        metadata: {
+          hasClient: !!typedClient,
+          hasUser: !!currentUser,
+          connectionState: typedClient?.connectionState
+        }
+      });
+      return;
+    }
+
+    // Skip if already connected
+    const state = typedClient.connectionState;
+    if (state === 'CONNECTED') {
+      loggerRef.current.debug('Connect skipped - already connected', {
+        component: 'useVoiceChat',
+        action: 'connect',
+        metadata: {
+          connectionState: state
+        }
+      });
+      return;
+    }
+
+    // Skip if cleanup in progress
+    if (cleanupInProgressRef.current) {
+      loggerRef.current.debug('Connect skipped - cleanup in progress', {
+        component: 'useVoiceChat',
+        action: 'connect'
+      });
+      return;
+    }
 
     try {
-      setError(null);
-
-      // First check if we already have permission
+      // Request audio permission if needed
       if (!hasAudioPermission) {
-        loggerRef.current.debug('Requesting microphone permission', {
+        loggerRef.current.debug('Requesting audio permission before connect', {
           component: 'useVoiceChat',
-          action: 'connect',
+          action: 'connect'
         });
-
-        const hasPermission = await requestAudioPermission();
-        if (!hasPermission) {
-          const permissionError = {
-            type: 'permission' as const,
-            message: 'Microphone permission denied',
-          };
-          setError(permissionError);
-          loggerRef.current.warn('Microphone permission denied', {
-            component: 'useVoiceChat',
-            action: 'connect',
-          });
-          return;
-        }
+        await requestAudioPermission();
       }
 
-      // Then try to join voice chat
+      // Join voice chat
       loggerRef.current.debug('Attempting to join voice chat', {
         component: 'useVoiceChat',
         action: 'connect',
         metadata: {
-          clientState: client?.connectionState,
-        },
+          userId: currentUser.id,
+          connectionState: typedClient.connectionState
+        }
       });
 
       await joinVoice();
 
-      // Wait longer for connection to establish
-      loggerRef.current.debug('Waiting for connection to establish', {
-        component: 'useVoiceChat',
-        action: 'connect',
-      });
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-
-      // Verify connection
-      if (!isConnected || client?.connectionState !== 'CONNECTED') {
-        throw new Error('Failed to establish connection');
+      // Create and publish track
+      const newTrack = await createMicrophoneTrack();
+      if (newTrack && typedClient.connectionState === 'CONNECTED') {
+        await typedClient.publish(newTrack);
       }
 
-      loggerRef.current.info('Successfully connected to voice chat', {
+      loggerRef.current.debug('Successfully connected', {
         component: 'useVoiceChat',
         action: 'connect',
-        metadata: {
-          clientState: client?.connectionState,
-          isConnected,
-        },
-      });
-    } catch (err) {
-      const connectError = {
-        type: 'connection' as const,
-        message: 'Failed to connect to voice chat',
-        details: err,
-      };
-      setError(connectError);
-
-      // Attempt retry with increased timeout
-      const success = await retryOperation(async () => {
-        await joinVoice();
-        // Wait longer for connection to establish
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-        // Verify connection
-        if (!isConnected || client?.connectionState !== 'CONNECTED') {
-          throw new Error('Failed to establish connection');
-        }
-      });
-
-      if (!success) {
-        loggerRef.current.error('Failed to connect to voice chat after retries', {
-          component: 'useVoiceChat',
-          action: 'connect',
-          metadata: {
-            error: err,
-            clientState: client?.connectionState,
-            isConnected,
-          },
-        });
-      }
-    }
-  }, [
-    joinVoice,
-    requestAudioPermission,
-    hasAudioPermission,
-    isConnected,
-    error,
-    retryOperation,
-    client,
-  ]);
-
-  // Auto-join with better state handling
-  useEffect(() => {
-    let isStale = false;
-    let timeoutId: NodeJS.Timeout;
-
-    if (partyState === 'joined' && currentUser && !isConnected && !cleanupInProgressRef.current) {
-      loggerRef.current.debug('Auto-joining voice chat after party join', {
-        component: 'useVoiceChat',
-        action: 'autoJoin',
         metadata: {
           userId: currentUser.id,
-          hasPermission: hasAudioPermission,
-          clientState: client?.connectionState,
-        },
+          connectionState: typedClient.connectionState,
+          hasTrack: !!newTrack
+        }
       });
-
-      // Request permission immediately
-      if (!hasAudioPermission) {
-        loggerRef.current.debug('Requesting microphone permission before auto-join', {
-          component: 'useVoiceChat',
-          action: 'autoJoin',
-        });
-
-        requestAudioPermission()
-          .then((hasPermission) => {
-            if (isStale) return;
-
-            if (hasPermission) {
-              loggerRef.current.debug('Got microphone permission, proceeding with auto-join', {
-                component: 'useVoiceChat',
-                action: 'autoJoin',
-              });
-
-              // Add a longer delay to ensure everything is ready
-              timeoutId = setTimeout(async () => {
-                if (isStale) return;
-
-                try {
-                  await connect();
-
-                  // Wait for connection to establish
-                  await new Promise((resolve) => setTimeout(resolve, 2000));
-
-                  // Verify connection
-                  if (!isConnected || client?.connectionState !== 'CONNECTED') {
-                    throw new Error('Failed to establish connection');
-                  }
-
-                  loggerRef.current.debug('Successfully connected to voice chat', {
-                    component: 'useVoiceChat',
-                    action: 'autoJoin',
-                    metadata: {
-                      userId: currentUser.id,
-                      clientState: client?.connectionState,
-                    },
-                  });
-                } catch (err) {
-                  if (!isStale) {
-                    loggerRef.current.error('Failed to auto-join voice chat', {
-                      component: 'useVoiceChat',
-                      action: 'autoJoin',
-                      metadata: {
-                        error: err,
-                        clientState: client?.connectionState,
-                      },
-                    });
-                    // Reset cleanup flag to allow retry
-                    cleanupInProgressRef.current = false;
-                  }
-                }
-              }, 2000);
-            } else {
-              loggerRef.current.warn('Microphone permission denied during auto-join', {
-                component: 'useVoiceChat',
-                action: 'autoJoin',
-              });
-            }
-          })
-          .catch((error) => {
-            if (!isStale) {
-              loggerRef.current.error('Failed to request microphone permission during auto-join', {
-                component: 'useVoiceChat',
-                action: 'autoJoin',
-                metadata: { error },
-              });
-            }
-          });
-      } else {
-        // Already have permission, proceed with connect after delay
-        timeoutId = setTimeout(async () => {
-          if (isStale) return;
-
-          try {
-            await connect();
-
-            // Wait for connection to establish
-            await new Promise((resolve) => setTimeout(resolve, 2000));
-
-            // Verify connection
-            if (!isConnected || client?.connectionState !== 'CONNECTED') {
-              throw new Error('Failed to establish connection');
-            }
-
-            loggerRef.current.debug('Successfully connected to voice chat', {
-              component: 'useVoiceChat',
-              action: 'autoJoin',
-              metadata: {
-                userId: currentUser.id,
-                clientState: client?.connectionState,
-              },
-            });
-          } catch (err) {
-            if (!isStale) {
-              loggerRef.current.error('Failed to auto-join voice chat', {
-                component: 'useVoiceChat',
-                action: 'autoJoin',
-                metadata: {
-                  error: err,
-                  clientState: client?.connectionState,
-                },
-              });
-              // Reset cleanup flag to allow retry
-              cleanupInProgressRef.current = false;
-            }
-          }
-        }, 2000);
-      }
-    }
-
-    return () => {
-      isStale = true;
-      if (timeoutId) clearTimeout(timeoutId);
-    };
-  }, [
-    partyState,
-    currentUser,
-    isConnected,
-    connect,
-    hasAudioPermission,
-    requestAudioPermission,
-    client,
-  ]);
-
-  // Sync cleanup with party state
-  useEffect(() => {
-    if ((partyState === 'leaving' || !currentUser) && !cleanupInProgressRef.current) {
-      loggerRef.current.debug('Party leaving or user removed, initiating voice cleanup', {
+    } catch (err) {
+      loggerRef.current.error('Connect failed', {
         component: 'useVoiceChat',
-        action: 'partyStateSync',
+        action: 'connect',
         metadata: {
-          isConnected,
-          hasTrack: !!track,
-          cleanupInProgress: cleanupInProgressRef.current,
-          partyState,
-        },
+          error: err,
+          userId: currentUser.id,
+          connectionState: typedClient.connectionState
+        }
       });
-
-      // Add small delay to ensure we don't cleanup too early
-      setTimeout(cleanup, 100);
+      throw err;
     }
-  }, [partyState, currentUser, cleanup, isConnected, track]);
+  }, [typedClient, currentUser, hasAudioPermission, requestAudioPermission, joinVoice, createMicrophoneTrack]);
+
+  // Voice chat state check effect - for logging only
+  useEffect(() => {
+    loggerRef.current.debug('Voice chat state check', {
+      component: 'useVoiceChat',
+      action: 'stateCheck',
+      metadata: {
+        partyState,
+        hasUser: !!currentUser,
+        hasClient: !!typedClient,
+        isConnected,
+        clientState: typedClient?.connectionState,
+        cleanupInProgress: cleanupInProgressRef.current
+      }
+    });
+  }, [partyState, currentUser, typedClient, isConnected]);
+
+  // Cleanup effect
+  useEffect(() => {
+    // Only trigger cleanup on transition to leaving state and not already cleaning up
+    if (partyState === 'leaving' && !cleanupInProgressRef.current) {
+      loggerRef.current.debug('Voice chat cleanup triggered', {
+        component: 'useVoiceChat',
+        action: 'cleanup',
+        metadata: {
+          userId: currentUser?.id,
+          clientState: typedClient?.connectionState,
+          timestamp: Date.now()
+        }
+      });
+      cleanup();
+    }
+  }, [partyState, cleanup]);
 
   return {
     // Connection states
     isConnected,
-    connectionState: client?.connectionState || 'DISCONNECTED',
+    connectionState: typedClient?.connectionState || 'DISCONNECTED',
     isRetrying,
 
     // Audio states
-    isLoadingMic,
     isMuted,
     hasAudioPermission,
 
@@ -452,6 +307,7 @@ export function useVoiceChat() {
 
     // Advanced usage
     track,
-    client,
+    client: typedClient,
   };
 }
+

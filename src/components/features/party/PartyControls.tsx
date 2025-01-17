@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useState, useRef, useEffect } from 'react';
+import React, { useCallback, useRef, useEffect } from 'react';
 import { useVoiceChat } from '@/lib/hooks/useVoiceChat';
 import type { PartyMember } from '@/lib/types/party';
 import { logger } from '@/lib/utils/logger';
@@ -15,7 +15,6 @@ interface PartyControlsProps {
 
 export function PartyControls({ currentUser, isLeaving, onLeave, partyState }: PartyControlsProps) {
   const { isConnected, toggleMute } = useVoiceChat();
-  const [isLoading, setIsLoading] = useState(false);
   const loggerRef = useRef(logger);
   const showModal = useModalStore((state) => state.showModal);
 
@@ -27,77 +26,41 @@ export function PartyControls({ currentUser, isLeaving, onLeave, partyState }: P
       metadata: {
         partyState,
         currentUser: currentUser?.id,
-        isLoading,
         isLeaving,
       },
     });
-  }, [partyState, currentUser, isLoading, isLeaving]);
+  }, [partyState, currentUser, isLeaving]);
 
   const handleLeave = useCallback(async () => {
-    // Only allow leave if user is in party and not already leaving
-    if (isLoading || isLeaving || !currentUser?.id || partyState !== 'joined') {
+    // Only allow leave if in party and not already leaving
+    if (!currentUser?.id || isLeaving || partyState !== 'joined') {
       loggerRef.current.debug('Leave button clicked while disabled', {
         component: 'PartyControls',
         action: 'leaveParty',
-        metadata: { isLoading, isLeaving, currentUser, partyState },
+        metadata: { currentUser, isLeaving, partyState },
       });
       return;
     }
 
-    loggerRef.current.info('Leave button clicked', {
-      component: 'PartyControls',
-      action: 'leaveParty',
-      metadata: { currentUser, isConnected },
-    });
-
     try {
-      setIsLoading(true);
-
-      // First try to leave voice chat if connected
-      if (isConnected) {
-        try {
-          await toggleMute();
-        } catch (error) {
-          loggerRef.current.warn('Failed to toggle mute before leaving', {
-            component: 'PartyControls',
-            action: 'leaveParty',
-            metadata: { error },
-          });
-          // Continue with leave even if mute fails
-        }
-      }
-
-      // Then try to leave party
       await onLeave();
-
-      loggerRef.current.info('Successfully left party from controls', {
-        component: 'PartyControls',
-        action: 'leaveParty',
-        metadata: { currentUser, isConnected },
-      });
     } catch (error) {
-      loggerRef.current.error('Failed to leave party from controls', {
+      loggerRef.current.error('Failed to leave party', {
         component: 'PartyControls',
         action: 'leaveParty',
-        metadata: {
-          error: error instanceof Error ? error : new Error(String(error)),
-          currentUser,
-          isConnected,
-        },
+        metadata: { error: error instanceof Error ? error : new Error(String(error)) },
       });
-      throw error; // Re-throw to let parent handle error state
-    } finally {
-      setIsLoading(false);
+      throw error;
     }
-  }, [isLoading, isLeaving, currentUser, partyState, onLeave, isConnected, toggleMute]);
+  }, [currentUser, isLeaving, partyState, onLeave]);
 
-  const handleJoinParty = useCallback(async () => {
-    // Only allow join if in idle state and not loading
-    if (isLoading || partyState !== 'idle') {
-      loggerRef.current.debug('Join button clicked while loading or not idle', {
+  const handleJoinParty = useCallback(() => {
+    // Only allow join if in idle state
+    if (partyState !== 'idle') {
+      loggerRef.current.debug('Join button clicked while not idle', {
         component: 'PartyControls',
         action: 'joinParty',
-        metadata: { isLoading, partyState, currentUser },
+        metadata: { partyState },
       });
       return;
     }
@@ -107,7 +70,7 @@ export function PartyControls({ currentUser, isLeaving, onLeave, partyState }: P
       action: 'showJoinModal',
     });
     showModal('join');
-  }, [isLoading, partyState, showModal, currentUser]);
+  }, [partyState, showModal]);
 
   const handleMute = useCallback(async () => {
     // Only allow mute toggle if user is in party and connected
@@ -142,11 +105,6 @@ export function PartyControls({ currentUser, isLeaving, onLeave, partyState }: P
         currentUser,
         userData,
         partyState,
-        conditions: {
-          hasUser: !!currentUser?.id,
-          partyState,
-          isJoined: partyState === 'joined',
-        },
       },
     });
     showModal('edit', userData);
@@ -156,16 +114,16 @@ export function PartyControls({ currentUser, isLeaving, onLeave, partyState }: P
     <div className="mt-1 flex flex-wrap items-center gap-1 px-[30px] text-white sm:gap-2">
       <button
         onClick={handleJoinParty}
-        disabled={partyState !== 'idle' || isLoading || !!currentUser?.id}
+        disabled={partyState !== 'idle'}
         className={`flex items-center gap-0 transition-all sm:gap-2 ${
-          partyState === 'idle' && !isLoading && !currentUser?.id
+          partyState === 'idle'
             ? 'opacity-80 hover:opacity-100'
             : 'cursor-not-allowed opacity-30'
         }`}
         title={
           currentUser?.id
             ? 'Already in party'
-            : partyState === 'joining' || isLoading
+            : partyState === 'joining'
               ? 'Joining party...'
               : partyState === 'leaving'
                 ? 'Leaving party...'
@@ -176,7 +134,7 @@ export function PartyControls({ currentUser, isLeaving, onLeave, partyState }: P
           className={`h-3 w-3 rounded-full text-[8px] font-bold leading-3 sm:h-4 sm:w-4 sm:text-[10px] sm:leading-4 ${
             currentUser?.id
               ? 'bg-gray-500'
-              : partyState === 'joining' || isLoading
+              : partyState === 'joining'
                 ? 'animate-pulse bg-yellow-500'
                 : partyState === 'leaving'
                   ? 'bg-red-500'
@@ -188,7 +146,7 @@ export function PartyControls({ currentUser, isLeaving, onLeave, partyState }: P
         <span className="text-sm sm:text-base">
           {currentUser?.id
             ? 'In Party'
-            : partyState === 'joining' || isLoading
+            : partyState === 'joining'
               ? 'Joining...'
               : partyState === 'leaving'
                 ? 'Leaving...'
@@ -200,9 +158,9 @@ export function PartyControls({ currentUser, isLeaving, onLeave, partyState }: P
 
       <button
         onClick={handleLeave}
-        disabled={isLoading || isLeaving || !currentUser?.id || partyState !== 'joined'}
+        disabled={!currentUser?.id || isLeaving || partyState !== 'joined'}
         className={`flex items-center gap-0 transition-all sm:gap-2 ${
-          !isLoading && !isLeaving && currentUser?.id && partyState === 'joined'
+          currentUser?.id && !isLeaving && partyState === 'joined'
             ? 'opacity-80 hover:opacity-100'
             : 'cursor-not-allowed opacity-30'
         }`}
@@ -211,7 +169,7 @@ export function PartyControls({ currentUser, isLeaving, onLeave, partyState }: P
             ? 'Not in party'
             : partyState !== 'joined'
               ? `Not in party yet (state: ${partyState})`
-              : isLoading || isLeaving
+              : isLeaving
                 ? 'Leaving party...'
                 : 'Click to leave party'
         }
@@ -220,7 +178,7 @@ export function PartyControls({ currentUser, isLeaving, onLeave, partyState }: P
           B
         </div>
         <span className="text-sm sm:text-base">
-          {isLoading || isLeaving ? 'Leaving...' : 'Leave Party'}
+          {isLeaving ? 'Leaving...' : 'Leave Party'}
         </span>
       </button>
 

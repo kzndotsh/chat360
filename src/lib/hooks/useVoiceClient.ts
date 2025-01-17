@@ -3,12 +3,97 @@ import { useAgoraContext } from '@/components/providers/AgoraProvider';
 import { logger } from '@/lib/utils/logger';
 import { usePartyState } from './usePartyState';
 
+type ConnectionState = 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'RECONNECTING' | 'DISCONNECTING';
+
+const appId = process.env.NEXT_PUBLIC_AGORA_APP_ID;
+
 export function useVoiceClient() {
   const { currentUser } = usePartyState();
   const { client, initializeClient } = useAgoraContext();
   const [isConnected, setIsConnected] = useState(false);
   const loggerRef = useRef(logger);
   const isInitializedRef = useRef(false);
+
+  // Persistent connection state handler
+  useEffect(() => {
+    if (!client) return;
+
+    const handleConnectionStateChange = (curState: ConnectionState) => {
+      loggerRef.current.debug('Connection state changed', {
+        component: 'useVoiceClient',
+        action: 'connectionStateChange',
+        metadata: {
+          state: curState,
+          userId: currentUser?.id,
+          timestamp: Date.now(),
+          previousState: client.connectionState,
+          debug: {
+            connectionState: curState,
+            uid: client.uid,
+            localTracks: client.localTracks?.length || 0,
+            remoteUsers: client.remoteUsers?.length || 0
+          }
+        },
+      });
+
+      if (curState === 'CONNECTED') {
+        setIsConnected(true);
+      } else if (curState === 'DISCONNECTED' || curState === 'DISCONNECTING') {
+        setIsConnected(false);
+      }
+    };
+
+    // Set up handler and check initial state
+    client.on('connection-state-change', handleConnectionStateChange);
+    
+    // Log initial state
+    loggerRef.current.debug('Initial connection state', {
+      component: 'useVoiceClient',
+      action: 'connectionInit',
+      metadata: {
+        state: client.connectionState,
+        userId: currentUser?.id,
+        timestamp: Date.now(),
+        debug: {
+          connectionState: client.connectionState,
+          uid: client.uid,
+          localTracks: client.localTracks?.length || 0,
+          remoteUsers: client.remoteUsers?.length || 0
+        }
+      },
+    });
+
+    setIsConnected(client.connectionState === 'CONNECTED');
+
+    return () => {
+      client.off('connection-state-change', handleConnectionStateChange);
+    };
+  }, [client, currentUser?.id]);
+
+  // Initialize client if needed
+  useEffect(() => {
+    if (!isInitializedRef.current && !client) {
+      loggerRef.current.debug('Initializing Agora client', {
+        component: 'useVoiceClient',
+        action: 'init',
+        metadata: {
+          timestamp: Date.now()
+        }
+      });
+      isInitializedRef.current = true;
+      initializeClient().catch((error) => {
+        loggerRef.current.error('Failed to initialize client', {
+          component: 'useVoiceClient',
+          action: 'init',
+          metadata: { 
+            error,
+            timestamp: Date.now()
+          },
+        });
+        isInitializedRef.current = false;
+      });
+    }
+  }, [client, initializeClient]);
 
   // Fetch token from API
   const fetchToken = useCallback(async () => {
@@ -22,16 +107,17 @@ export function useVoiceClient() {
 
     // Convert UUID to numeric UID for Agora
     // Add timestamp to make UID unique per session
-    const timestamp = Date.now() % 100000; // Last 5 digits of timestamp
-    const numericUid =
-      parseInt(currentUser.id.replace(/-/g, '').slice(0, 3), 16) * 100000 + timestamp;
+    // Ensure UID stays within 32-bit unsigned integer limit (0 to 4,294,967,295)
+    const timestamp = Date.now() % 1000000; // Last 6 digits of timestamp
+    const numericUid = parseInt(currentUser.id.replace(/-/g, '').slice(-8), 16) % 1000000; // Last 6 digits of hex
+    const finalUid = (numericUid * 1000000 + timestamp) % 4294967295; // Ensure within uint32 limit
 
     loggerRef.current.debug('Fetching Agora token', {
       component: 'useVoiceClient',
       action: 'fetchToken',
       metadata: {
         userId: currentUser.id,
-        numericUid,
+        numericUid: finalUid,
       },
     });
 
@@ -41,21 +127,50 @@ export function useVoiceClient() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           channelName: 'main',
-          uid: numericUid,
+          uid: finalUid,
           role: 'publisher',
-          tokenExpireTime: 3600,
-          privilegeExpireTime: 3000,
         }),
+      });
+
+      loggerRef.current.debug('Token fetch response received', {
+        component: 'useVoiceClient',
+        action: 'fetchToken',
+        metadata: {
+          status: response.status,
+          ok: response.ok,
+          userId: currentUser.id,
+          numericUid: finalUid,
+          headers: Object.fromEntries(response.headers.entries())
+        },
       });
 
       if (!response.ok) {
         const errorText = await response.text();
+        loggerRef.current.error('Token fetch failed with error response', {
+          component: 'useVoiceClient',
+          action: 'fetchToken',
+          metadata: {
+            status: response.status,
+            errorText,
+            userId: currentUser.id,
+            numericUid: finalUid
+          },
+        });
         throw new Error(`Failed to fetch token: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
 
       if (!data.token) {
+        loggerRef.current.error('Token missing in response', {
+          component: 'useVoiceClient',
+          action: 'fetchToken',
+          metadata: {
+            responseData: data,
+            userId: currentUser.id,
+            numericUid: finalUid
+          },
+        });
         throw new Error('Token missing in response');
       }
 
@@ -64,13 +179,14 @@ export function useVoiceClient() {
         action: 'fetchToken',
         metadata: {
           userId: currentUser.id,
-          numericUid,
+          numericUid: finalUid,
+          token: data.token.slice(0, 10) + '...',
         },
       });
 
       return {
         token: data.token,
-        uid: numericUid,
+        uid: finalUid,
       };
     } catch (error) {
       loggerRef.current.error('Failed to fetch token', {
@@ -78,214 +194,136 @@ export function useVoiceClient() {
         action: 'fetchToken',
         metadata: {
           userId: currentUser.id,
-          numericUid,
+          numericUid: finalUid,
           error,
           status: error instanceof Error ? error.message : 'Unknown error',
         },
       });
-      return null;
+      throw error; // Re-throw to handle in joinVoice
     }
   }, [currentUser?.id]);
 
   // Join voice chat
   const joinVoice = useCallback(async () => {
-    if (!currentUser?.id || !client) {
-      loggerRef.current.debug('Skipping voice join - missing requirements', {
+    if (!currentUser || !client) {
+      loggerRef.current.error('Join voice failed - missing dependencies', {
         component: 'useVoiceClient',
         action: 'joinVoice',
         metadata: {
-          hasUser: !!currentUser?.id,
-          hasClient: !!client,
-          clientState: client?.connectionState,
-        },
+          hasUser: !!currentUser,
+          hasClient: !!client
+        }
       });
       return;
     }
 
-    loggerRef.current.info('Attempting to join voice chat', {
+    if (!appId) {
+      const error = new Error('Agora App ID not configured');
+      loggerRef.current.error('Missing app ID', {
+        component: 'useVoiceClient',
+        action: 'joinVoice',
+        metadata: { error }
+      });
+      throw error;
+    }
+
+    loggerRef.current.debug('Attempting to join voice chat', {
       component: 'useVoiceClient',
       action: 'joinVoice',
       metadata: {
         userId: currentUser.id,
         clientState: client.connectionState,
-      },
+        timestamp: Date.now()
+      }
     });
 
     try {
-      // Ensure we're in a clean state
-      if (client.connectionState !== 'DISCONNECTED') {
-        loggerRef.current.debug('Cleaning up existing connection', {
-          component: 'useVoiceClient',
-          action: 'joinVoice',
-          metadata: {
-            currentState: client.connectionState,
-          },
-        });
-        await client.leave().catch((error) => {
-          loggerRef.current.warn('Error during pre-join cleanup', {
-            component: 'useVoiceClient',
-            action: 'joinVoice',
-            metadata: { error },
-          });
-        });
-        // Wait for disconnect to complete
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
-
-      // Fetch new token
-      const tokenData = await fetchToken();
-      if (!tokenData?.token) {
+      const tokenResult = await fetchToken();
+      if (!tokenResult?.token) {
         throw new Error('Failed to get token');
       }
-
-      // Join channel
-      const appId = process.env.NEXT_PUBLIC_AGORA_APP_ID;
-      if (!appId) {
-        throw new Error('Agora App ID not configured');
-      }
-
+      
       loggerRef.current.debug('Joining Agora channel', {
         component: 'useVoiceClient',
         action: 'joinVoice',
         metadata: {
           userId: currentUser.id,
-          numericUid: tokenData.uid,
-        },
+          numericUid: tokenResult.uid,
+          timestamp: Date.now(),
+          debug: {
+            hasToken: true,
+            tokenLength: tokenResult.token.length,
+            connectionState: client.connectionState
+          }
+        }
       });
 
-      await client.join(appId, 'main', tokenData.token, tokenData.uid);
+      await client.join(appId, 'main', tokenResult.token, tokenResult.uid);
 
-      // Wait for connection to establish
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      // Verify connection state
-      if (client.connectionState !== 'CONNECTED') {
-        throw new Error('Failed to establish connection');
-      }
-
-      setIsConnected(true);
-
-      loggerRef.current.info('Successfully joined voice chat', {
+      loggerRef.current.debug('Successfully joined channel', {
         component: 'useVoiceClient',
         action: 'joinVoice',
         metadata: {
           userId: currentUser.id,
-          numericUid: tokenData.uid,
-          clientState: client.connectionState,
-        },
+          numericUid: tokenResult.uid,
+          timestamp: Date.now(),
+          connectionState: client.connectionState
+        }
       });
-    } catch (error) {
+    } catch (err) {
       loggerRef.current.error('Failed to join voice chat', {
         component: 'useVoiceClient',
         action: 'joinVoice',
         metadata: {
-          error,
-          status: error instanceof Error ? error.message : 'Unknown error',
-          clientState: client.connectionState,
-        },
+          error: err,
+          userId: currentUser.id,
+          timestamp: Date.now(),
+          connectionState: client.connectionState
+        }
       });
-      setIsConnected(false);
-      throw error;
+      throw err;
     }
-  }, [currentUser?.id, client, fetchToken]);
+  }, [currentUser, client, fetchToken]);
 
   // Leave voice chat
   const leaveVoice = useCallback(async () => {
-    loggerRef.current.info('Leaving voice chat', {
-      component: 'useVoiceClient',
-      action: 'leaveVoice',
-      metadata: { userId: currentUser?.id },
-    });
-
-    // Prevent multiple leave attempts
-    if (!isConnected) {
-      loggerRef.current.debug('Already disconnected, skipping leave', {
-        component: 'useVoiceClient',
-        action: 'leaveVoice',
-      });
+    if (!client) {
       return;
     }
 
-    setIsConnected(false);
-
-    if (client) {
-      try {
-        await client.leave();
-        loggerRef.current.debug('Left Agora channel', {
-          component: 'useVoiceClient',
-          action: 'leaveVoice',
-        });
-      } catch (error) {
-        // Only log error if we're still connected
-        if (client.connectionState !== 'DISCONNECTED') {
-          loggerRef.current.error('Error leaving Agora channel', {
-            component: 'useVoiceClient',
-            action: 'leaveVoice',
-            metadata: { error },
-          });
-        }
+    loggerRef.current.debug('Leaving voice chat', {
+      component: 'useVoiceClient',
+      action: 'leaveVoice',
+      metadata: {
+        clientState: client.connectionState,
+        timestamp: Date.now()
       }
-    }
-  }, [currentUser?.id, isConnected, client]);
+    });
 
-  // Initialize client when component mounts
-  useEffect(() => {
-    if (!isInitializedRef.current) {
-      loggerRef.current.debug('Initializing Agora client', {
+    try {
+      await client.leave();
+      loggerRef.current.debug('Successfully left voice chat', {
         component: 'useVoiceClient',
-        action: 'init',
-      });
-      initializeClient()
-        .then(async () => {
-          isInitializedRef.current = true;
-          loggerRef.current.debug('Agora client initialized', {
-            component: 'useVoiceClient',
-            action: 'init',
-          });
-        })
-        .catch((error) => {
-          loggerRef.current.error('Failed to initialize Agora client', {
-            component: 'useVoiceClient',
-            action: 'init',
-            metadata: { error },
-          });
-        });
-    }
-  }, [initializeClient]);
-
-  // Monitor client connection state
-  useEffect(() => {
-    if (!client || !currentUser?.id) return;
-
-    const handleConnectionStateChange = (state: string) => {
-      loggerRef.current.info('Connection state changed', {
-        component: 'useVoiceClient',
-        action: 'connectionState',
+        action: 'leaveVoice',
         metadata: {
-          state,
-          userId: currentUser?.id,
-          previousState: client.connectionState,
-        },
+          timestamp: Date.now()
+        }
       });
-
-      if (state === 'DISCONNECTED') {
-        setIsConnected(false);
-      } else if (state === 'CONNECTED') {
-        setIsConnected(true);
-      }
-    };
-
-    client.on('connection-state-change', handleConnectionStateChange);
-    return () => {
-      client.off('connection-state-change', handleConnectionStateChange);
-    };
-  }, [client, currentUser?.id]);
+    } catch (error) {
+      loggerRef.current.error('Failed to leave voice chat', {
+        component: 'useVoiceClient',
+        action: 'leaveVoice',
+        metadata: { error }
+      });
+      throw error;
+    }
+  }, [client]);
 
   return {
     client,
     isConnected,
-    isInitialized: isInitializedRef.current,
     joinVoice,
     leaveVoice,
   };
 }
+

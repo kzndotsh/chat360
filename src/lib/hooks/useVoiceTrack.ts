@@ -1,16 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import type { IMicrophoneAudioTrack } from 'agora-rtc-sdk-ng';
 import { logger } from '@/lib/utils/logger';
 import { useVoiceClient } from './useVoiceClient';
 import { useVoiceStatus } from './useVoiceStatus';
 import { useVoicePermissions } from './useVoicePermissions';
-import { usePartyState } from './usePartyState';
 
 let AgoraRTC: typeof import('agora-rtc-sdk-ng').default | null = null;
-let agoraPromise: Promise<void> | null = null;
 
 if (typeof window !== 'undefined') {
-  agoraPromise = import('agora-rtc-sdk-ng').then((mod) => {
+  import('agora-rtc-sdk-ng').then((mod) => {
     AgoraRTC = mod.default;
   });
 }
@@ -19,12 +17,9 @@ export function useVoiceTrack() {
   const { client, isConnected, joinVoice } = useVoiceClient();
   const { updateVoiceStatus } = useVoiceStatus();
   const { requestAudioPermission } = useVoicePermissions();
-  const { currentUser } = usePartyState();
-  const [isLoadingMic, setIsLoadingMic] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const trackRef = useRef<IMicrophoneAudioTrack | null>(null);
   const loggerRef = useRef(logger);
-  const autoJoinAttemptedRef = useRef(false);
 
   // Create microphone track
   const createMicrophoneTrack = useCallback(async () => {
@@ -33,17 +28,20 @@ export function useVoiceTrack() {
       action: 'createMicrophoneTrack',
     });
 
-    try {
-      setIsLoadingMic(true);
-
-      if (!AgoraRTC) {
-        throw new Error('AgoraRTC not initialized');
-      }
-
-      const audioTrack = await AgoraRTC.createMicrophoneAudioTrack();
-      loggerRef.current.debug('Microphone track created successfully', {
+    if (!AgoraRTC) {
+      loggerRef.current.error('AgoraRTC not initialized', {
         component: 'useVoiceTrack',
         action: 'createMicrophoneTrack',
+      });
+      return null;
+    }
+
+    try {
+      const audioTrack = await AgoraRTC.createMicrophoneAudioTrack();
+      loggerRef.current.debug('Microphone track created', {
+        component: 'useVoiceTrack',
+        action: 'createMicrophoneTrack',
+        metadata: { hasTrack: !!audioTrack }
       });
       return audioTrack;
     } catch (error) {
@@ -53,80 +51,8 @@ export function useVoiceTrack() {
         metadata: { error },
       });
       return null;
-    } finally {
-      setIsLoadingMic(false);
     }
   }, []);
-
-  // Auto-join voice chat when user joins party
-  useEffect(() => {
-    if (currentUser?.id && !autoJoinAttemptedRef.current) {
-      loggerRef.current.debug('Auto-joining voice chat', {
-        component: 'useVoiceTrack',
-        action: 'autoJoin',
-        metadata: { userId: currentUser.id },
-      });
-
-      const autoJoin = async () => {
-        try {
-          // Wait for AgoraRTC to be ready
-          if (agoraPromise) {
-            await agoraPromise;
-          }
-
-          if (!AgoraRTC) {
-            throw new Error('AgoraRTC not initialized');
-          }
-
-          // Set flag before attempting join to prevent concurrent attempts
-          autoJoinAttemptedRef.current = true;
-
-          // Join voice chat first
-          loggerRef.current.debug('Joining voice chat', {
-            component: 'useVoiceTrack',
-            action: 'autoJoin',
-            metadata: { userId: currentUser.id },
-          });
-
-          await joinVoice();
-
-          // Wait for connection to establish
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-
-          // Create microphone track after joining
-          const track = await createMicrophoneTrack();
-          if (!track) {
-            throw new Error('Failed to create microphone track');
-          }
-
-          trackRef.current = track;
-
-          // Publish track if we successfully joined
-          if (client && isConnected) {
-            await client.publish(track);
-            loggerRef.current.debug('Published track after auto-join', {
-              component: 'useVoiceTrack',
-              action: 'autoJoin',
-              metadata: { userId: currentUser.id },
-            });
-          }
-        } catch (error) {
-          loggerRef.current.error('Failed to auto-join voice chat', {
-            component: 'useVoiceTrack',
-            action: 'autoJoin',
-            metadata: { error, userId: currentUser.id },
-          });
-          // Reset attempt flag so we can try again
-          autoJoinAttemptedRef.current = false;
-          // Wait before retrying
-          await new Promise((resolve) => setTimeout(resolve, 2000));
-        }
-      };
-
-      // Start auto-join process with a small delay
-      setTimeout(autoJoin, 2000);
-    }
-  }, [currentUser?.id, isConnected, joinVoice, createMicrophoneTrack, client]);
 
   // Toggle mute
   const toggleMute = useCallback(async () => {
@@ -137,6 +63,7 @@ export function useVoiceTrack() {
         hasTrack: !!trackRef.current,
         isConnected,
         isMuted,
+        clientState: client?.connectionState
       },
     });
 
@@ -146,6 +73,9 @@ export function useVoiceTrack() {
         loggerRef.current.debug('No audio track, requesting microphone permission', {
           component: 'useVoiceTrack',
           action: 'toggleMute',
+          metadata: {
+            clientState: client?.connectionState
+          },
         });
 
         const hasPermission = await requestAudioPermission();
@@ -163,17 +93,37 @@ export function useVoiceTrack() {
             loggerRef.current.debug('Joining voice chat during mute toggle', {
               component: 'useVoiceTrack',
               action: 'toggleMute',
+              metadata: {
+                clientState: client?.connectionState
+              },
             });
 
             await joinVoice();
 
-            // Wait for connection to establish
-            await new Promise((resolve) => setTimeout(resolve, 1000));
+            // Wait for connection to establish (up to 10 seconds)
+            let waitAttempts = 0;
+            while (!isConnected && waitAttempts < 10) {
+              loggerRef.current.debug('Waiting for connection', {
+                component: 'useVoiceTrack',
+                action: 'toggleMute',
+                metadata: { 
+                  attempt: waitAttempts + 1,
+                  isConnected,
+                  clientState: client?.connectionState
+                },
+              });
+              await new Promise((resolve) => setTimeout(resolve, 1000));
+              waitAttempts++;
+            }
+
+            if (!isConnected) {
+              throw new Error('Failed to establish connection after 10 seconds');
+            }
           } catch (error) {
             loggerRef.current.error('Failed to join voice chat during mute toggle', {
               component: 'useVoiceTrack',
               action: 'toggleMute',
-              metadata: { error },
+              metadata: { error, clientState: client?.connectionState },
             });
             return;
           }
@@ -183,6 +133,10 @@ export function useVoiceTrack() {
         loggerRef.current.debug('Creating new audio track for mute toggle', {
           component: 'useVoiceTrack',
           action: 'toggleMute',
+          metadata: {
+            isConnected,
+            clientState: client?.connectionState
+          },
         });
 
         const audioTrack = await createMicrophoneTrack();
@@ -190,67 +144,65 @@ export function useVoiceTrack() {
           loggerRef.current.error('Failed to create audio track for mute toggle', {
             component: 'useVoiceTrack',
             action: 'toggleMute',
+            metadata: {
+              clientState: client?.connectionState
+            },
           });
           return;
         }
 
         trackRef.current = audioTrack;
 
-        // If we have a client and we're connected, publish the track
-        if (client && isConnected) {
-          try {
-            await client.publish(audioTrack);
-            loggerRef.current.debug('Published new audio track', {
-              component: 'useVoiceTrack',
-              action: 'toggleMute',
-            });
-          } catch (error) {
-            loggerRef.current.error('Failed to publish audio track', {
-              component: 'useVoiceTrack',
-              action: 'toggleMute',
-              metadata: { error },
-            });
-            return;
-          }
-        }
-      }
-
-      // Update mute state using functional update to avoid race conditions
-      setIsMuted((currentMuted) => {
-        const newMuteState = !currentMuted;
-
-        // Update track state
-        if (trackRef.current) {
-          trackRef.current.setEnabled(!newMuteState);
+        // Double check client and connection before publishing
+        if (!client) {
+          throw new Error('Client not available for publishing');
         }
 
-        // Update voice status
-        updateVoiceStatus(newMuteState ? 'muted' : 'silent');
+        if (!isConnected) {
+          throw new Error('Lost connection before publishing');
+        }
 
-        loggerRef.current.debug('Successfully toggled mute', {
+        // Publish track
+        await client.publish(audioTrack);
+        loggerRef.current.debug('Published new track during mute toggle', {
           component: 'useVoiceTrack',
           action: 'toggleMute',
-          metadata: { newState: newMuteState },
+          metadata: {
+            isConnected,
+            clientState: client?.connectionState
+          },
         });
+      }
 
-        return newMuteState;
-      });
+      // Now toggle mute state
+      const track = trackRef.current;
+      if (track) {
+        if (isMuted) {
+          await track.setEnabled(true);
+          setIsMuted(false);
+          await updateVoiceStatus('speaking');
+          loggerRef.current.debug('Unmuted audio track', {
+            component: 'useVoiceTrack',
+            action: 'toggleMute',
+          });
+        } else {
+          await track.setEnabled(false);
+          setIsMuted(true);
+          await updateVoiceStatus('muted');
+          loggerRef.current.debug('Muted audio track', {
+            component: 'useVoiceTrack',
+            action: 'toggleMute',
+          });
+        }
+      }
     } catch (error) {
       loggerRef.current.error('Failed to toggle mute', {
         component: 'useVoiceTrack',
         action: 'toggleMute',
-        metadata: { error },
+        metadata: { error, clientState: client?.connectionState },
       });
     }
-  }, [
-    isConnected,
-    isMuted,
-    updateVoiceStatus,
-    createMicrophoneTrack,
-    client,
-    joinVoice,
-    requestAudioPermission,
-  ]);
+  }, [client, isMuted, isConnected, joinVoice, createMicrophoneTrack, requestAudioPermission, updateVoiceStatus]);
 
   // Stop track
   const stopTrack = useCallback(() => {
@@ -266,7 +218,6 @@ export function useVoiceTrack() {
 
   return {
     track: trackRef.current,
-    isLoadingMic,
     isMuted,
     createMicrophoneTrack,
     toggleMute,

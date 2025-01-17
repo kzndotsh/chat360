@@ -37,12 +37,6 @@ interface AgoraProviderProps {
 
 // Lazy load AgoraRTC to avoid SSR issues
 let AgoraRTC: typeof import('agora-rtc-sdk-ng').default;
-const agoraImport =
-  typeof window !== 'undefined'
-    ? import('agora-rtc-sdk-ng').then((mod) => {
-        AgoraRTC = mod.default;
-      })
-    : Promise.resolve();
 
 export function AgoraProvider({ children }: AgoraProviderProps) {
   const [client, setClient] = useState<IAgoraRTCClient | null>(null);
@@ -210,10 +204,16 @@ export function AgoraProvider({ children }: AgoraProviderProps) {
     });
 
     try {
-      await agoraImport;
+      // Properly import and initialize AgoraRTC
+      const AgoraModule = await import('agora-rtc-sdk-ng');
+      AgoraRTC = AgoraModule.default;
+
       if (!AgoraRTC || !mountedRef.current) {
         throw new Error('Failed to load Agora SDK');
       }
+
+      // Set Agora log level to DEBUG for development
+      AgoraRTC.setLogLevel(0); // 0: DEBUG, 1: INFO, 2: WARN, 3: ERROR, 4: NONE
 
       const newClient = AgoraRTC.createClient({
         mode: 'rtc',
