@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { useVoiceStore } from '@/lib/stores/useVoiceStore';
 import { logger } from '@/lib/utils/logger';
 import { usePartyState } from './usePartyState';
@@ -12,6 +12,8 @@ if (!process.env.NEXT_PUBLIC_AGORA_APP_ID) {
 }
 
 const LOG_CONTEXT = { component: 'useVoice' };
+
+const AGORA_APP_ID = process.env.NEXT_PUBLIC_AGORA_APP_ID!;
 
 // Helper function to handle client subscription
 function subscribeToConnectionState(
@@ -161,6 +163,7 @@ export function useVoice() {
   const [isMuted, setIsMuted] = useState(false);
   const [micPermissionDenied, setMicPermissionDenied] = useState(false);
   const [hasPermission, setHasPermission] = useState(false);
+  const [voiceToken, setVoiceToken] = useState<string | null>(null);
   const joinAttemptedRef = useRef(false);
   const permissionRequestInProgressRef = useRef(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
@@ -168,83 +171,107 @@ export function useVoice() {
   const MAX_RECONNECT_ATTEMPTS = 3;
   const RECONNECT_DELAY = 1000;
 
-  // Join voice channel
-  const joinVoice = useCallback(async () => {
-    if (!currentUser?.id) {
-      throw new Error('Missing required data for voice join');
-    }
-
+  // Memoize createAudioTrack to avoid recreating it on every render
+  const createAudioTrack = useCallback(async () => {
     try {
-      // Get or initialize the client
-      const agoraClient = await getClient();
-
-      // Generate deterministic UID from user ID
-      const uid = parseInt(currentUser.id.replace(/-/g, '').slice(-8), 16) % 1000000;
-
-      // Get token from your server
-      const response = await fetch('/api/agora/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          channelName: 'main',
-          uid
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch token');
-      }
-
-      const { token } = await response.json();
-
-      // Join the channel
-      await agoraClient.join(
-        process.env.NEXT_PUBLIC_AGORA_APP_ID!,
-        'main',
-        token,
-        uid
-      );
-
-      // Create and publish audio track
+      // Request permissions first to handle denials gracefully
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+      
       const audioTrack = await AgoraRTC.createMicrophoneAudioTrack({
+        // Optimize for voice chat
         encoderConfig: {
           sampleRate: 48000,
           stereo: false,
-          bitrate: 128 // Optimal for voice
-        }
+          bitrate: 64, // Lower bitrate optimized for voice
+        },
+        // Enable echo cancellation and noise suppression
+        AEC: true,
+        ANS: true,
+        // Automatically manage audio routing
+        bypassWebAudio: false
       });
 
-      await agoraClient.publish(audioTrack);
-      
-      // Store the track
-      setTrack(audioTrack);
+      // Monitor track state
+      audioTrack.on("track-ended", () => {
+        logger.warn('Audio track ended unexpectedly', {
+          ...LOG_CONTEXT,
+          action: 'trackEnded',
+          metadata: {
+            trackId: audioTrack.getTrackId(),
+            muted: audioTrack.muted
+          }
+        });
+      });
 
-      logger.info('Successfully joined voice and published track', {
+      logger.debug('Audio track created successfully', {
         ...LOG_CONTEXT,
-        action: 'joinVoice',
-        metadata: { 
-          userId: currentUser.id,
-          uid
+        action: 'createAudioTrack',
+        metadata: {
+          trackId: audioTrack.getTrackId(),
+          muted: audioTrack.muted
         }
       });
+
+      return audioTrack;
     } catch (error) {
-      logger.error('Failed to join voice', {
+      logger.error('Failed to create audio track', {
         ...LOG_CONTEXT,
-        action: 'joinVoice',
-        metadata: { error }
+        action: 'createAudioTrackError',
+        metadata: { 
+          error: error instanceof Error ? {
+            name: error.name,
+            message: error.message,
+            stack: error.stack
+          } : error
+        }
       });
       throw error;
     }
-  }, [currentUser?.id, getClient, setTrack]);
+  }, []); // No dependencies needed as it doesn't use any external values
 
-  // Enhanced cleanup function
+  // Update cleanup to include all dependencies
   const cleanup = useCallback(async () => {
+    const startTime = new Date().toISOString();
+    logger.info('Starting voice cleanup', {
+      ...LOG_CONTEXT,
+      action: 'cleanup',
+      metadata: {
+        startTime,
+        hasTrack: !!track,
+        hasClient: !!client,
+        clientState: client?.connectionState,
+        joinAttempted: joinAttemptedRef.current
+      }
+    });
+
     try {
       // Stop and close track first
       if (track) {
+        logger.debug('Stopping and closing audio track', {
+          ...LOG_CONTEXT,
+          action: 'cleanup_track',
+          metadata: {
+            trackId: track.getTrackId(),
+            timestamp: startTime
+          }
+        });
         track.stop();
         track.close();
         setTrack(null);
+      }
+      
+      // Leave channel if connected
+      if (client && client.connectionState !== 'DISCONNECTED') {
+        logger.debug('Leaving voice channel', {
+          ...LOG_CONTEXT,
+          action: 'cleanup_leave',
+          metadata: {
+            connectionState: client.connectionState,
+            channelName: client.channelName,
+            timestamp: startTime
+          }
+        });
+        await client.leave();
       }
       
       // Clean up client
@@ -253,15 +280,139 @@ export function useVoice() {
       setMicPermissionDenied(false);
       reconnectAttemptRef.current = 0;
       
-      logger.info('Successfully cleaned up voice connection', LOG_CONTEXT);
+      logger.info('Successfully cleaned up voice connection', {
+        ...LOG_CONTEXT,
+        action: 'cleanup_success',
+        metadata: {
+          hadTrack: !!track,
+          hadClient: !!client,
+          duration: new Date().getTime() - new Date(startTime).getTime(),
+          timestamp: new Date().toISOString()
+        }
+      });
     } catch (error) {
       logger.error('Failed to cleanup voice connection', {
         ...LOG_CONTEXT,
-        action: 'cleanup',
-        metadata: { error }
+        action: 'cleanup_error',
+        metadata: { 
+          error,
+          hadTrack: !!track,
+          hadClient: !!client,
+          duration: new Date().getTime() - new Date(startTime).getTime(),
+          timestamp: new Date().toISOString()
+        }
       });
     }
-  }, [track, setTrack, cleanupClient]);
+  }, [track, client, setTrack, cleanupClient]);
+
+  // Update leaveVoice to include client dependency
+  const leaveVoice = useCallback(async () => {
+    try {
+      if (client) {
+        await client.leave();
+      }
+      setTrack(null);
+      logger.info('Successfully left voice', LOG_CONTEXT);
+    } catch (error) {
+      logger.error('Failed to leave voice', {
+        ...LOG_CONTEXT,
+        action: 'leaveVoice',
+        metadata: { error }
+      });
+      throw error;
+    }
+  }, [client, setTrack]);
+
+  // Memoize joinVoice to include all its dependencies
+  const joinVoice = useCallback(async () => {
+    // Don't throw if no user ID, just return
+    if (!currentUser?.id) {
+      logger.debug('Cannot join voice - no user ID', {
+        ...LOG_CONTEXT,
+        action: 'joinVoiceNoUser',
+        metadata: { currentUser }
+      });
+      return;
+    }
+
+    if (!voiceToken) {
+      logger.debug('Cannot join voice - no token', {
+        ...LOG_CONTEXT,
+        action: 'joinVoiceNoToken'
+      });
+      return;
+    }
+
+    logger.info('Attempting to join voice', {
+      ...LOG_CONTEXT,
+      action: 'joinVoiceAttempt',
+      metadata: {
+        userId: currentUser.id,
+        hasPermission,
+        micPermissionDenied,
+        hasToken: !!voiceToken
+      }
+    });
+
+    try {
+      const agoraClient = await getClient();
+      if (!agoraClient) {
+        throw new Error('Failed to initialize Agora client');
+      }
+
+      logger.info('Joining Agora channel', {
+        ...LOG_CONTEXT,
+        action: 'joiningChannel',
+        metadata: {
+          appId: AGORA_APP_ID,
+          channel: 'main',
+          uid: currentUser.id
+        }
+      });
+
+      await agoraClient.join(AGORA_APP_ID, 'main', voiceToken, currentUser.id.toString());
+
+      const audioTrack = await createAudioTrack();
+      
+      logger.info('Publishing audio track', {
+        ...LOG_CONTEXT,
+        action: 'publishTrack',
+        metadata: {
+          trackId: audioTrack.getTrackId()
+        }
+      });
+
+      await agoraClient.publish(audioTrack);
+
+      logger.info('Successfully joined voice', {
+        ...LOG_CONTEXT, 
+        action: 'joinVoiceSuccess',
+        metadata: {
+          userId: currentUser.id,
+          channelName: 'main',
+          trackId: audioTrack.getTrackId()
+        }
+      });
+
+      return audioTrack;
+    } catch (error) {
+      logger.error('Failed to join voice', {
+        ...LOG_CONTEXT,
+        action: 'joinVoiceError',
+        metadata: {
+          error: error instanceof Error ? {
+            name: error.name,
+            message: error.message,
+            stack: error.stack
+          } : error,
+          userId: currentUser.id
+        }
+      });
+      // Clear token on join error to force re-fetch
+      setVoiceToken(null);
+      throw error;
+    }
+  }, [currentUser, voiceToken, hasPermission, micPermissionDenied, getClient, createAudioTrack, setVoiceToken]);
 
   // Enhanced reconnection logic
   const attemptReconnect = useCallback(async () => {
@@ -314,64 +465,318 @@ export function useVoice() {
   // Use the connection state hook
   const isConnected = useConnectionState(client, isReconnecting, attemptReconnect);
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      logger.debug('Cleaning up voice on unmount', LOG_CONTEXT);
-      cleanup();
-    };
-  }, [cleanup]);
-
-  // Leave voice channel
-  const leaveVoice = useCallback(async () => {
-    try {
-      if (client) {
-        await client.leave();
+  // Wrap fetchVoiceToken in useCallback
+  const fetchVoiceToken = useCallback(async () => {
+    logger.info('Fetching voice token', {
+      ...LOG_CONTEXT,
+      action: 'fetchToken',
+      metadata: { 
+        currentUser,
+        channelName: 'main',
+        conditions: {
+          hasUser: !!currentUser?.id,
+          partyState,
+          hasPermission,
+          isConnected
+        }
       }
-      setTrack(null);
-      logger.info('Successfully left voice', LOG_CONTEXT);
-    } catch (error) {
-      logger.error('Failed to leave voice', {
+    });
+
+    try {
+      const response = await fetch('/api/agora/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          channelName: 'main',
+          uid: currentUser?.id
+        })
+      });
+
+      logger.debug('Token fetch response received', {
         ...LOG_CONTEXT,
-        action: 'leaveVoice',
-        metadata: { error }
+        action: 'fetchTokenResponse',
+        metadata: {
+          status: response.status,
+          ok: response.ok,
+          statusText: response.statusText,
+          headers: Object.fromEntries(response.headers.entries())
+        }
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        logger.error('Failed to fetch token', {
+          ...LOG_CONTEXT,
+          action: 'fetchTokenError',
+          metadata: {
+            status: response.status,
+            statusText: response.statusText,
+            errorText,
+            currentUser,
+            conditions: {
+              hasUser: !!currentUser?.id,
+              partyState,
+              hasPermission,
+              isConnected
+            }
+          }
+        });
+        throw new Error(`Failed to fetch token: ${response.status} ${response.statusText} - ${errorText}`);
+      }
+
+      const { token } = await response.json();
+      logger.info('Successfully fetched token', {
+        ...LOG_CONTEXT,
+        action: 'fetchTokenSuccess',
+        metadata: {
+          currentUser,
+          channelName: 'main',
+          tokenPreview: token.slice(0, 8) + '...',
+          conditions: {
+            hasUser: !!currentUser?.id,
+            partyState,
+            hasPermission,
+            isConnected
+          }
+        }
+      });
+      return token;
+    } catch (error) {
+      logger.error('Token fetch failed', {
+        ...LOG_CONTEXT,
+        action: 'fetchTokenFailed',
+        metadata: {
+          error: error instanceof Error ? {
+            name: error.name,
+            message: error.message,
+            stack: error.stack
+          } : error,
+          currentUser,
+          conditions: {
+            hasUser: !!currentUser?.id,
+            partyState,
+            hasPermission,
+            isConnected
+          }
+        }
       });
       throw error;
     }
-  }, [setTrack]);
+  }, [currentUser, partyState, hasPermission, isConnected]);
+
+  // Update the token fetch effect to use the memoized function
+  useEffect(() => {
+    if (currentUser?.id && hasPermission && !voiceToken) {
+      logger.info('Pre-fetching voice token', {
+        ...LOG_CONTEXT,
+        action: 'preFetchToken',
+        metadata: { 
+          userId: currentUser.id,
+          hasPermission,
+          partyState,
+          isConnected,
+          micPermissionDenied,
+          conditions: {
+            hasUser: !!currentUser?.id,
+            hasPermission,
+            noToken: !voiceToken,
+            notDenied: !micPermissionDenied,
+            notConnected: !isConnected,
+            isJoinedOrJoining: partyState === 'joined' || partyState === 'joining'
+          }
+        }
+      });
+
+      void fetchVoiceToken().then(token => {
+        logger.info('Successfully pre-fetched voice token', {
+          ...LOG_CONTEXT,
+          action: 'tokenFetched',
+          metadata: {
+            token: token.slice(0, 8) + '...',
+            partyState,
+            isConnected,
+            micPermissionDenied,
+            conditions: {
+              hasUser: !!currentUser?.id,
+              hasPermission,
+              notDenied: !micPermissionDenied,
+              notConnected: !isConnected,
+              isJoinedOrJoining: partyState === 'joined' || partyState === 'joining'
+            }
+          }
+        });
+        setVoiceToken(token);
+      }).catch(error => {
+        logger.error('Failed to pre-fetch voice token', {
+          ...LOG_CONTEXT,
+          action: 'tokenFetchError',
+          metadata: { 
+            error,
+            conditions: {
+              hasUser: !!currentUser?.id,
+              hasPermission,
+              noToken: !voiceToken,
+              notDenied: !micPermissionDenied,
+              notConnected: !isConnected,
+              isJoinedOrJoining: partyState === 'joined' || partyState === 'joining'
+            }
+          }
+        });
+      });
+    } else {
+      logger.debug('Skipping token fetch', {
+        ...LOG_CONTEXT,
+        action: 'skipTokenFetch',
+        metadata: {
+          hasUser: !!currentUser?.id,
+          hasPermission,
+          hasToken: !!voiceToken,
+          partyState,
+          conditions: {
+            hasUser: !!currentUser?.id,
+            hasPermission,
+            noToken: !voiceToken,
+            notDenied: !micPermissionDenied,
+            notConnected: !isConnected,
+            isJoinedOrJoining: partyState === 'joined' || partyState === 'joining'
+          }
+        }
+      });
+    }
+  }, [currentUser?.id, hasPermission, voiceToken, fetchVoiceToken, partyState, isConnected, micPermissionDenied]);
+
+  // Check initial microphone permission state
+  useEffect(() => {
+    async function checkInitialPermissionState() {
+      try {
+        // Query the browser's permission state
+        const permissionStatus = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+        
+        logger.info('Checking initial microphone permission state', {
+          ...LOG_CONTEXT,
+          action: 'checkInitialPermission',
+          metadata: { 
+            state: permissionStatus.state,
+            partyState,
+            userId: currentUser?.id
+          }
+        });
+
+        // Update our state based on browser's state
+        if (permissionStatus.state === 'granted') {
+          setHasPermission(true);
+          setMicPermissionDenied(false);
+        } else if (permissionStatus.state === 'denied') {
+          setHasPermission(false);
+          setMicPermissionDenied(true);
+        }
+
+        // Listen for permission changes
+        permissionStatus.addEventListener('change', () => {
+          logger.info('Microphone permission state changed', {
+            ...LOG_CONTEXT,
+            action: 'permissionStateChange',
+            metadata: { 
+              newState: permissionStatus.state,
+              partyState,
+              userId: currentUser?.id
+            }
+          });
+
+          if (permissionStatus.state === 'granted') {
+            setHasPermission(true);
+            setMicPermissionDenied(false);
+          } else if (permissionStatus.state === 'denied') {
+            setHasPermission(false);
+            setMicPermissionDenied(true);
+          }
+        });
+      } catch (error) {
+        logger.error('Failed to check initial microphone permission', {
+          ...LOG_CONTEXT,
+          action: 'checkInitialPermissionError',
+          metadata: { error }
+        });
+      }
+    }
+
+    void checkInitialPermissionState();
+  }, [currentUser?.id, partyState]);
 
   // Handle microphone permission separately from join
   const requestMicrophonePermission = useCallback(async () => {
     if (hasPermission) {
-      logger.debug('Already have microphone permission', LOG_CONTEXT);
+      logger.debug('Already have microphone permission', {
+        ...LOG_CONTEXT,
+        action: 'requestPermission',
+        metadata: { 
+          hasPermission, 
+          micPermissionDenied,
+          currentUser
+        }
+      });
       return;
     }
 
     // Prevent multiple simultaneous requests
     if (permissionRequestInProgressRef.current) {
-      logger.debug('Permission request already in progress', LOG_CONTEXT);
+      logger.debug('Permission request already in progress', {
+        ...LOG_CONTEXT,
+        action: 'requestPermission',
+        metadata: { 
+          hasPermission, 
+          micPermissionDenied,
+          currentUser
+        }
+      });
       return;
     }
 
     try {
       permissionRequestInProgressRef.current = true;
-      logger.debug('Requesting microphone permission', LOG_CONTEXT);
+      logger.info('Requesting microphone permission', {
+        ...LOG_CONTEXT,
+        action: 'requestPermission',
+        metadata: { 
+          hasPermission, 
+          micPermissionDenied,
+          partyState,
+          currentUser
+        }
+      });
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       stream.getTracks().forEach(track => track.stop());
+      
+      // Update permission states
       setMicPermissionDenied(false);
       setHasPermission(true);
-      logger.debug('Microphone permission granted', LOG_CONTEXT);
+      
+      logger.info('Microphone permission granted', {
+        ...LOG_CONTEXT,
+        action: 'permissionGranted',
+        metadata: { 
+          partyState,
+          currentUser,
+          isConnected
+        }
+      });
     } catch (error) {
       logger.error('Failed to get microphone permission', {
         ...LOG_CONTEXT,
-        metadata: { error }
+        action: 'permissionDenied',
+        metadata: { 
+          error,
+          partyState,
+          currentUser
+        }
       });
       setMicPermissionDenied(true);
       throw error;
     } finally {
       permissionRequestInProgressRef.current = false;
     }
-  }, [hasPermission]);
+  }, [hasPermission, micPermissionDenied, partyState, currentUser, isConnected]);
 
   // Handle token expiration
   useEffect(() => {
@@ -414,86 +819,213 @@ export function useVoice() {
     };
   }, [client, currentUser?.id]);
 
-  // Combined effect to handle both join attempts and flag resets
+  // Handle party state changes
   useEffect(() => {
-    logger.debug('Party state changed in useVoice', {
+    const shouldJoinVoice = (partyState === 'joined' || partyState === 'joining') && 
+                           hasPermission && 
+                           !isConnected && 
+                           !micPermissionDenied && 
+                           !!currentUser?.id &&
+                           !!voiceToken;
+
+    logger.info('Party state change effect triggered', {
+      ...LOG_CONTEXT,
+      action: 'partyStateChangeEffect',
       metadata: {
         partyState,
         hasPermission,
         micPermissionDenied,
-        joinAttempted: joinAttemptedRef.current,
         isConnected,
-        timestamp: new Date().toISOString(),
+        userId: currentUser?.id,
+        joinAttempted: joinAttemptedRef.current,
+        hasToken: !!voiceToken,
+        shouldJoinVoice,
+        conditions: {
+          isJoinedOrJoining: partyState === 'joined' || partyState === 'joining',
+          hasPermission,
+          notConnected: !isConnected,
+          notDenied: !micPermissionDenied,
+          hasUser: !!currentUser?.id,
+          hasToken: !!voiceToken,
+          notAttempted: !joinAttemptedRef.current
+        }
       }
     });
 
-    // If we're in idle or joining state, no voice action needed
-    if (partyState === 'idle' || partyState === 'joining') {
-      logger.debug('Party in idle/joining state, no voice action needed', {
-        metadata: {
-          hasPermission,
-          micPermissionDenied,
-        }
-      });
-      return;
-    }
-
-    // If we're leaving, cleanup voice
+    // If we're leaving, cleanup voice immediately
     if (partyState === 'leaving') {
-      logger.debug('Party is leaving, cleaning up voice', {
-        metadata: {
-          hasPermission,
-          micPermissionDenied,
-        }
-      });
+      // Reset flags before cleanup
+      joinAttemptedRef.current = false;
+      setMicPermissionDenied(false);
+      setHasPermission(false);
+      setVoiceToken(null);
+      
+      // Call cleanup directly
       cleanup();
       return;
     }
 
-    // Handle joined state
-    if (partyState === 'joined') {
-      // If we already attempted to join, don't try again
-      if (joinAttemptedRef.current) {
-        logger.debug('Join already attempted, skipping', {
+    // If we're joined/joining and have permission but not connected, attempt to join voice
+    if (shouldJoinVoice && !joinAttemptedRef.current) {
+      logger.info('Attempting to join voice after permission granted', {
+        ...LOG_CONTEXT,
+        action: 'joinAfterPermission',
+        metadata: {
+          partyState,
+          hasPermission,
+          micPermissionDenied,
+          isConnected,
+          userId: currentUser?.id,
+          joinAttempted: joinAttemptedRef.current,
+          hasToken: !!voiceToken,
+          conditions: {
+            isJoinedOrJoining: partyState === 'joined' || partyState === 'joining',
+            hasPermission,
+            notConnected: !isConnected,
+            notDenied: !micPermissionDenied,
+            hasUser: !!currentUser?.id,
+            hasToken: !!voiceToken,
+            notAttempted: !joinAttemptedRef.current
+          }
+        }
+      });
+
+      // Set join attempted before the async call
+      joinAttemptedRef.current = true;
+      
+      // Attempt to join voice
+      void joinVoice().then(audioTrack => {
+        if (audioTrack) {
+          setTrack(audioTrack);
+          logger.info('Successfully set audio track after join', {
+            ...LOG_CONTEXT,
+            action: 'setTrackAfterJoin',
+            metadata: {
+              trackId: audioTrack.getTrackId(),
+              muted: audioTrack.muted,
+              partyState,
+              conditions: {
+                hasUser: !!currentUser?.id,
+                hasPermission,
+                notDenied: !micPermissionDenied,
+                notConnected: !isConnected,
+                hasToken: !!voiceToken
+              }
+            }
+          });
+        }
+      }).catch(error => {
+        // Reset join attempted on error to allow retry
+        joinAttemptedRef.current = false;
+        logger.error('Failed to join voice after permission granted', {
+          ...LOG_CONTEXT,
+          action: 'joinAfterPermissionError',
+          metadata: { 
+            error, 
+            partyState,
+            conditions: {
+              hasUser: !!currentUser?.id,
+              hasPermission,
+              notDenied: !micPermissionDenied,
+              notConnected: !isConnected,
+              hasToken: !!voiceToken
+            }
+          }
+        });
+      });
+      return;
+    }
+
+    // If we don't have permission and haven't been denied, request it
+    if ((partyState === 'joined' || partyState === 'joining') && !hasPermission && !micPermissionDenied && !permissionRequestInProgressRef.current) {
+      logger.info('Requesting microphone permission after join', {
+        ...LOG_CONTEXT,
+        action: 'requestPermissionAfterJoin',
+        metadata: {
+          partyState,
+          hasPermission,
+          micPermissionDenied,
+          isConnected,
+          userId: currentUser?.id
+        }
+      });
+      void requestMicrophonePermission().catch(error => {
+        logger.error('Failed to request microphone permission after join', {
+          ...LOG_CONTEXT,
+          action: 'requestPermissionAfterJoinError',
+          metadata: { error, partyState }
+        });
+      });
+    }
+  }, [partyState, hasPermission, micPermissionDenied, isConnected, currentUser?.id, cleanup, joinVoice, requestMicrophonePermission, setTrack, voiceToken]);
+
+  // Separate effect for debug logging
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'production') {
+      const now = new Date().toISOString();
+      logger.debug('Party state changed in useVoice', {
+        ...LOG_CONTEXT,
+        action: 'partyStateChange',
+        metadata: {
+          partyState,
+          hasPermission,
+          micPermissionDenied,
+          joinAttempted: joinAttemptedRef.current,
+          isConnected,
+          timestamp: now,
+          userId: currentUser?.id
+        }
+      });
+
+      if (partyState === 'leaving') {
+        logger.info('Party is leaving, cleaning up voice', {
+          ...LOG_CONTEXT,
+          action: 'partyLeaving',
           metadata: {
             hasPermission,
             micPermissionDenied,
+            joinAttempted: joinAttemptedRef.current,
+            isConnected,
+            userId: currentUser?.id,
+            timestamp: now,
           }
         });
-        return;
       }
 
-      // If we have permission, attempt to join voice
-      if (hasPermission) {
-        logger.debug('Have permission, attempting to join voice', {
+      if (!hasPermission && !micPermissionDenied && !permissionRequestInProgressRef.current) {
+        logger.info('Requesting microphone permission', {
+          ...LOG_CONTEXT,
+          action: 'requestPermission',
           metadata: {
-            hasPermission,
-            micPermissionDenied,
+            partyState,
+            userId: currentUser?.id,
+            timestamp: now
           }
         });
-        joinVoice();
-        return;
-      }
-
-      // If we don't have permission and haven't been denied, request it
-      if (!micPermissionDenied && !permissionRequestInProgressRef.current) {
-        logger.info('Requesting microphone permission before join', {
-          metadata: {
-            hasPermission,
-            micPermissionDenied,
-          }
-        });
-        requestMicrophonePermission().catch(() => {});
-        return;
       }
     }
-  }, [partyState, hasPermission, micPermissionDenied, joinAttemptedRef.current, isConnected, joinVoice, requestMicrophonePermission, cleanup]);
+  }, [partyState, hasPermission, micPermissionDenied, isConnected, currentUser?.id]);
 
+  // Update toggleMute to include all dependencies
   const toggleMute = useCallback(async () => {
     if (!track) {
-      logger.debug('No track to mute - attempting to join voice', LOG_CONTEXT);
+      logger.debug('No track to mute - attempting to join voice', {
+        ...LOG_CONTEXT,
+        action: 'toggleMute',
+        metadata: {
+          hasTrack: false,
+          currentUser,
+          conditions: {
+            hasUser: !!currentUser?.id
+          }
+        }
+      });
       if (!currentUser?.id) {
-        logger.error('Cannot join voice - no user ID', LOG_CONTEXT);
+        logger.error('Cannot join voice - no user ID', {
+          ...LOG_CONTEXT,
+          action: 'toggleMuteError',
+          metadata: { currentUser }
+        });
         return;
       }
       await joinVoice();
@@ -503,10 +1035,27 @@ export function useVoice() {
     const newMuted = !isMuted;
     track.setEnabled(!newMuted);
     setIsMuted(newMuted);
-    logger.debug('Toggled mute state', LOG_CONTEXT);
-  }, [track, isMuted, joinVoice, currentUser?.id]);
+    logger.debug('Toggled mute state', {
+      ...LOG_CONTEXT,
+      action: 'toggleMute',
+      metadata: {
+        hasTrack: true,
+        trackId: track.getTrackId(),
+        newMuted,
+        currentUser
+      }
+    });
+  }, [track, isMuted, joinVoice, currentUser]);
 
-  return {
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      logger.debug('Cleaning up voice on unmount', LOG_CONTEXT);
+      cleanup();
+    };
+  }, [cleanup]);
+
+  return useMemo(() => ({
     isMuted,
     toggleMute,
     micPermissionDenied,
@@ -514,5 +1063,13 @@ export function useVoice() {
     isConnected,
     joinVoice,
     leaveVoice
-  };
+  }), [
+    isMuted,
+    toggleMute,
+    micPermissionDenied, 
+    requestMicrophonePermission,
+    isConnected,
+    joinVoice,
+    leaveVoice
+  ]);
 } 

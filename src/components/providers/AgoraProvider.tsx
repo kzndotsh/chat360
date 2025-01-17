@@ -152,9 +152,8 @@ export function AgoraProvider({ children }: AgoraProviderProps) {
         const mod = await import('agora-rtc-sdk-ng');
         AgoraRTC = mod.default;
         if (AgoraRTC) {
-          AgoraRTC.setLogLevel(1);
-          AgoraRTC.enableLogUpload();
           AgoraRTC.disableLogUpload();
+          AgoraRTC.setLogLevel(0);
         }
       }
 
@@ -167,12 +166,35 @@ export function AgoraProvider({ children }: AgoraProviderProps) {
       // Configure client
       newClient.enableAudioVolumeIndicator();
       
+      // Set up connection state monitoring
+      newClient.on('connection-state-change', (curState, prevState) => {
+        logger.info('Client connection state changed', {
+          ...LOG_CONTEXT,
+          action: 'connectionStateChange',
+          metadata: { 
+            curState, 
+            prevState,
+            channelName: newClient.channelName,
+            uid: newClient.uid
+          }
+        });
+      });
+
       // Set up error handling
       newClient.on('error', (err: Error) => {
         logger.error('Client error', {
           ...LOG_CONTEXT,
           action: 'clientError',
-          metadata: { error: err },
+          metadata: { 
+            error: err instanceof Error ? {
+              name: err.name,
+              message: err.message,
+              stack: err.stack
+            } : err,
+            connectionState: newClient.connectionState,
+            channelName: newClient.channelName,
+            uid: newClient.uid
+          }
         });
         setError(err instanceof Error ? err : new Error(String(err)));
       });

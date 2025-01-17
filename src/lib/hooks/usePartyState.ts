@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/api/supabase';
 import { logger } from '@/lib/utils/logger';
 import type { PartyMember } from '@/lib/types/party';
@@ -15,32 +15,16 @@ interface PartyStateReturn {
   joinParty: (name: string, avatar: string, game: string) => Promise<PartyMember>;
   leaveParty: () => Promise<void>;
   editProfile: (name: string, avatar: string, game: string) => Promise<void>;
+  setJoinedState: () => void;
 }
+
+const LOG_CONTEXT = { component: 'usePartyState' };
 
 export function usePartyState(): PartyStateReturn {
   // Core state
   const [currentUser, setCurrentUser] = useState<PartyMember | null>(null);
   const [partyState, setPartyState] = useState<PartyState>('idle');
-
-  // Track party state changes
-  useEffect(() => {
-    logger.debug('Party state changed in usePartyState', {
-      component: 'usePartyState',
-      metadata: {
-        from: partyState,
-        userId: currentUser?.id,
-        timestamp: new Date().toISOString()
-      }
-    });
-
-    // Ensure state is persisted to localStorage immediately
-    if (partyState === 'joined') {
-      localStorage.setItem('partyState', 'joined');
-    } else if (partyState === 'idle') {
-      localStorage.removeItem('partyState');
-    }
-  }, [partyState, currentUser?.id]);
-
+  
   // Refs
   const mountedRef = useRef(true);
   const loggerRef = useRef(logger);
@@ -95,6 +79,25 @@ export function usePartyState(): PartyStateReturn {
       localStorage.removeItem('partyState');
     }
   }, [initializePresence]);
+
+  // Track party state changes
+  useEffect(() => {
+    logger.debug('Party state changed in usePartyState', {
+      component: 'usePartyState',
+      metadata: {
+        from: partyState,
+        userId: currentUser?.id,
+        timestamp: new Date().toISOString()
+      }
+    });
+
+    // Ensure state is persisted to localStorage immediately
+    if (partyState === 'joined') {
+      localStorage.setItem('partyState', 'joined');
+    } else if (partyState === 'idle') {
+      localStorage.removeItem('partyState');
+    }
+  }, [partyState, currentUser?.id]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -152,12 +155,27 @@ export function usePartyState(): PartyStateReturn {
 
         // Set party state to joined only after presence is initialized
         if (mountedRef.current) {
-          logger.debug('Successfully joined party and initialized presence', {
+          logger.debug('Setting party state to joined', {
             component: 'usePartyState',
-            metadata: { userId: newMember.id }
+            action: 'setJoinedState',
+            metadata: { 
+              userId: newMember.id,
+              timestamp: new Date().toISOString(),
+              mounted: mountedRef.current,
+              currentState: partyState
+            }
           });
           localStorage.setItem('partyState', 'joined');
           setPartyState('joined');
+          
+          logger.info('Successfully completed party join sequence', {
+            component: 'usePartyState',
+            action: 'joinComplete',
+            metadata: { 
+              userId: newMember.id,
+              timestamp: new Date().toISOString()
+            }
+          });
         }
 
         return newMember;
@@ -177,7 +195,7 @@ export function usePartyState(): PartyStateReturn {
         throw error;
       }
     },
-    [currentUser, cleanup, initializePresence]
+    [currentUser, cleanup, initializePresence, partyState]
   );
 
   const leaveParty = useCallback(async () => {
@@ -260,12 +278,36 @@ export function usePartyState(): PartyStateReturn {
     [currentUser, initializePresence]
   );
 
-  return {
+  const setJoinedState = useCallback(() => {
+    if (!currentUser?.id) {
+      logger.error('Cannot set joined state - no user ID', {
+        ...LOG_CONTEXT,
+        action: 'setJoinedState',
+        metadata: { currentUser }
+      });
+      return;
+    }
+
+    logger.info('Setting party state to joined', {
+      ...LOG_CONTEXT,
+      action: 'setJoinedState',
+      metadata: {
+        userId: currentUser.id,
+        timestamp: new Date().toISOString(),
+        currentState: partyState
+      }
+    });
+
+    setPartyState('joined');
+  }, [currentUser, partyState]);
+
+  return useMemo(() => ({
     currentUser,
     members: presenceMembers,
     partyState,
     joinParty,
     leaveParty,
     editProfile,
-  };
+    setJoinedState,
+  }), [currentUser, presenceMembers, partyState, joinParty, leaveParty, editProfile, setJoinedState]);
 }
