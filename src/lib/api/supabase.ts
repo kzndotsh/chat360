@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { SHARED_CHANNEL_NAME } from '@/lib/utils/presence';
+import { SHARED_CHANNEL_NAME } from '@/lib/utils/constants';
 import { logger } from '@/lib/utils/logger';
 
 const LOG_CONTEXT = { component: 'supabase' };

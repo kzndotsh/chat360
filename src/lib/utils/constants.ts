@@ -1,0 +1,1 @@
+export const SHARED_CHANNEL_NAME = 'shared_presence'; 

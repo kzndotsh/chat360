@@ -1,34 +1,15 @@
-import { VoiceStatus } from '@/components/ui/VoiceStatusIcon';
-
 export interface PartyMember {
   id: string;
   name: string;
-  avatar_url?: string;
-  avatar?: string; // For backward compatibility
-  game?: string;
-  muted?: boolean;
-  agora_uid?: string;
-  is_active?: boolean;
-  voice_status: VoiceStatus;
-  deafened_users?: string[]; // Array of user IDs that this member has deafened
-  created_at?: string;
-  last_seen?: string;
-}
-
-export interface Party {
-  id: string;
-  name: string;
-  host_id: string;
-  members: PartyMember[];
+  avatar: string;
+  game: string;
+  is_active: boolean;
   created_at: string;
-  updated_at: string;
-  channel_name: string; // Agora channel name
-}
-
-export interface PartyPresence {
-  online_at: string;
-  voice_status: VoiceStatus;
-  deafened_users: string[];
+  last_seen: string;
+  voice_status?: 'silent' | 'muted' | 'speaking';
+  muted?: boolean;
+  agora_uid?: number;
+  deafened_users?: string[];
 }
 
 export interface PresenceMemberState {
@@ -36,9 +17,9 @@ export interface PresenceMemberState {
   name: string;
   avatar: string;
   game: string;
-  muted: boolean;
-  agora_uid: string;
   online_at: string;
-  voice_status: VoiceStatus;
+  voice_status?: 'silent' | 'muted' | 'speaking';
+  muted?: boolean;
+  agora_uid?: number;
   deafened_users?: string[];
 }

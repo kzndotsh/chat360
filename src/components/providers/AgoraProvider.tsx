@@ -8,12 +8,16 @@ import {
   createContext,
   useContext,
   useCallback,
+  useMemo,
 } from 'react';
-import type { IAgoraRTCClient } from 'agora-rtc-sdk-ng';
+import type { IAgoraRTCClient, IAgoraRTC } from 'agora-rtc-sdk-ng';
 import { logger } from '@/lib/utils/logger';
 
 // Constants for cleanup and reconnection
 const CLEANUP_DELAY = 150; // 150ms delay after cleanup
+const INIT_RETRY_DELAY = 1000; // 1 second delay between retries
+const MAX_INIT_RETRIES = 3; // Maximum number of initialization retries
+const LOG_CONTEXT = { component: 'AgoraProvider' };
 
 if (!process.env.NEXT_PUBLIC_AGORA_APP_ID) {
   throw new Error('NEXT_PUBLIC_AGORA_APP_ID is required');
@@ -21,12 +25,18 @@ if (!process.env.NEXT_PUBLIC_AGORA_APP_ID) {
 
 interface AgoraContextType {
   client: IAgoraRTCClient | null;
-  initializeClient: () => Promise<void>;
+  getClient: () => Promise<IAgoraRTCClient>;
+  cleanupClient: () => Promise<void>;
+  isInitializing: boolean;
+  error: Error | null;
 }
 
 const AgoraContext = createContext<AgoraContextType>({
   client: null,
-  initializeClient: async () => {},
+  getClient: async () => { throw new Error('AgoraProvider not initialized') },
+  cleanupClient: async () => {},
+  isInitializing: false,
+  error: null,
 });
 
 export const useAgoraContext = () => useContext(AgoraContext);
@@ -36,115 +46,61 @@ interface AgoraProviderProps {
 }
 
 // Lazy load AgoraRTC to avoid SSR issues
-let AgoraRTC: typeof import('agora-rtc-sdk-ng').default;
+let AgoraRTC: IAgoraRTC | null = null;
+
+async function loadAgoraSDK(): Promise<void> {
+  if (typeof window === 'undefined' || AgoraRTC) return;
+  
+  const mod = await import('agora-rtc-sdk-ng');
+  AgoraRTC = mod.default;
+  if (AgoraRTC) {
+    // Configure Agora SDK
+    AgoraRTC.disableLogUpload(); // Disable log upload for privacy
+    AgoraRTC.setLogLevel(0); // Set to INFO level
+  }
+}
+
+// Initialize SDK loading
+if (typeof window !== 'undefined') {
+  loadAgoraSDK().catch(error => {
+    logger.error('Failed to load Agora SDK', {
+      ...LOG_CONTEXT,
+      action: 'loadSDK',
+      metadata: { error }
+    });
+  });
+}
 
 export function AgoraProvider({ children }: AgoraProviderProps) {
   const [client, setClient] = useState<IAgoraRTCClient | null>(null);
+  const [error, setError] = useState<Error | null>(null);
+  const [isInitializing, setIsInitializing] = useState(false);
   const mountedRef = useRef(true);
   const isCleaningUpRef = useRef(false);
   const initializingRef = useRef(false);
-  const loggerRef = useRef(logger);
+  const clientRef = useRef<IAgoraRTCClient | null>(null);
+  const retryCountRef = useRef(0);
 
-  // Log provider mount and unmount
+  // Keep clientRef in sync with client state
   useEffect(() => {
-    const logger = loggerRef.current;
-    logger.info('Agora provider mounted', {
-      component: 'AgoraProvider',
-      action: 'mount',
-      metadata: {
-        appId: process.env.NEXT_PUBLIC_AGORA_APP_ID,
-        hasClient: !!client,
-      },
-    });
-
-    return () => {
-      logger.info('Agora provider unmounting', {
-        component: 'AgoraProvider',
-        action: 'unmount',
-        metadata: {
-          hasClient: !!client,
-          isCleaningUp: isCleaningUpRef.current,
-        },
-      });
-    };
-  }, [client]);
-
-  // Log client state changes
-  useEffect(() => {
-    if (!client) {
-      return;
-    }
-
-    loggerRef.current.info('Agora client state updated', {
-      component: 'AgoraProvider',
-      action: 'clientUpdate',
-      metadata: {
-        connectionState: client.connectionState,
-        uid: client.uid,
-      },
-    });
-
-    const handleConnectionStateChange = (curState: string, prevState: string, reason?: string) => {
-      loggerRef.current.info('Agora connection state changed', {
-        component: 'AgoraProvider',
-        action: 'connectionStateChange',
-        metadata: {
-          currentState: curState,
-          previousState: prevState,
-          reason,
-          uid: client.uid,
-        },
-      });
-      return;
-    };
-
-    client.on('connection-state-change', handleConnectionStateChange);
-
-    return () => {
-      client.off('connection-state-change', handleConnectionStateChange);
-    };
+    clientRef.current = client;
   }, [client]);
 
   // Enhanced cleanup function
-  const enhancedCleanup = useCallback(async () => {
-    if (isCleaningUpRef.current) {
-      loggerRef.current.info('Cleanup already in progress, skipping', {
-        component: 'AgoraProvider',
-        action: 'cleanup',
-        metadata: {
-          status: 'skipped',
-          reason: 'already_cleaning',
-        },
-      });
-      return;
-    }
+  const cleanupClient = useCallback(async () => {
+    const currentClient = clientRef.current;
+    if (!currentClient || isCleaningUpRef.current) return;
 
+    logger.info('Starting client cleanup...', LOG_CONTEXT);
     isCleaningUpRef.current = true;
 
-    loggerRef.current.info('Starting Agora client cleanup', {
-      component: 'AgoraProvider',
-      action: 'cleanup',
-      metadata: {
-        status: 'started',
-        connectionState: client?.connectionState,
-        uid: client?.uid,
-      },
-    });
-
     try {
-      if (client) {
-        // Remove all event listeners
-        client.removeAllListeners();
+      // Remove all event listeners
+      currentClient.removeAllListeners();
 
-        // Leave the channel if connected
-        if (client.connectionState !== 'DISCONNECTED') {
-          await client.leave();
-          loggerRef.current.info('Successfully left Agora channel', {
-            component: 'AgoraProvider',
-            action: 'cleanup',
-            metadata: { status: 'left_channel' },
-          });
-        }
+      // Leave the channel if connected
+      if (currentClient.connectionState !== 'DISCONNECTED') {
+        await currentClient.leave();
       }
 
       // Add delay to ensure cleanup propagates
@@ -153,120 +109,138 @@ export function AgoraProvider({ children }: AgoraProviderProps) {
       // Reset state if still mounted
       if (mountedRef.current) {
         setClient(null);
-        loggerRef.current.info('Agora client reset', {
-          component: 'AgoraProvider',
-          action: 'cleanup',
-          metadata: { status: 'client_reset' },
-        });
+        clientRef.current = null;
+        setError(null);
       }
 
-      return true;
+      logger.info('Client cleanup completed', LOG_CONTEXT);
     } catch (error) {
-      loggerRef.current.error('Cleanup process failed', {
-        component: 'AgoraProvider',
+      const err = error instanceof Error ? error : new Error(String(error));
+      logger.error('Error during cleanup', {
+        ...LOG_CONTEXT,
         action: 'cleanup',
-        metadata: {
-          error: error instanceof Error ? error : new Error(String(error)),
-          connectionState: client?.connectionState,
-          uid: client?.uid,
-        },
+        metadata: { error: err },
       });
-      throw error;
+      if (mountedRef.current) {
+        setError(err);
+      }
     } finally {
       isCleaningUpRef.current = false;
-      loggerRef.current.info('Cleanup process completed', {
-        component: 'AgoraProvider',
-        action: 'cleanup',
-        metadata: { status: 'completed' },
-      });
     }
-  }, [client]);
+  }, []);
 
-  // Initialize client function that can be called when needed
-  const initializeClient = useCallback(async () => {
-    if (initializingRef.current || client) {
-      loggerRef.current.debug('Client initialization skipped', {
-        component: 'AgoraProvider',
-        action: 'initialize',
-        metadata: {
-          reason: initializingRef.current ? 'already_initializing' : 'client_exists',
-          hasClient: !!client,
-        },
-      });
-      return;
+  // Get or initialize client
+  const getClient = useCallback(async (): Promise<IAgoraRTCClient> => {
+    if (clientRef.current) {
+      return clientRef.current;
     }
 
-    initializingRef.current = true;
-    loggerRef.current.info('Initializing Agora client', {
-      component: 'AgoraProvider',
-      action: 'initialize',
-      metadata: { status: 'started' },
-    });
+    if (initializingRef.current) {
+      throw new Error('Client initialization already in progress');
+    }
+
+    if (retryCountRef.current >= MAX_INIT_RETRIES) {
+      throw new Error('Max initialization retries reached');
+    }
 
     try {
-      // Properly import and initialize AgoraRTC
-      const AgoraModule = await import('agora-rtc-sdk-ng');
-      AgoraRTC = AgoraModule.default;
+      setIsInitializing(true);
+      initializingRef.current = true;
 
-      if (!AgoraRTC || !mountedRef.current) {
-        throw new Error('Failed to load Agora SDK');
+      // Ensure SDK is loaded
+      if (!AgoraRTC) {
+        const mod = await import('agora-rtc-sdk-ng');
+        AgoraRTC = mod.default;
+        if (AgoraRTC) {
+          AgoraRTC.setLogLevel(1);
+          AgoraRTC.enableLogUpload();
+          AgoraRTC.disableLogUpload();
+        }
       }
 
-      // Set Agora log level to DEBUG for development
-      AgoraRTC.setLogLevel(0); // 0: DEBUG, 1: INFO, 2: WARN, 3: ERROR, 4: NONE
-
+      // Create new client
       const newClient = AgoraRTC.createClient({
         mode: 'rtc',
         codec: 'vp8',
-        role: 'host',
       });
 
-      if (mountedRef.current && !isCleaningUpRef.current) {
-        setClient(newClient);
-        loggerRef.current.info('Agora client initialized successfully', {
-          component: 'AgoraProvider',
-          action: 'initialize',
-          metadata: {
-            status: 'success',
-            mode: 'rtc',
-            codec: 'vp8',
-            role: 'host',
-          },
+      // Configure client
+      newClient.enableAudioVolumeIndicator();
+      
+      // Set up error handling
+      newClient.on('error', (err: Error) => {
+        logger.error('Client error', {
+          ...LOG_CONTEXT,
+          action: 'clientError',
+          metadata: { error: err },
         });
-      }
-    } catch (error) {
-      loggerRef.current.error('Failed to initialize client', {
-        component: 'AgoraProvider',
-        action: 'initialize',
-        metadata: {
-          error: error instanceof Error ? error : new Error(String(error)),
-          status: 'failed',
-        },
+        setError(err instanceof Error ? err : new Error(String(err)));
       });
-      throw error;
+
+      if (mountedRef.current) {
+        setClient(newClient);
+        clientRef.current = newClient;
+        setError(null);
+        retryCountRef.current = 0;
+      }
+
+      logger.info('Client initialized successfully', LOG_CONTEXT);
+      return newClient;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      logger.error('Failed to initialize client', {
+        ...LOG_CONTEXT,
+        action: 'initialize',
+        metadata: { error: err, retry: retryCountRef.current },
+      });
+
+      retryCountRef.current++;
+      if (mountedRef.current) {
+        setError(err);
+      }
+
+      // Retry after delay
+      if (retryCountRef.current < MAX_INIT_RETRIES) {
+        await new Promise((resolve) => setTimeout(resolve, INIT_RETRY_DELAY));
+        return getClient();
+      }
+      throw err;
     } finally {
+      if (mountedRef.current) {
+        setIsInitializing(false);
+      }
       initializingRef.current = false;
     }
-  }, [client]);
+  }, []);
 
   // Cleanup on unmount
   useEffect(() => {
-    const logger = loggerRef.current;
     return () => {
       mountedRef.current = false;
-      if (client) {
-        enhancedCleanup().catch((error) => {
-          logger.error('Error during cleanup', {
-            component: 'AgoraProvider',
-            action: 'cleanup',
-            metadata: { error },
-          });
+      cleanupClient().catch((error) => {
+        logger.error('Error during cleanup on unmount', {
+          ...LOG_CONTEXT,
+          action: 'unmount',
+          metadata: { error },
         });
-      }
+      });
     };
-  }, [client, enhancedCleanup]);
+  }, [cleanupClient]);
+
+  const contextValue = useMemo(
+    () => ({
+      client,
+      getClient,
+      cleanupClient,
+      isInitializing,
+      error,
+    }),
+    [client, getClient, cleanupClient, isInitializing, error]
+  );
 
   return (
-    <AgoraContext.Provider value={{ client, initializeClient }}>{children}</AgoraContext.Provider>
+    <AgoraContext.Provider value={contextValue}>
+      {children}
+    </AgoraContext.Provider>
   );
 }

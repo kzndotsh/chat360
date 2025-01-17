@@ -2,7 +2,8 @@
 
 import { useCallback, useRef, useEffect } from 'react';
 import { VoiceStatusIcon } from '@/components/ui/VoiceStatusIcon';
-import { useVoiceChat } from '@/lib/hooks/useVoiceChat';
+import { useVoiceStore } from '@/lib/stores/useVoiceStore';
+import { useVoiceClient } from '@/lib/hooks/useVoiceClient';
 import { PartyMember } from '@/lib/types/party';
 import { Button } from '@/components/ui/button';
 import { logger } from '@/lib/utils/logger';
@@ -13,63 +14,62 @@ interface MemberVoiceStatusProps {
 }
 
 export function MemberVoiceStatus({ member, isCurrentUser }: MemberVoiceStatusProps) {
-  const { toggleDeafenUser, deafenedUsers } = useVoiceChat();
-  const isDeafened = deafenedUsers.includes(member.id);
-  const loggerRef = useRef(logger);
+  const { isConnected, isMuted, isSpeaking } = useVoiceStore();
+  const { joinVoice, leaveVoice } = useVoiceClient();
+  const mountedRef = useRef(true);
 
-  const handleClick = useCallback(() => {
-    if (!isCurrentUser) {
-      loggerRef.current.info('Toggling user deafen status', {
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const handleConnect = useCallback(async () => {
+    try {
+      await joinVoice();
+    } catch (error) {
+      logger.error('Failed to connect to voice', {
         component: 'MemberVoiceStatus',
-        action: 'toggleDeafen',
-        metadata: {
-          memberId: member.id,
-          memberName: member.name,
-          currentStatus: isDeafened ? 'deafened' : 'active',
-          newStatus: isDeafened ? 'active' : 'deafened',
-        },
-      });
-      toggleDeafenUser(member.id);
-    } else {
-      loggerRef.current.debug('Attempted to toggle deafen on current user', {
-        component: 'MemberVoiceStatus',
-        action: 'toggleDeafen',
-        metadata: {
-          memberId: member.id,
-          memberName: member.name,
-          isCurrentUser,
-        },
+        action: 'handleConnect',
+        metadata: { error },
       });
     }
-  }, [isCurrentUser, member.id, member.name, toggleDeafenUser, isDeafened]);
+  }, [joinVoice]);
 
-  // Log initial render and status changes
-  useEffect(() => {
-    loggerRef.current.debug('Member voice status updated', {
-      component: 'MemberVoiceStatus',
-      action: 'statusUpdate',
-      metadata: {
-        memberId: member.id,
-        memberName: member.name,
-        voice_status: member.voice_status,
-        isDeafened,
-        isCurrentUser,
-      },
-    });
-  }, [member.id, member.name, member.voice_status, isDeafened, isCurrentUser]);
+  const handleDisconnect = useCallback(async () => {
+    try {
+      await leaveVoice();
+    } catch (error) {
+      logger.error('Failed to disconnect from voice', {
+        component: 'MemberVoiceStatus',
+        action: 'handleDisconnect',
+        metadata: { error },
+      });
+    }
+  }, [leaveVoice]);
+
+  if (!isCurrentUser) {
+    return (
+      <div className="flex items-center gap-2">
+        <VoiceStatusIcon status={member.voice_status} />
+        <span className="text-sm text-muted-foreground">{member.name}</span>
+      </div>
+    );
+  }
 
   return (
-    <Button
-      variant="ghost"
-      size="icon"
-      onClick={handleClick}
-      disabled={isCurrentUser}
-      className="relative"
-    >
-      <VoiceStatusIcon
-        status={isDeafened ? 'deafened' : member.voice_status}
-        size="sm"
-      />
-    </Button>
+    <div className="flex items-center gap-2">
+      <VoiceStatusIcon status={isConnected ? (isSpeaking ? 'speaking' : (isMuted ? 'muted' : 'silent')) : 'deafened'} />
+      <span className="text-sm text-muted-foreground">{member.name}</span>
+      {isConnected ? (
+        <Button variant="ghost" size="sm" onClick={handleDisconnect}>
+          Disconnect
+        </Button>
+      ) : (
+        <Button variant="ghost" size="sm" onClick={handleConnect}>
+          Connect
+        </Button>
+      )}
+    </div>
   );
 }

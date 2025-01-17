@@ -1,77 +1,85 @@
 'use client';
 
-import { memo, useRef } from 'react';
+import { memo } from 'react';
 import Image from 'next/image';
-import type { PartyMember } from '@/lib/types/party';
-import { UserGroupIcon } from '@/components/features/party/icons/UserGroupIcon';
-import {
-  IoVolumeMuteSharp,
-  IoVolumeLowSharp,
-  IoVolumeMediumSharp,
-  IoVolumeHighSharp,
-} from 'react-icons/io5';
 import { logger } from '@/lib/utils/logger';
+import type { PartyMember } from '@/lib/types/party';
 
-export interface MemberListProps {
+interface MemberListProps {
   members: PartyMember[];
-  toggleMute: (id: string) => void;
-  volumeLevels: Record<string, number>;
   currentUserId?: string;
+  volumeLevels?: Record<string, number>;
+  onToggleMute?: (id: string) => void;
 }
 
-function MemberListComponent({
+export const MemberList = memo(function MemberList({
   members,
-  toggleMute,
-  volumeLevels,
   currentUserId,
+  volumeLevels = {},
+  onToggleMute,
 }: MemberListProps) {
-  const loggerRef = useRef(logger);
-
   const getMicIcon = (member: PartyMember, volumeLevel: number) => {
     if (member.voice_status === 'muted') {
-      return <IoVolumeMuteSharp className="h-8 w-8 text-[#282b2f]" />;
+      return (
+        <svg
+          viewBox="0 0 24 24"
+          className="h-8 w-8 text-[#282b2f]"
+          fill="currentColor"
+        >
+          <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" />
+        </svg>
+      );
     }
 
     // No volume - much higher threshold for background noise
     if (volumeLevel <= 45) {
-      return <IoVolumeLowSharp className="h-8 w-8 text-[#282b2f]" />;
+      return (
+        <svg
+          viewBox="0 0 24 24"
+          className="h-8 w-8 text-[#282b2f]"
+          fill="currentColor"
+        >
+          <path d="M3 9v6h4l5 5V4L7 9H3z" />
+        </svg>
+      );
     }
 
     // Low volume - requires clear speech
     if (volumeLevel <= 65) {
-      return <IoVolumeMediumSharp className="h-8 w-8 text-[#282b2f]" />;
+      return (
+        <svg
+          viewBox="0 0 24 24"
+          className="h-8 w-8 text-[#282b2f]"
+          fill="currentColor"
+        >
+          <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z" />
+        </svg>
+      );
     }
 
-    // Medium/High volume
-    return <IoVolumeHighSharp className="h-8 w-8 text-[#282b2f]" />;
-  };
+    // Medium volume - normal speaking voice
+    if (volumeLevel <= 85) {
+      return (
+        <svg
+          viewBox="0 0 24 24"
+          className="h-8 w-8 text-[#282b2f]"
+          fill="currentColor"
+        >
+          <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM16 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
+        </svg>
+      );
+    }
 
-  if (members.length === 0) {
-    loggerRef.current.debug('No members in party', {
-      component: 'MemberList',
-      action: 'render',
-      metadata: { membersCount: 0 },
-    });
+    // High volume (loud speaking/shouting)
     return (
-      <div className="flex h-full items-center justify-center">
-        <p className="text-muted-foreground">No members in party</p>
-      </div>
+      <svg
+        viewBox="0 0 24 24"
+        className="h-8 w-8 text-[#282b2f]"
+        fill="currentColor"
+      >
+        <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM16 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
+      </svg>
     );
-  }
-
-  const handleMuteToggle = (memberId: string) => {
-    const member = members.find((m) => m.id === memberId);
-    loggerRef.current.info('Toggling member mute', {
-      component: 'MemberList',
-      action: 'toggleMute',
-      metadata: {
-        memberId,
-        memberName: member?.name,
-        currentVoiceStatus: member?.voice_status,
-        isCurrentUser: memberId === currentUserId,
-      },
-    });
-    toggleMute(memberId);
   };
 
   return (
@@ -81,6 +89,16 @@ function MemberListComponent({
           const isCurrentUser = member.id === currentUserId;
           const volumeLevel = volumeLevels[member.id] || 0;
           const shouldDisplayBorder = index !== 0;
+
+          logger.debug('Rendering member', {
+            component: 'MemberList',
+            action: 'renderMember',
+            metadata: {
+              member,
+              isCurrentUser,
+              volumeLevel,
+            },
+          });
 
           return (
             <div
@@ -92,7 +110,7 @@ function MemberListComponent({
               {/* Column 1: Username section */}
               <div className="-ml-7 flex w-[440px] items-center gap-1">
                 <button
-                  onClick={() => handleMuteToggle(member.id)}
+                  onClick={() => onToggleMute?.(member.id)}
                   className="ml-5 flex h-9 w-9 items-center justify-center text-[#161718] hover:text-gray-700"
                   aria-label={member.voice_status === 'muted' ? 'Unmute' : 'Mute'}
                   disabled={!isCurrentUser}
@@ -106,7 +124,6 @@ function MemberListComponent({
                     width={32}
                     height={32}
                     className="object-cover opacity-90 mix-blend-multiply"
-                    unoptimized
                   />
                 </div>
                 <span className="flex-1 overflow-hidden text-[1.35rem] font-medium leading-tight text-[#282b2f]">
@@ -116,7 +133,15 @@ function MemberListComponent({
 
               {/* Column 2: Status icon */}
               <div className="ml-[-50px] flex w-[23px] items-center justify-center tracking-normal">
-                <UserGroupIcon className="h-6 w-6" />
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 3000 3000"
+                  className="h-6 w-6"
+                  fill="#acd43b"
+                >
+                  <path d="M1215.59,42.59c404.31-17.99,672.29,420,455.24,769.24-193.36,311.12-655.35,315.58-851.66,6-204.49-322.48,12.81-758.17,396.42-775.24Z" />
+                  <path d="M2165.59,956.59c183.48-9.01,184.83,221.64,190.49,350.33,17.79,404.09,2.4,809.43,12,1214,2.5,105.19,10.31,288.29-94.24,349.92-38.25,22.55-102.62,29.46-146.86,35.14-99.53,12.79-200.19,23.62-300,34-69.02,7.18-145.2,17.33-213.9,20.1-171.11,6.89-271.76-164.73-351.91-290.25-218.29-341.85-406.95-701.94-617.53-1048.47-50.4-111.32,94.65-228.8,179.02-275.71,29.83-16.58,60.03-23.16,88-42,391.63-108.17,781.28-229.69,1174.92-331.08,26.43-6.81,52.47-14.63,80.02-15.98Z" />
+                </svg>
               </div>
 
               {/* Column 3: Game status */}
@@ -131,7 +156,6 @@ function MemberListComponent({
       </div>
     </div>
   );
-}
+});
 
-export const MemberList = memo(MemberListComponent);
 MemberList.displayName = 'MemberList';

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import Image from 'next/image';
 import { Card } from '@/components/ui/card';
 import { ModalManager } from '@/components/features/modals/ModalManager';
@@ -8,17 +8,15 @@ import { MemberList } from '@/components/features/party/MemberList';
 import { PartyHeader } from '@/components/features/party/PartyHeader';
 import { PartyControls } from '@/components/features/party/PartyControls';
 import { usePartyState } from '@/lib/hooks/usePartyState';
-import { useVoiceChat } from '@/lib/hooks/useVoiceChat';
 import Clock from '@/components/features/party/Clock';
 import { BACKGROUND_VIDEO_URL } from '@/lib/config/constants';
 import { useModalStore } from '@/lib/stores/useModalStore';
 import { logger } from '@/lib/utils/logger';
-import { usePresence } from '@/lib/hooks/usePresence';
+import { useVoice } from '@/lib/hooks/useVoice';
 
 export function PartyChat() {
   // 1. External store hooks
   const showModal = useModalStore((state) => state.showModal);
-  const { volumeLevels, toggleMute: onToggleMute, disconnect } = useVoiceChat();
   const {
     currentUser,
     members,
@@ -27,7 +25,7 @@ export function PartyChat() {
     joinParty: joinPartyState,
     editProfile,
   } = usePartyState();
-  const { initialize: initializePresence } = usePresence();
+  const { isMuted, toggleMute, micPermissionDenied, requestMicrophonePermission } = useVoice();
   const isLeaving = partyState === 'leaving';
 
   // 2. State hooks
@@ -36,7 +34,7 @@ export function PartyChat() {
   // 3. Refs
   const loggerRef = useRef(logger);
 
-  // 5. Callbacks
+  // 4. Callbacks
   const handleJoinParty = useCallback(
     async (username: string, avatar: string, game: string) => {
       // Only allow join if not already in party
@@ -49,90 +47,64 @@ export function PartyChat() {
         return;
       }
 
-      loggerRef.current.info('Attempting to join party', {
-        component: 'PartyChat',
-        action: 'joinParty',
-        metadata: { username, avatar, game },
-      });
-
+      // Request microphone permissions BEFORE joining
       try {
-        await joinPartyState(username, avatar, game);
-        loggerRef.current.info('Successfully joined party', {
+        await requestMicrophonePermission();
+        logger.info('Microphone permission granted, proceeding with party join', {
+          component: 'PartyChat',
+          action: 'joinParty'
+        });
+      } catch (voiceError) {
+        logger.error('Failed to get microphone permission', {
           component: 'PartyChat',
           action: 'joinParty',
-          metadata: { username },
+          metadata: { error: voiceError },
         });
-      } catch (error) {
-        loggerRef.current.error('Failed to join party', {
-          component: 'PartyChat',
-          action: 'joinParty',
-          metadata: { error: error instanceof Error ? error : new Error(String(error)) },
-        });
-        throw error;
+        // Continue with party join even if voice fails
       }
+
+      await joinPartyState(username, avatar, game);
     },
-    [joinPartyState, partyState]
+    [partyState, joinPartyState, requestMicrophonePermission]
   );
 
   const handleEditProfile = useCallback(
     async (username: string, avatar: string, game: string) => {
-      loggerRef.current.info('Attempting to edit profile', {
-        action: 'editProfile',
-        metadata: { username, avatar, game },
-      });
+      if (!currentUser) {
+        loggerRef.current.error('Edit profile failed - no current user', {
+          component: 'PartyChat',
+          action: 'editProfile',
+        });
+        throw new Error('Please join the party before editing your profile');
+      }
 
       try {
-        // Ensure avatar is not empty
-        const validAvatar = avatar || 'https://i.imgur.com/LCycgcq.png'; // Default avatar
+        loggerRef.current.info('Starting profile edit', {
+          component: 'PartyChat',
+          action: 'editProfile',
+          metadata: { username, avatar, game },
+        });
 
-        // First update the profile in the database
-        await editProfile(username, validAvatar, game);
-
-        // Then update presence state if we're in a party
-        if (currentUser && partyState === 'joined') {
-          try {
-            await initializePresence({
-              ...currentUser,
-              name: username,
-              avatar: validAvatar,
-              game: game,
-              last_seen: new Date().toISOString(),
-            });
-          } catch (presenceError) {
-            loggerRef.current.error('Failed to update presence after profile edit', {
-              action: 'editProfile',
-              metadata: {
-                error:
-                  presenceError instanceof Error ? presenceError : new Error(String(presenceError)),
-              },
-            });
-            // Don't throw here, as the profile update was successful
-          }
-        }
+        await editProfile(username, avatar, game);
 
         loggerRef.current.info('Successfully edited profile', {
+          component: 'PartyChat',
           action: 'editProfile',
-          metadata: { username, avatar: validAvatar },
         });
       } catch (error) {
         loggerRef.current.error('Failed to edit profile', {
+          component: 'PartyChat',
           action: 'editProfile',
           metadata: { error: error instanceof Error ? error : new Error(String(error)) },
         });
         throw error;
       }
     },
-    [editProfile, currentUser, partyState, initializePresence]
+    [currentUser, editProfile]
   );
 
   const handleLeaveParty = useCallback(async () => {
-    if (isLeaving) {
-      loggerRef.current.warn('Leave already in progress, ignoring request', {
-        component: 'PartyChat',
-        action: 'leaveParty',
-      });
-      return;
-    }
+    if (isLeaving) return;
 
     try {
       loggerRef.current.info('Starting party leave sequence', {
@@ -140,30 +112,7 @@ export function PartyChat() {
         action: 'leaveParty',
       });
 
-      let voiceDisconnectError = null;
-
-      // First disconnect from voice chat
-      try {
-        await disconnect();
-      } catch (voiceError) {
-        // Store voice error but continue with party leave
-        voiceDisconnectError = voiceError;
-        loggerRef.current.error('Failed to disconnect from voice chat', {
-          component: 'PartyChat',
-          action: 'disconnect',
-          metadata: {
-            error: voiceError instanceof Error ? voiceError : new Error(String(voiceError)),
-          },
-        });
-      }
-
-      // Then leave party
       await leaveParty();
-
-      // If we had a voice error but party leave succeeded, still throw the voice error
-      if (voiceDisconnectError) {
-        throw voiceDisconnectError;
-      }
 
       loggerRef.current.info('Successfully completed party leave sequence', {
         component: 'PartyChat',
@@ -177,12 +126,7 @@ export function PartyChat() {
       });
       throw error;
     }
-  }, [disconnect, leaveParty, isLeaving]);
-
-  // Additional effects that depend on callbacks
-  useEffect(() => {
-    // Any effects that depend on callbacks should go here
-  }, [handleJoinParty, handleEditProfile, handleLeaveParty]);
+  }, [leaveParty, isLeaving]);
 
   return (
     <div
@@ -237,7 +181,11 @@ export function PartyChat() {
                     currentUser,
                   },
                 });
-                showModal('edit');
+                showModal('profile', {
+                  name: currentUser.name,
+                  avatar: currentUser.avatar || 'https://i.imgur.com/LCycgcq.png',
+                  game: currentUser.game || 'Offline'
+                });
               }}
               className="group flex flex-col items-center"
             >
@@ -260,12 +208,11 @@ export function PartyChat() {
 
         <Card className="relative mb-0 aspect-[16/9.75] overflow-hidden rounded-none border-0 bg-[#f0f0fa] text-[#161718] shadow-none">
           <PartyHeader membersCount={members.length} />
+
           <div className="flex-1">
             <MemberList
               members={members}
               currentUserId={currentUser?.id}
-              toggleMute={onToggleMute}
-              volumeLevels={volumeLevels}
             />
           </div>
         </Card>
@@ -275,6 +222,10 @@ export function PartyChat() {
           isLeaving={isLeaving}
           onLeave={handleLeaveParty}
           partyState={partyState}
+          isMuted={isMuted}
+          onToggleMute={toggleMute}
+          micPermissionDenied={micPermissionDenied}
+          onRequestMicrophonePermission={requestMicrophonePermission}
         />
 
         <ModalManager
