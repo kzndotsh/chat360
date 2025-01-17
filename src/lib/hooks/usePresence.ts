@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { logger } from '@/lib/utils/logger';
 import type { PartyMember, PresenceMemberState } from '@/lib/types/party';
-import { globalPresenceChannel } from '@/lib/api/supabase';
+import { getGlobalPresenceChannel } from '@/lib/api/supabase';
 
 const LOG_CONTEXT = { component: 'usePresence' };
 
@@ -23,42 +23,62 @@ export function usePresence() {
 
   // Subscribe to presence updates in view-only mode on mount
   useEffect(() => {
-    // Set up sync handler for the global channel
-    const syncHandler = () => {
-      const state = globalPresenceChannel.presenceState<PresenceMemberState>();
-      const allStates = Object.values(state).flat();
+    let mounted = true;
+    let channel: Awaited<ReturnType<typeof getGlobalPresenceChannel>> | null = null;
 
-      logger.debug('Processing presence sync (view mode)', {
-        ...LOG_CONTEXT,
-        action: 'sync',
-        metadata: { state, allStates },
-      });
+    const initChannel = async () => {
+      try {
+        channel = await getGlobalPresenceChannel();
+        if (!mounted || !channel) return;
 
-      // Always update members list based on current state
-      const newMembers = allStates.map((presence: PresenceMemberState) => ({
-        id: presence.id,
-        name: presence.name,
-        avatar: presence.avatar,
-        game: presence.game,
-        muted: presence.muted,
-        agora_uid: presence.agoraUid,
-        is_active: true,
-        created_at: new Date().toISOString(),
-        last_seen: presence.online_at,
-        voiceStatus: presence.voiceStatus || 'silent',
-        deafenedUsers: presence.deafenedUsers || [],
-      }));
+        // Set up sync handler for the global channel
+        const syncHandler = () => {
+          if (!channel) return;
+          const state = channel.presenceState<PresenceMemberState>();
+          const allStates = Object.values(state).flat();
 
-      setMembers(newMembers);
+          logger.debug('Processing presence sync (view mode)', {
+            ...LOG_CONTEXT,
+            action: 'sync',
+            metadata: { state, allStates },
+          });
+
+          // Always update members list based on current state
+          const newMembers = allStates.map((presence: PresenceMemberState) => ({
+            id: presence.id,
+            name: presence.name,
+            avatar: presence.avatar,
+            game: presence.game,
+            muted: presence.muted,
+            agora_uid: presence.agora_uid,
+            is_active: true,
+            created_at: new Date().toISOString(),
+            last_seen: presence.online_at,
+            voice_status: presence.voice_status || 'silent',
+            deafened_users: presence.deafened_users || [],
+          }));
+
+          setMembers(newMembers);
+        };
+
+        // Add sync handler to global channel
+        channel.on('presence', { event: 'sync' }, syncHandler);
+
+        // Get initial state
+        syncHandler();
+      } catch (error) {
+        logger.error('Failed to initialize presence channel', {
+          ...LOG_CONTEXT,
+          action: 'init',
+          metadata: { error },
+        });
+      }
     };
 
-    // Add sync handler to global channel
-    globalPresenceChannel.on('presence', { event: 'sync' }, syncHandler);
-
-    // Get initial state
-    syncHandler();
+    initChannel();
 
     return () => {
+      mounted = false;
       // We don't want to remove the global channel subscription
       // Just let the cleanup function handle presence tracking
     };
@@ -96,25 +116,36 @@ export function usePresence() {
       // Set channel ref to null
       channelRef.current = null;
 
-      // Get current presence state to update UI
-      const state = globalPresenceChannel.presenceState<PresenceMemberState>();
-      const allStates = Object.values(state).flat();
+      try {
+        // Get current presence state to update UI
+        const globalChannel = await getGlobalPresenceChannel();
+        if (globalChannel) {
+          const state = globalChannel.presenceState<PresenceMemberState>();
+          const allStates = Object.values(state).flat();
 
-      if (allStates.length > 0) {
-        const newMembers = allStates.map((presence: PresenceMemberState) => ({
-          id: presence.id,
-          name: presence.name,
-          avatar: presence.avatar,
-          game: presence.game,
-          muted: presence.muted,
-          agora_uid: presence.agoraUid,
-          is_active: true,
-          created_at: new Date().toISOString(),
-          last_seen: presence.online_at,
-          voiceStatus: presence.voiceStatus || 'silent',
-          deafenedUsers: presence.deafenedUsers || [],
-        }));
-        setMembers(newMembers);
+          if (allStates.length > 0) {
+            const newMembers = allStates.map((presence: PresenceMemberState) => ({
+              id: presence.id,
+              name: presence.name,
+              avatar: presence.avatar,
+              game: presence.game,
+              muted: presence.muted,
+              agora_uid: presence.agora_uid,
+              is_active: true,
+              created_at: new Date().toISOString(),
+              last_seen: presence.online_at,
+              voice_status: presence.voice_status || 'silent',
+              deafened_users: presence.deafened_users || [],
+            }));
+            setMembers(newMembers);
+          }
+        }
+      } catch (error) {
+        logger.error('Failed to get global presence channel during cleanup', {
+          ...LOG_CONTEXT,
+          action: 'cleanup',
+          metadata: { error },
+        });
       }
 
       logger.info('Successfully cleaned up presence', {
@@ -162,7 +193,12 @@ export function usePresence() {
         isCleaningUpRef.current = false;
 
         // Track presence in the global channel
-        const trackResult = await globalPresenceChannel.track({
+        const globalChannel = await getGlobalPresenceChannel();
+        if (!globalChannel) {
+          throw new Error('Failed to get global presence channel');
+        }
+
+        const trackResult = await globalChannel.track({
           id: member.id,
           name: member.name,
           avatar: member.avatar,
@@ -179,13 +215,13 @@ export function usePresence() {
         });
 
         // Store reference to global channel
-        channelRef.current = globalPresenceChannel;
+        channelRef.current = globalChannel;
 
         // Wait for presence to be registered
         await new Promise((resolve) => setTimeout(resolve, 100));
 
         // Get current state
-        const state = globalPresenceChannel.presenceState<PresenceMemberState>();
+        const state = globalChannel.presenceState<PresenceMemberState>();
         const stateValues = Object.values(state).flat();
 
         if (stateValues.length > 0) {
@@ -195,12 +231,12 @@ export function usePresence() {
             avatar: presence.avatar,
             game: presence.game,
             muted: presence.muted,
-            agora_uid: presence.agoraUid,
+            agora_uid: presence.agora_uid,
             is_active: true,
             created_at: new Date().toISOString(),
             last_seen: presence.online_at,
-            voiceStatus: presence.voiceStatus || 'silent',
-            deafenedUsers: presence.deafenedUsers || [],
+            voice_status: presence.voice_status || 'silent',
+            deafened_users: presence.deafened_users || [],
           }));
           setMembers(newMembers);
         }

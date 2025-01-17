@@ -9,8 +9,8 @@ export interface PartyMember {
   muted?: boolean;
   agora_uid?: string;
   is_active?: boolean;
-  voiceStatus: VoiceStatus;
-  deafenedUsers?: string[]; // Array of user IDs that this member has deafened
+  voice_status: VoiceStatus;
+  deafened_users?: string[]; // Array of user IDs that this member has deafened
   created_at?: string;
   last_seen?: string;
 }
@@ -27,8 +27,8 @@ export interface Party {
 
 export interface PartyPresence {
   online_at: string;
-  voiceStatus: VoiceStatus;
-  deafenedUsers: string[];
+  voice_status: VoiceStatus;
+  deafened_users: string[];
 }
 
 export interface PresenceMemberState {
@@ -37,8 +37,8 @@ export interface PresenceMemberState {
   avatar: string;
   game: string;
   muted: boolean;
-  agoraUid: string;
+  agora_uid: string;
   online_at: string;
-  voiceStatus: VoiceStatus;
-  deafenedUsers?: string[];
+  voice_status: VoiceStatus;
+  deafened_users?: string[];
 }

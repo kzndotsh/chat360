@@ -4,8 +4,9 @@ import { logger } from '@/lib/utils/logger';
 import type { PartyMember } from '@/lib/types/party';
 import { usePresence } from './usePresence';
 import { useModalLock } from './useModalLock';
+import { useVoicePermissions } from './useVoicePermissions';
 
-const LOG_CONTEXT = { component: 'usePartyState', module: 'hooks' };
+const LOG_CONTEXT = { component: 'usePartyState' };
 const MIN_INIT_INTERVAL = 1000; // 1 second
 const CLEANUP_DELAY = 150; // 150ms delay after cleanup
 
@@ -15,7 +16,7 @@ export function usePartyState() {
   // Core state
   const [currentUser, setCurrentUser] = useState<PartyMember | null>(null);
   const [partyState, setPartyState] = useState<PartyState>('idle');
-  
+
   // Refs
   const mountedRef = useRef(true);
   const reconnectingRef = useRef(false);
@@ -25,31 +26,37 @@ export function usePartyState() {
   const loggerRef = useRef(logger);
 
   // Custom hooks
-  const { members: presenceMembers, isInitializing: isPresenceInitializing, initialize: initializePresence, cleanup } = usePresence();
+  const {
+    members: presenceMembers,
+    isInitializing: isPresenceInitializing,
+    initialize: initializePresence,
+    cleanup,
+  } = usePresence();
   const { modalLocked } = useModalLock();
+  const { requestAudioPermission } = useVoicePermissions();
 
   // Enhanced cleanup function
   const enhancedCleanup = useCallback(async () => {
     loggerRef.current.debug('Starting enhanced cleanup', {
       ...LOG_CONTEXT,
       action: 'enhancedCleanup',
-      metadata: { currentUser, partyState, isCleaningUp: isCleaningUpRef.current }
+      metadata: { currentUser, partyState, isCleaningUp: isCleaningUpRef.current },
     });
 
     isCleaningUpRef.current = true;
     try {
       // Clean up presence first
       await cleanup();
-      
+
       // Then clean up state
       if (mountedRef.current) {
         setPartyState('cleanup');
         localStorage.removeItem('currentUser');
         localStorage.removeItem('partyState');
-        
+
         // Add delay to ensure cleanup propagates
-        await new Promise(resolve => setTimeout(resolve, CLEANUP_DELAY));
-        
+        await new Promise((resolve) => setTimeout(resolve, CLEANUP_DELAY));
+
         if (mountedRef.current) {
           setPartyState('idle');
           setCurrentUser(null);
@@ -59,13 +66,13 @@ export function usePartyState() {
       loggerRef.current.info('Enhanced cleanup complete', {
         ...LOG_CONTEXT,
         action: 'enhancedCleanup',
-        metadata: { success: true }
+        metadata: { success: true },
       });
     } catch (error) {
       loggerRef.current.error('Enhanced cleanup failed', {
         ...LOG_CONTEXT,
         action: 'enhancedCleanup',
-        metadata: { error }
+        metadata: { error },
       });
       // Still try to reset state on error
       if (mountedRef.current) {
@@ -105,7 +112,7 @@ export function usePartyState() {
         loggerRef.current.debug('Party state transition', {
           ...LOG_CONTEXT,
           action: 'joinParty',
-          metadata: { 
+          metadata: {
             from: partyState,
             to: 'joining',
             userId: currentUser?.id,
@@ -130,9 +137,26 @@ export function usePartyState() {
           muted: false,
           created_at: new Date().toISOString(),
           last_seen: new Date().toISOString(),
-          voiceStatus: 'silent',
-          deafenedUsers: [],
+          voice_status: 'silent',
+          deafened_users: [],
         };
+
+        // Request microphone permission early
+        loggerRef.current.debug('Requesting microphone permission during join', {
+          ...LOG_CONTEXT,
+          action: 'joinParty',
+          metadata: { userId: newUserId },
+        });
+
+        const hasPermission = await requestAudioPermission();
+        if (!hasPermission) {
+          loggerRef.current.warn('Microphone permission denied during join', {
+            ...LOG_CONTEXT,
+            action: 'joinParty',
+            metadata: { userId: newUserId },
+          });
+          // Continue with join even if permission denied
+        }
 
         // Update database first
         const { error: dbError } = await supabase.from('party_members').upsert({
@@ -160,15 +184,15 @@ export function usePartyState() {
           loggerRef.current.debug('Party state transition', {
             ...LOG_CONTEXT,
             action: 'joinParty',
-            metadata: { 
+            metadata: {
               from: 'joining',
               to: 'joined',
               userId: newMember.id,
               stateSnapshot: {
                 currentUser: newMember,
                 partyState: 'joined',
-                isInitializing: false
-              }
+                isInitializing: false,
+              },
             },
           });
           localStorage.setItem('currentUser', JSON.stringify(newMember));
@@ -182,12 +206,12 @@ export function usePartyState() {
         loggerRef.current.info('Successfully joined party', {
           ...LOG_CONTEXT,
           action: 'joinParty',
-          metadata: { 
+          metadata: {
             member: newMember,
             stateSnapshot: {
               currentUser: newMember,
-              partyState: 'joined'
-            }
+              partyState: 'joined',
+            },
           },
         });
       } catch (error: unknown) {
@@ -202,7 +226,7 @@ export function usePartyState() {
           loggerRef.current.debug('Party state transition', {
             ...LOG_CONTEXT,
             action: 'joinParty',
-            metadata: { 
+            metadata: {
               from: partyState,
               to: 'idle',
               error: true,
@@ -218,15 +242,24 @@ export function usePartyState() {
         }
       }
     },
-    [currentUser, enhancedCleanup, initializePresence, partyState]
+    [currentUser, enhancedCleanup, initializePresence, partyState, requestAudioPermission]
   );
 
   const leaveParty = useCallback(async () => {
-    if (!currentUser || partyState === 'leaving' || partyState === 'cleanup' || isCleaningUpRef.current) {
+    if (
+      !currentUser ||
+      partyState === 'leaving' ||
+      partyState === 'cleanup' ||
+      isCleaningUpRef.current
+    ) {
       loggerRef.current.debug('Ignoring leave request - invalid state or transition in progress', {
         ...LOG_CONTEXT,
         action: 'leaveParty',
-        metadata: { currentState: partyState, hasCurrentUser: !!currentUser, isCleaningUp: isCleaningUpRef.current },
+        metadata: {
+          currentState: partyState,
+          hasCurrentUser: !!currentUser,
+          isCleaningUp: isCleaningUpRef.current,
+        },
       });
       return;
     }
@@ -243,7 +276,7 @@ export function usePartyState() {
       loggerRef.current.debug('Party state transition', {
         ...LOG_CONTEXT,
         action: 'leaveParty',
-        metadata: { from: partyState, to: 'leaving', userId }
+        metadata: { from: partyState, to: 'leaving', userId },
       });
 
       // Update database first
@@ -273,14 +306,14 @@ export function usePartyState() {
         loggerRef.current.debug('Party state transition', {
           ...LOG_CONTEXT,
           action: 'leaveParty',
-          metadata: { from: 'leaving', to: 'idle', userId }
+          metadata: { from: 'leaving', to: 'idle', userId },
         });
       }
 
       loggerRef.current.info('Successfully left party', {
         ...LOG_CONTEXT,
         action: 'leaveParty',
-        metadata: { userId }
+        metadata: { userId },
       });
     } catch (error) {
       loggerRef.current.error('Failed to leave party', {
@@ -294,7 +327,7 @@ export function usePartyState() {
         loggerRef.current.debug('Party state transition', {
           ...LOG_CONTEXT,
           action: 'leaveParty',
-          metadata: { from: partyState, to: 'idle', error: true, userId }
+          metadata: { from: partyState, to: 'idle', error: true, userId },
         });
       }
     } finally {
@@ -442,11 +475,11 @@ export function usePartyState() {
       loggerRef.current.info('Restoring user session', {
         ...LOG_CONTEXT,
         action: 'restoreSession',
-        metadata: { 
+        metadata: {
           userId: parsedUser.id,
           savedPartyState,
-          currentPartyState: partyState
-        }
+          currentPartyState: partyState,
+        },
       });
 
       // Clean up any existing presence first
@@ -454,10 +487,10 @@ export function usePartyState() {
         try {
           // Set cleanup flag to prevent concurrent operations
           isCleaningUpRef.current = true;
-          
+
           // Clean up any existing presence
           await cleanup();
-          
+
           // Validate user in database
           const { data, error } = await supabase
             .from('party_members')
@@ -472,7 +505,7 @@ export function usePartyState() {
             loggerRef.current.info('Saved user not found in database, cleaning up', {
               ...LOG_CONTEXT,
               action: 'restoreSession',
-              metadata: { error }
+              metadata: { error },
             });
             localStorage.removeItem('currentUser');
             localStorage.removeItem('partyState');
@@ -485,7 +518,7 @@ export function usePartyState() {
           const updatedUser = {
             ...parsedUser,
             ...data,
-            last_seen: new Date().toISOString()
+            last_seen: new Date().toISOString(),
           };
 
           // Update database with latest timestamp
@@ -502,7 +535,7 @@ export function usePartyState() {
 
           if (savedPartyState === 'joined') {
             setPartyState('joining');
-            
+
             try {
               await initializePresence(updatedUser);
               if (mountedRef.current) {
@@ -512,21 +545,21 @@ export function usePartyState() {
                 loggerRef.current.info('Successfully restored session', {
                   ...LOG_CONTEXT,
                   action: 'restoreSession',
-                  metadata: { 
+                  metadata: {
                     userId: updatedUser.id,
                     stateTransitions: {
                       from: 'idle',
                       through: 'joining',
-                      to: 'joined'
-                    }
-                  }
+                      to: 'joined',
+                    },
+                  },
                 });
               }
             } catch (error) {
               loggerRef.current.error('Failed to initialize presence during restore', {
                 ...LOG_CONTEXT,
                 action: 'restoreSession',
-                metadata: { error }
+                metadata: { error },
               });
               if (mountedRef.current) {
                 setPartyState('idle');
@@ -540,7 +573,7 @@ export function usePartyState() {
           loggerRef.current.error('Failed to restore session', {
             ...LOG_CONTEXT,
             action: 'restoreSession',
-            metadata: { error }
+            metadata: { error },
           });
           if (mountedRef.current) {
             setPartyState('idle');
@@ -579,7 +612,7 @@ export function usePartyState() {
 
         // Store current party state
         const previousPartyState = partyState;
-        
+
         // Update database first
         const { error: dbError } = await supabase
           .from('party_members')
@@ -630,13 +663,13 @@ export function usePartyState() {
         loggerRef.current.info('Successfully updated profile', {
           ...LOG_CONTEXT,
           action: 'editProfile',
-          metadata: { 
+          metadata: {
             member: updatedUser,
             stateTransitions: {
               from: previousPartyState,
               through: 'joining',
-              to: previousPartyState
-            }
+              to: previousPartyState,
+            },
           },
         });
       } catch (error) {

@@ -1,3 +1,5 @@
+'use client';
+
 import React, { useCallback, useRef, useEffect } from 'react';
 import { ModalPortal } from './ModalPortal';
 import { logger } from '@/lib/utils/logger';

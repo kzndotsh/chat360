@@ -30,8 +30,8 @@ export function processPresenceState(presenceData: PresenceMemberState[]) {
       muted: false,
       created_at: currentTime,
       last_seen: presence.online_at || currentTime,
-      voiceStatus: presence.voiceStatus || 'silent',
-      deafenedUsers: presence.deafenedUsers || [],
+      voice_status: presence.voice_status || 'silent',
+      deafened_users: presence.deafened_users || [],
     });
   }
 
@@ -321,8 +321,8 @@ function convertPresenceStateToMembers(
     muted: presence.muted || false,
     created_at: currentTime,
     last_seen: presence.online_at || currentTime,
-    voiceStatus: presence.voiceStatus || 'silent',
-    deafenedUsers: presence.deafenedUsers || [],
+    voice_status: presence.voice_status || 'silent',
+    deafened_users: presence.deafened_users || [],
   }));
 
   logger.debug('Converted presence state', {

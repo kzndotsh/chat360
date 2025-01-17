@@ -1,4 +1,4 @@
--- Add deafenedUsers column to party_members table
+-- Add deafened_users column to party_members table
 ALTER TABLE party_members
 ADD COLUMN deafened_users text[] DEFAULT '{}';
 

@@ -11,16 +11,9 @@ interface PartyControlsProps {
   isLeaving: boolean;
   onLeave: () => Promise<void>;
   partyState: 'idle' | 'joining' | 'joined' | 'leaving' | 'cleanup';
-  joinParty: (username: string, avatar: string, game: string) => Promise<void>;
 }
 
-export function PartyControls({
-  currentUser,
-  isLeaving,
-  onLeave,
-  partyState,
-  joinParty,
-}: PartyControlsProps) {
+export function PartyControls({ currentUser, isLeaving, onLeave, partyState }: PartyControlsProps) {
   const { isConnected, toggleMute } = useVoiceChat();
   const [isLoading, setIsLoading] = useState(false);
   const loggerRef = useRef(logger);
@@ -31,7 +24,7 @@ export function PartyControls({
     loggerRef.current.debug('Party state changed', {
       component: 'PartyControls',
       action: 'partyStateChange',
-      metadata: { 
+      metadata: {
         partyState,
         currentUser: currentUser?.id,
         isLoading,
@@ -40,35 +33,8 @@ export function PartyControls({
     });
   }, [partyState, currentUser, isLoading, isLeaving]);
 
-  // Show join modal on initial load if no user
-  useEffect(() => {
-    if (!currentUser) {
-      loggerRef.current.info('Showing join modal on initial load', {
-        component: 'PartyControls',
-        action: 'showInitialJoinModal',
-      });
-      showModal('join');
-    }
-  }, [currentUser, showModal]);
-
   const handleLeave = useCallback(async () => {
-    loggerRef.current.debug('Leave button clicked', {
-      component: 'PartyControls',
-      action: 'handleLeave',
-      metadata: {
-        isDisabled: isLoading || isLeaving || !currentUser?.id || partyState !== 'joined',
-        conditions: {
-          isLoading,
-          isLeaving,
-          hasUser: !!currentUser?.id,
-          userId: currentUser?.id,
-          partyState,
-          isJoined: partyState === 'joined',
-          currentUserState: currentUser
-        }
-      }
-    });
-    
+    // Only allow leave if user is in party and not already leaving
     if (isLoading || isLeaving || !currentUser?.id || partyState !== 'joined') {
       loggerRef.current.debug('Leave button clicked while disabled', {
         component: 'PartyControls',
@@ -84,9 +50,26 @@ export function PartyControls({
       metadata: { currentUser, isConnected },
     });
 
-    setIsLoading(true);
     try {
+      setIsLoading(true);
+
+      // First try to leave voice chat if connected
+      if (isConnected) {
+        try {
+          await toggleMute();
+        } catch (error) {
+          loggerRef.current.warn('Failed to toggle mute before leaving', {
+            component: 'PartyControls',
+            action: 'leaveParty',
+            metadata: { error },
+          });
+          // Continue with leave even if mute fails
+        }
+      }
+
+      // Then try to leave party
       await onLeave();
+
       loggerRef.current.info('Successfully left party from controls', {
         component: 'PartyControls',
         action: 'leaveParty',
@@ -102,13 +85,14 @@ export function PartyControls({
           isConnected,
         },
       });
-      throw error;
+      throw error; // Re-throw to let parent handle error state
     } finally {
       setIsLoading(false);
     }
-  }, [isLoading, isLeaving, currentUser, partyState, onLeave, isConnected]);
+  }, [isLoading, isLeaving, currentUser, partyState, onLeave, isConnected, toggleMute]);
 
   const handleJoinParty = useCallback(async () => {
+    // Only allow join if in idle state and not loading
     if (isLoading || partyState !== 'idle') {
       loggerRef.current.debug('Join button clicked while loading or not idle', {
         component: 'PartyControls',
@@ -118,54 +102,23 @@ export function PartyControls({
       return;
     }
 
-    if (!currentUser) {
-      loggerRef.current.info('Showing join modal - no user data', {
-        component: 'PartyControls',
-        action: 'showJoinModal',
-      });
-      showModal('join');
-      return;
-    }
-
-    const { name, avatar, game } = currentUser;
-    if (!name || !avatar || !game) {
-      loggerRef.current.warn('Missing required user data for join', {
-        component: 'PartyControls',
-        action: 'showEditModal',
-        metadata: { currentUser },
-      });
-      showModal('edit');
-      return;
-    }
-
-    loggerRef.current.info('Join party button clicked', {
+    loggerRef.current.info('Opening join modal', {
       component: 'PartyControls',
-      action: 'joinParty',
-      metadata: { currentUser },
+      action: 'showJoinModal',
     });
-    
-    setIsLoading(true);
-    try {
-      await joinParty(name, avatar, game);
-      loggerRef.current.info('Successfully joined party', {
-        component: 'PartyControls',
-        action: 'joinParty',
-        metadata: { currentUser },
-      });
-    } catch (error) {
-      loggerRef.current.error('Failed to join party', {
-        component: 'PartyControls',
-        action: 'joinParty',
-        metadata: { error: error instanceof Error ? error : new Error(String(error)) },
-      });
-      throw error;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [currentUser, showModal, joinParty, isLoading, partyState]);
+    showModal('join');
+  }, [isLoading, partyState, showModal, currentUser]);
 
   const handleMute = useCallback(async () => {
-    if (!currentUser || !isConnected) return;
+    // Only allow mute toggle if user is in party and connected
+    if (!currentUser || !isConnected || partyState !== 'joined') {
+      loggerRef.current.debug('Mute button clicked while disabled', {
+        component: 'PartyControls',
+        action: 'toggleMute',
+        metadata: { isConnected, currentUser, partyState },
+      });
+      return;
+    }
 
     loggerRef.current.info('Mute button clicked', {
       component: 'PartyControls',
@@ -173,26 +126,31 @@ export function PartyControls({
       metadata: { isConnected, currentUser },
     });
     await toggleMute();
-  }, [toggleMute, isConnected, currentUser]);
+  }, [toggleMute, isConnected, currentUser, partyState]);
 
-  useEffect(() => {
-    loggerRef.current.debug('Leave button state updated', {
+  const handleEditProfile = useCallback(() => {
+    const userData = {
+      name: currentUser?.name || '',
+      avatar: currentUser?.avatar || '',
+      game: currentUser?.game || '',
+    };
+
+    loggerRef.current.info('Opening edit modal', {
       component: 'PartyControls',
-      action: 'leaveButtonState',
+      action: 'showEditModal',
       metadata: {
-        isDisabled: isLoading || isLeaving || !currentUser?.id || partyState !== 'joined',
+        currentUser,
+        userData,
+        partyState,
         conditions: {
-          isLoading,
-          isLeaving,
           hasUser: !!currentUser?.id,
-          userId: currentUser?.id,
           partyState,
           isJoined: partyState === 'joined',
-          currentUserState: currentUser
-        }
-      }
+        },
+      },
     });
-  }, [isLoading, isLeaving, currentUser, partyState]);
+    showModal('edit', userData);
+  }, [currentUser, showModal, partyState]);
 
   return (
     <div className="mt-1 flex flex-wrap items-center gap-1 px-[30px] text-white sm:gap-2">
@@ -201,35 +159,42 @@ export function PartyControls({
         disabled={partyState !== 'idle' || isLoading || !!currentUser?.id}
         className={`flex items-center gap-0 transition-all sm:gap-2 ${
           partyState === 'idle' && !isLoading && !currentUser?.id
-            ? 'opacity-80 hover:opacity-100' 
+            ? 'opacity-80 hover:opacity-100'
             : 'cursor-not-allowed opacity-30'
         }`}
         title={
-          partyState === 'joined' ? 'Already in party' :
-          partyState === 'joining' || isLoading ? 'Joining party...' :
-          partyState === 'leaving' ? 'Leaving party...' :
-          !currentUser ? 'Click to set up your profile' :
-          'Click to join party'
+          currentUser?.id
+            ? 'Already in party'
+            : partyState === 'joining' || isLoading
+              ? 'Joining party...'
+              : partyState === 'leaving'
+                ? 'Leaving party...'
+                : 'Click to join party'
         }
       >
-        <div 
+        <div
           className={`h-3 w-3 rounded-full text-[8px] font-bold leading-3 sm:h-4 sm:w-4 sm:text-[10px] sm:leading-4 ${
-            partyState === 'joined' ? 'bg-gray-500' : 
-            partyState === 'joining' || isLoading ? 'bg-yellow-500 animate-pulse' :
-            partyState === 'leaving' ? 'bg-red-500' :
-            partyState === 'idle' && !currentUser ? 'bg-blue-500' :
-            'bg-[#70b603]'
+            currentUser?.id
+              ? 'bg-gray-500'
+              : partyState === 'joining' || isLoading
+                ? 'animate-pulse bg-yellow-500'
+                : partyState === 'leaving'
+                  ? 'bg-red-500'
+                  : 'bg-[#70b603]'
           }`}
         >
           A
         </div>
         <span className="text-sm sm:text-base">
-          {partyState === 'joined' ? 'In Party' :
-           partyState === 'joining' || isLoading ? 'Joining...' :
-           partyState === 'leaving' ? 'Leaving...' :
-           partyState === 'cleanup' ? 'Cleaning up...' :
-           !currentUser && partyState === 'idle' ? 'Set Up Profile' :
-           'Join Party'}
+          {currentUser?.id
+            ? 'In Party'
+            : partyState === 'joining' || isLoading
+              ? 'Joining...'
+              : partyState === 'leaving'
+                ? 'Leaving...'
+                : partyState === 'cleanup'
+                  ? 'Cleaning up...'
+                  : 'Join Party'}
         </span>
       </button>
 
@@ -237,62 +202,30 @@ export function PartyControls({
         onClick={handleLeave}
         disabled={isLoading || isLeaving || !currentUser?.id || partyState !== 'joined'}
         className={`flex items-center gap-0 transition-all sm:gap-2 ${
-          partyState === 'joined' && !isLoading && !isLeaving && !!currentUser?.id
+          !isLoading && !isLeaving && currentUser?.id && partyState === 'joined'
             ? 'opacity-80 hover:opacity-100'
             : 'cursor-not-allowed opacity-30'
         }`}
         title={
-          !currentUser?.id ? 'Not in party' :
-          partyState !== 'joined' ? `Not in party yet (state: ${partyState})` :
-          isLoading || isLeaving ? 'Leaving party...' :
-          'Click to leave party'
+          !currentUser?.id
+            ? 'Not in party'
+            : partyState !== 'joined'
+              ? `Not in party yet (state: ${partyState})`
+              : isLoading || isLeaving
+                ? 'Leaving party...'
+                : 'Click to leave party'
         }
-        onMouseEnter={() => {
-          loggerRef.current.debug('Leave button state', {
-            component: 'PartyControls',
-            action: 'leaveButtonHover',
-            metadata: {
-              isDisabled: isLoading || isLeaving || !currentUser?.id || partyState !== 'joined',
-              conditions: {
-                isLoading,
-                isLeaving,
-                hasUser: !!currentUser?.id,
-                partyState,
-                isJoined: partyState === 'joined'
-              }
-            }
-          });
-        }}
       >
         <div className="h-3 w-3 rounded-full bg-[#ae1228] text-[8px] font-bold leading-3 sm:h-4 sm:w-4 sm:text-[10px] sm:leading-4">
           B
         </div>
-        <span className="text-sm sm:text-base">{isLeaving ? 'Leaving...' : 'Leave Party'}</span>
+        <span className="text-sm sm:text-base">
+          {isLoading || isLeaving ? 'Leaving...' : 'Leave Party'}
+        </span>
       </button>
 
       <button
-        onClick={() => {
-          const userData = {
-            name: currentUser?.name || '',
-            avatar: currentUser?.avatar || '',
-            game: currentUser?.game || ''
-          };
-          loggerRef.current.info('Opening edit modal', {
-            component: 'PartyControls',
-            action: 'showEditModal',
-            metadata: { 
-              currentUser,
-              userData,
-              partyState,
-              conditions: {
-                hasUser: !!currentUser?.id,
-                partyState,
-                isJoined: partyState === 'joined'
-              }
-            },
-          });
-          showModal('edit', userData);
-        }}
+        onClick={handleEditProfile}
         className="flex items-center gap-0 opacity-80 transition-opacity hover:opacity-100 sm:gap-2"
       >
         <div className="h-3 w-3 rounded-full bg-[#006bb3] text-[8px] font-bold leading-3 sm:h-4 sm:w-4 sm:text-[10px] sm:leading-4">
@@ -314,7 +247,7 @@ export function PartyControls({
           Y
         </div>
         <span className="text-sm sm:text-base">
-          {currentUser?.voiceStatus === 'muted' ? 'Unmute Mic' : 'Mute Mic'}
+          {currentUser?.voice_status === 'muted' ? 'Unmute Mic' : 'Mute Mic'}
         </span>
       </button>
     </div>

@@ -1,3 +1,5 @@
+'use client';
+
 import React, { useCallback, useRef } from 'react';
 import { NewUserModal } from './NewUserModal';
 import { EditProfileModal } from './EditProfileModal';
@@ -23,13 +25,13 @@ export const ModalManager = React.memo(function ModalManager({
   const handleJoinParty = useCallback(
     async (username: string, avatar: string, game: string) => {
       const startTime = Date.now();
-      
+
       if (isSubmitting) {
         loggerRef.current.debug('Join party submission blocked - already submitting', {
           component: 'ModalManager',
           action: 'joinParty',
-          metadata: { 
-            username, 
+          metadata: {
+            username,
             isSubmitting,
             timestamp: startTime,
             state: 'blocked',
@@ -41,8 +43,8 @@ export const ModalManager = React.memo(function ModalManager({
       loggerRef.current.info('Attempting to join party from modal', {
         component: 'ModalManager',
         action: 'joinParty',
-        metadata: { 
-          username, 
+        metadata: {
+          username,
           game,
           timestamp: startTime,
           state: 'starting',
@@ -55,15 +57,15 @@ export const ModalManager = React.memo(function ModalManager({
         saveLastUsedData({ name: username, avatar, game });
         await onJoinParty(username, avatar, game);
         const joinEndTime = Date.now();
-        
+
         resetForm();
         hideModal();
-        
+
         loggerRef.current.info('Successfully joined party from modal', {
           component: 'ModalManager',
           action: 'joinParty',
-          metadata: { 
-            username, 
+          metadata: {
+            username,
             game,
             timestamp: Date.now(),
             state: 'completed',
@@ -90,9 +92,9 @@ export const ModalManager = React.memo(function ModalManager({
           },
         });
         Sentry.captureException(error, {
-          extra: { 
-            username, 
-            avatar, 
+          extra: {
+            username,
+            avatar,
             game,
             timing: {
               totalDuration: failureTime - startTime,
@@ -183,7 +185,7 @@ export const ModalManager = React.memo(function ModalManager({
           formState: {
             isSubmitting,
             hasModalData: !!modalData,
-          }
+          },
         },
       });
     } else {

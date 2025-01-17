@@ -10,7 +10,6 @@ import {
   useCallback,
 } from 'react';
 import type { IAgoraRTCClient } from 'agora-rtc-sdk-ng';
-import AgoraRTC from 'agora-rtc-sdk-ng';
 import { logger } from '@/lib/utils/logger';
 
 // Constants for cleanup and reconnection
@@ -35,6 +34,15 @@ export const useAgoraContext = () => useContext(AgoraContext);
 interface AgoraProviderProps {
   children: ReactNode;
 }
+
+// Lazy load AgoraRTC to avoid SSR issues
+let AgoraRTC: typeof import('agora-rtc-sdk-ng').default;
+const agoraImport =
+  typeof window !== 'undefined'
+    ? import('agora-rtc-sdk-ng').then((mod) => {
+        AgoraRTC = mod.default;
+      })
+    : Promise.resolve();
 
 export function AgoraProvider({ children }: AgoraProviderProps) {
   const [client, setClient] = useState<IAgoraRTCClient | null>(null);
@@ -202,6 +210,11 @@ export function AgoraProvider({ children }: AgoraProviderProps) {
     });
 
     try {
+      await agoraImport;
+      if (!AgoraRTC || !mountedRef.current) {
+        throw new Error('Failed to load Agora SDK');
+      }
+
       const newClient = AgoraRTC.createClient({
         mode: 'rtc',
         codec: 'vp8',

@@ -1,3 +1,5 @@
+'use client';
+
 import { useCallback, useRef, useEffect } from 'react';
 import { VoiceStatusIcon } from '@/components/ui/VoiceStatusIcon';
 import { useVoiceChat } from '@/lib/hooks/useVoiceChat';
@@ -49,12 +51,12 @@ export function MemberVoiceStatus({ member, isCurrentUser }: MemberVoiceStatusPr
       metadata: {
         memberId: member.id,
         memberName: member.name,
-        voiceStatus: member.voiceStatus,
+        voice_status: member.voice_status,
         isDeafened,
         isCurrentUser,
       },
     });
-  }, [member.id, member.name, member.voiceStatus, isDeafened, isCurrentUser]);
+  }, [member.id, member.name, member.voice_status, isDeafened, isCurrentUser]);
 
   return (
     <Button
@@ -65,7 +67,7 @@ export function MemberVoiceStatus({ member, isCurrentUser }: MemberVoiceStatusPr
       className="relative"
     >
       <VoiceStatusIcon
-        status={isDeafened ? 'deafened' : member.voiceStatus}
+        status={isDeafened ? 'deafened' : member.voice_status}
         size="sm"
       />
     </Button>

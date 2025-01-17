@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "NODE_ENV=development next dev",
-    "dev:debug": "NODE_ENV=development NODE_OPTIONS='--inspect' next dev",
+    "dev": "dotenv -e .env.local -- next dev",
+    "dev:debug": "dotenv -e .env.local -- NODE_OPTIONS='--inspect' next dev",
     "build": "NODE_ENV=production next build",
     "start": "NODE_ENV=production next start",
     "lint": "next lint",
@@ -58,6 +58,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "dotenv": "^16.4.7",
+    "dotenv-cli": "^7.4.4",
     "eslint": "9.18.0",
     "eslint-config-next": "^15.1.4",
     "eslint-config-prettier": "^10.0.1",

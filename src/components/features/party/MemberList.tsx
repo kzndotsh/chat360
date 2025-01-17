@@ -28,7 +28,7 @@ function MemberListComponent({
   const loggerRef = useRef(logger);
 
   const getMicIcon = (member: PartyMember, volumeLevel: number) => {
-    if (member.voiceStatus === 'muted') {
+    if (member.voice_status === 'muted') {
       return <IoVolumeMuteSharp className="h-8 w-8 text-[#282b2f]" />;
     }
 
@@ -67,7 +67,7 @@ function MemberListComponent({
       metadata: {
         memberId,
         memberName: member?.name,
-        currentVoiceStatus: member?.voiceStatus,
+        currentVoiceStatus: member?.voice_status,
         isCurrentUser: memberId === currentUserId,
       },
     });
@@ -94,7 +94,7 @@ function MemberListComponent({
                 <button
                   onClick={() => handleMuteToggle(member.id)}
                   className="ml-5 flex h-9 w-9 items-center justify-center text-[#161718] hover:text-gray-700"
-                  aria-label={member.voiceStatus === 'muted' ? 'Unmute' : 'Mute'}
+                  aria-label={member.voice_status === 'muted' ? 'Unmute' : 'Mute'}
                   disabled={!isCurrentUser}
                 >
                   {getMicIcon(member, volumeLevel)}

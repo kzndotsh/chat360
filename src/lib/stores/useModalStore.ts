@@ -23,15 +23,15 @@ export const useModalStore = create<ModalStore>((set) => ({
     logger.debug('Showing modal', {
       component: 'useModalStore',
       action: 'showModal',
-      metadata: { 
-        type, 
+      metadata: {
+        type,
         data,
         timestamp: Date.now(),
         transition: {
-          from: null,  // Will be filled by zustand's previous state
+          from: null, // Will be filled by zustand's previous state
           to: type,
           hasData: !!data,
-        }
+        },
       },
     });
     set((state) => {

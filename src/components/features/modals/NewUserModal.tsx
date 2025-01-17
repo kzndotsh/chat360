@@ -1,3 +1,5 @@
+'use client';
+
 import React, { useCallback, useRef, useEffect } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import Image from 'next/image';
@@ -255,7 +257,9 @@ export const NewUserModal: React.FC<NewUserModalProps> = ({ onJoin, onCancel, is
               <div className="h-3 w-3 rounded-full bg-[#70b603] text-[8px] font-bold leading-3 text-white sm:h-4 sm:w-4 sm:text-[10px] sm:leading-4">
                 A
               </div>
-              <span className="text-sm text-[#161718] sm:text-base">{isSubmitting ? 'Joining...' : 'Join Party'}</span>
+              <span className="text-sm text-[#161718] sm:text-base">
+                {isSubmitting ? 'Joining...' : 'Join Party'}
+              </span>
             </button>
           </div>
         </form>

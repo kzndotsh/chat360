@@ -1,3 +1,5 @@
+'use client';
+
 import React, { useCallback, useEffect, useRef } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import Image from 'next/image';
@@ -52,7 +54,7 @@ export function EditProfileModal({
         metadata: { initialData },
       });
     }
-    
+
     // Always reset form with latest data
     reset(initialData);
   }, [initialData, reset]);
@@ -60,7 +62,7 @@ export function EditProfileModal({
   // Log form validation errors
   useEffect(() => {
     if (!mountedRef.current || Object.keys(errors).length === 0) return;
-    
+
     loggerRef.current.warn('Form validation errors', {
       component: 'EditProfileModal',
       action: 'formValidation',

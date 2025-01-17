@@ -13,16 +13,23 @@ import Clock from '@/components/features/party/Clock';
 import { BACKGROUND_VIDEO_URL } from '@/lib/config/constants';
 import { useModalStore } from '@/lib/stores/useModalStore';
 import { logger } from '@/lib/utils/logger';
+import { usePresence } from '@/lib/hooks/usePresence';
 
 export function PartyChat() {
   // 1. External store hooks
   const showModal = useModalStore((state) => state.showModal);
+  const { volumeLevels, toggleMute: onToggleMute, disconnect } = useVoiceChat();
   const {
-    volumeLevels,
-    toggleMute: onToggleMute,
-    leaveVoice: onLeave,
-  } = useVoiceChat();
-  const { currentUser, members, partyState } = usePartyState();
+    currentUser,
+    members,
+    partyState,
+    leaveParty,
+    joinParty: joinPartyState,
+    isInitializing,
+    modalLocked,
+    editProfile,
+  } = usePartyState();
+  const { initialize: initializePresence } = usePresence();
   const isLeaving = partyState === 'leaving';
 
   // 2. State hooks
@@ -37,82 +44,19 @@ export function PartyChat() {
     hasJoined: false,
   });
 
-  // 4. Custom hooks
-  const { isInitializing, modalLocked, joinParty, editProfile } = usePartyState();
-
-  // 5. Callbacks
-  const handleJoinParty = useCallback(
-    async (username: string, avatar: string, game: string) => {
-      if (joinInProgress || joinStateRef.current.isJoining) return;
-      
-      setJoinInProgress(true);
-      joinStateRef.current.isJoining = true;
-
-      loggerRef.current.info('Attempting to join party', {
-        component: 'PartyChat',
-        action: 'joinParty',
-        metadata: { username, avatar, game },
-      });
-
-      try {
-        await joinParty(username, avatar, game);
-        joinStateRef.current.hasJoined = true;
-        loggerRef.current.info('Successfully joined party', {
-          component: 'PartyChat',
-          action: 'joinParty',
-          metadata: { username },
-        });
-      } catch (error) {
-        loggerRef.current.error('Failed to join party', {
-          component: 'PartyChat',
-          action: 'joinParty',
-          metadata: { error: error instanceof Error ? error : new Error(String(error)) },
-        });
-        throw error;
-      } finally {
-        setJoinInProgress(false);
-        joinStateRef.current.isJoining = false;
-      }
-    },
-    [joinParty, joinInProgress]
-  );
-
-  const handleEditProfile = useCallback(
-    async (username: string, avatar: string, game: string) => {
-      loggerRef.current.info('Attempting to edit profile', {
-        action: 'editProfile',
-        metadata: { username, avatar, game },
-      });
-
-      try {
-        await editProfile(username, avatar, game);
-        loggerRef.current.info('Successfully edited profile', {
-          action: 'editProfile',
-          metadata: { username },
-        });
-      } catch (error) {
-        loggerRef.current.error('Failed to edit profile', {
-          action: 'editProfile',
-          metadata: { error: error instanceof Error ? error : new Error(String(error)) },
-        });
-        throw error;
-      }
-    },
-    [editProfile]
-  );
-
+  // 4. Effects
   useEffect(() => {
     // Only show join modal on initial load, not after leaving
     if (
-      !currentUser && 
-      !isInitializing && 
-      !modalLocked && 
-      !justLeft && 
+      !currentUser &&
+      !isInitializing &&
+      !modalLocked &&
+      !justLeft &&
       !joinInProgress &&
       !joinStateRef.current.isJoining &&
       !joinStateRef.current.hasJoined &&
-      partyState !== 'leaving' && 
-      partyState !== 'joined' && 
+      partyState !== 'leaving' &&
+      partyState !== 'joined' &&
       partyState !== 'joining'
     ) {
       const timeoutId = setTimeout(() => {
@@ -122,13 +66,13 @@ export function PartyChat() {
         loggerRef.current.debug('Showing join modal', {
           component: 'PartyChat',
           action: 'showJoinModal',
-          metadata: { 
-            isInitializing, 
-            partyState, 
-            modalLocked, 
-            justLeft, 
+          metadata: {
+            isInitializing,
+            partyState,
+            modalLocked,
+            justLeft,
             joinInProgress,
-            joinState: joinStateRef.current 
+            joinState: joinStateRef.current,
           },
         });
         showModal('join');
@@ -163,6 +107,156 @@ export function PartyChat() {
       };
     };
   }, []);
+
+  // 5. Callbacks
+  const handleJoinParty = useCallback(
+    async (username: string, avatar: string, game: string) => {
+      if (joinInProgress || joinStateRef.current.isJoining) return;
+
+      setJoinInProgress(true);
+      joinStateRef.current.isJoining = true;
+
+      loggerRef.current.info('Attempting to join party', {
+        component: 'PartyChat',
+        action: 'joinParty',
+        metadata: { username, avatar, game },
+      });
+
+      try {
+        await joinPartyState(username, avatar, game);
+        joinStateRef.current.hasJoined = true;
+        loggerRef.current.info('Successfully joined party', {
+          component: 'PartyChat',
+          action: 'joinParty',
+          metadata: { username },
+        });
+      } catch (error) {
+        loggerRef.current.error('Failed to join party', {
+          component: 'PartyChat',
+          action: 'joinParty',
+          metadata: { error: error instanceof Error ? error : new Error(String(error)) },
+        });
+        throw error;
+      } finally {
+        setJoinInProgress(false);
+        joinStateRef.current.isJoining = false;
+      }
+    },
+    [joinPartyState, joinInProgress]
+  );
+
+  const handleEditProfile = useCallback(
+    async (username: string, avatar: string, game: string) => {
+      loggerRef.current.info('Attempting to edit profile', {
+        action: 'editProfile',
+        metadata: { username, avatar, game },
+      });
+
+      try {
+        // Ensure avatar is not empty
+        const validAvatar = avatar || 'https://i.imgur.com/LCycgcq.png'; // Default avatar
+
+        // First update the profile in the database
+        await editProfile(username, validAvatar, game);
+
+        // Then update presence state if we're in a party
+        if (currentUser && partyState === 'joined') {
+          try {
+            await initializePresence({
+              ...currentUser,
+              name: username,
+              avatar: validAvatar,
+              game: game,
+              last_seen: new Date().toISOString(),
+            });
+          } catch (presenceError) {
+            loggerRef.current.error('Failed to update presence after profile edit', {
+              action: 'editProfile',
+              metadata: {
+                error:
+                  presenceError instanceof Error ? presenceError : new Error(String(presenceError)),
+              },
+            });
+            // Don't throw here, as the profile update was successful
+          }
+        }
+
+        loggerRef.current.info('Successfully edited profile', {
+          action: 'editProfile',
+          metadata: { username, avatar: validAvatar },
+        });
+      } catch (error) {
+        loggerRef.current.error('Failed to edit profile', {
+          action: 'editProfile',
+          metadata: { error: error instanceof Error ? error : new Error(String(error)) },
+        });
+        throw error;
+      }
+    },
+    [editProfile, currentUser, partyState, initializePresence]
+  );
+
+  const handleLeaveParty = useCallback(async () => {
+    if (isLeaving) {
+      loggerRef.current.warn('Leave already in progress, ignoring request', {
+        component: 'PartyChat',
+        action: 'leaveParty',
+      });
+      return;
+    }
+
+    try {
+      loggerRef.current.info('Starting party leave sequence', {
+        component: 'PartyChat',
+        action: 'leaveParty',
+      });
+
+      // Set justLeft to prevent auto-rejoin
+      setJustLeft(true);
+
+      // Reset join states
+      joinStateRef.current = {
+        isJoining: false,
+        hasJoined: false,
+      };
+
+      // First disconnect from voice chat
+      try {
+        await disconnect();
+      } catch (voiceError) {
+        // Log but continue with party leave
+        loggerRef.current.error('Failed to disconnect from voice chat', {
+          component: 'PartyChat',
+          action: 'disconnect',
+          metadata: {
+            error: voiceError instanceof Error ? voiceError : new Error(String(voiceError)),
+          },
+        });
+      }
+
+      // Then leave party
+      await leaveParty();
+
+      loggerRef.current.info('Successfully completed party leave sequence', {
+        component: 'PartyChat',
+        action: 'leaveParty',
+      });
+    } catch (error) {
+      loggerRef.current.error('Failed to leave party', {
+        component: 'PartyChat',
+        action: 'leaveParty',
+        metadata: { error: error instanceof Error ? error : new Error(String(error)) },
+      });
+      // Reset justLeft on error
+      setJustLeft(false);
+      throw error;
+    }
+  }, [disconnect, leaveParty, isLeaving]);
+
+  // Additional effects that depend on callbacks
+  useEffect(() => {
+    // Any effects that depend on callbacks should go here
+  }, [handleJoinParty, handleEditProfile, handleLeaveParty]);
 
   return (
     <div
@@ -253,9 +347,8 @@ export function PartyChat() {
         <PartyControls
           currentUser={currentUser}
           isLeaving={isLeaving}
-          onLeave={onLeave}
+          onLeave={handleLeaveParty}
           partyState={partyState}
-          joinParty={joinParty}
         />
 
         <ModalManager
