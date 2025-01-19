@@ -14,8 +14,8 @@ import type { IAgoraRTCClient, IAgoraRTC } from 'agora-rtc-sdk-ng';
 import { logger } from '@/lib/utils/logger';
 
 // Constants for cleanup and reconnection
-const CLEANUP_DELAY = 150; // 150ms delay after cleanup
-const INIT_RETRY_DELAY = 1000; // 1 second delay between retries
+const CLEANUP_DELAY = 500; // 500ms delay after cleanup
+const INIT_RETRY_DELAY = 2000; // 2 seconds delay between retries
 const MAX_INIT_RETRIES = 3; // Maximum number of initialization retries
 const LOG_CONTEXT = { component: 'AgoraProvider' };
 
@@ -57,7 +57,7 @@ async function loadAgoraSDK(): Promise<void> {
   AgoraRTC = mod.default;
   if (AgoraRTC) {
     // Configure Agora SDK
-    AgoraRTC.setLogLevel(0); // Set to INFO level
+    AgoraRTC.setLogLevel(2); // Set to INFO level
   }
 }
 
@@ -118,6 +118,11 @@ export function AgoraProvider({ children }: AgoraProviderProps) {
     if (!client) return;
 
     try {
+      // First stop all tracks
+      const localTracks = client.localTracks;
+      await Promise.all(localTracks.map(track => track.stop()));
+      
+      // Then leave the channel
       await client.leave();
       logger.debug('Client left channel', LOG_CONTEXT);
     } catch (err) {

@@ -83,7 +83,7 @@ export async function getGlobalPresenceChannel() {
         .on('presence', { event: 'sync' }, () => {
           if (!globalPresenceChannel || globalPresenceChannel !== channel) return;
           const state = channel.presenceState();
-          logger.info('Global presence sync', {
+          logger.info('Global presence state refresh', {
             ...LOG_CONTEXT,
             action: 'sync',
             metadata: { state },
@@ -91,7 +91,7 @@ export async function getGlobalPresenceChannel() {
         })
         .on('presence', { event: 'join' }, ({ key, newPresences }) => {
           if (!globalPresenceChannel || globalPresenceChannel !== channel) return;
-          logger.info('Global presence join', {
+          logger.info('New member presence detected in global channel', {
             ...LOG_CONTEXT,
             action: 'join',
             metadata: { key, newPresences },
@@ -99,7 +99,7 @@ export async function getGlobalPresenceChannel() {
         })
         .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
           if (!globalPresenceChannel || globalPresenceChannel !== channel) return;
-          logger.info('Global presence leave', {
+          logger.info('Member presence removed from global channel', {
             ...LOG_CONTEXT,
             action: 'leave',
             metadata: { key, leftPresences },

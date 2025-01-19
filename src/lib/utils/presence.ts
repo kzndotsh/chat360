@@ -1,10 +1,24 @@
 import { RealtimeChannel, RealtimePresenceState } from '@supabase/supabase-js';
-import { supabase } from '@/lib/api/supabase';
+import { createClient } from '@supabase/supabase-js';
 import { logger } from '@/lib/utils/logger';
 import type { PartyMember, PresenceMemberState } from '@/lib/types/party';
 import { SHARED_CHANNEL_NAME } from '@/lib/utils/constants';
 
 const LOG_CONTEXT = { component: 'presence' };
+
+if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+  throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL environment variable');
+}
+
+if (!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+  throw new Error('Missing NEXT_PUBLIC_SUPABASE_ANON_KEY environment variable');
+}
+
+// Initialize Supabase client
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
 
 export function convertPresenceStateToMembers(
   state: RealtimePresenceState<PresenceMemberState>
@@ -43,7 +57,7 @@ export async function createPresenceChannel(
       .on('presence', { event: 'sync' }, () => {
         const state = channel.presenceState<PresenceMemberState>();
         const members = convertPresenceStateToMembers(state);
-        logger.info('Presence sync event', {
+        logger.info('Presence state synchronized', {
           ...LOG_CONTEXT,
           action: 'sync',
           metadata: {
@@ -53,15 +67,15 @@ export async function createPresenceChannel(
         });
         onStateChange(members);
       })
-      .on('presence', { event: 'join' }, ({ key, newPresences }) => {
-        logger.info('Member joined', {
+      .on('presence', { event: 'join' }, ({ key, newPresences }: { key: string; newPresences: PresenceMemberState[] }) => {
+        logger.info('New member presence detected in channel', {
           ...LOG_CONTEXT,
           action: 'join',
           metadata: { key, newPresences },
         });
       })
-      .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
-        logger.info('Member left', {
+      .on('presence', { event: 'leave' }, ({ key, leftPresences }: { key: string; leftPresences: PresenceMemberState[] }) => {
+        logger.info('Member presence removed from channel', {
           ...LOG_CONTEXT,
           action: 'leave',
           metadata: { key, leftPresences },
@@ -73,7 +87,7 @@ export async function createPresenceChannel(
         onStateChange(members);
       });
 
-    channel.subscribe(async (status) => {
+    channel.subscribe(async (status: 'SUBSCRIBED' | 'TIMED_OUT' | 'CLOSED' | 'CHANNEL_ERROR') => {
       if (status === 'SUBSCRIBED') {
         const presenceTrackStatus = await channel.track({
           id: currentUser.id,

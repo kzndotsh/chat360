@@ -1,13 +1,19 @@
-import { NextResponse } from 'next/server';
-import { RtcTokenBuilder, RtcRole } from 'agora-token';
+import { RtcTokenBuilder } from 'agora-token';
+import { NextRequest, NextResponse } from 'next/server';
 import { logger } from '@/lib/utils/logger';
 
+// For server-side code, we use the non-public env vars
 const appId = process.env.NEXT_PUBLIC_AGORA_APP_ID;
 const appCertificate = process.env.AGORA_APP_CERTIFICATE;
-const tokenExpirationInSeconds = 3600; // 1 hour
-const privilegeExpirationInSeconds = 3500; // Slightly less than token expiration
+const _tokenExpirationInSeconds = 3600; // 1 hour
 
-export async function POST(req: Request) {
+// Role values from agora-token package
+const ROLE = {
+  PUBLISHER: 1,
+  SUBSCRIBER: 2,
+};
+
+export async function POST(req: NextRequest) {
   try {
     logger.debug('Token generation request received', {
       component: 'api/agora/token',
@@ -16,14 +22,6 @@ export async function POST(req: Request) {
         timestamp: Date.now(),
       },
     });
-
-    if (!req.body) {
-      logger.error('Missing request body', {
-        component: 'api/agora/token',
-        action: 'generateToken',
-      });
-      return NextResponse.json({ error: 'Missing request body' }, { status: 400 });
-    }
 
     if (!appId || !appCertificate) {
       logger.error('Agora credentials not configured', {
@@ -34,22 +32,14 @@ export async function POST(req: Request) {
           hasCertificate: !!appCertificate,
         },
       });
-      return NextResponse.json({ error: 'Agora credentials not configured' }, { status: 500 });
+      return NextResponse.json(
+        { error: 'NEXT_PUBLIC_AGORA_APP_ID and AGORA_APP_CERTIFICATE must be defined' },
+        { status: 500 }
+      );
     }
 
-    if (appId.trim() === '' || appCertificate.trim() === '') {
-      logger.error('Invalid Agora credentials', {
-        component: 'api/agora/token',
-        action: 'generateToken',
-        metadata: {
-          hasAppId: appId.trim() !== '',
-          hasCertificate: appCertificate.trim() !== '',
-        },
-      });
-      return NextResponse.json({ error: 'Invalid Agora credentials' }, { status: 500 });
-    }
-
-    const { channelName, uid } = await req.json();
+    const body = await req.json();
+    const { channelName, uid } = body;
 
     logger.debug('Parsed token request', {
       component: 'api/agora/token',
@@ -66,7 +56,10 @@ export async function POST(req: Request) {
         component: 'api/agora/token',
         action: 'generateToken',
       });
-      return NextResponse.json({ error: 'Channel name is required' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'channelName is required' },
+        { status: 400 }
+      );
     }
 
     if (channelName.trim() === '') {
@@ -115,10 +108,10 @@ export async function POST(req: Request) {
       }
     }
 
-    // Get current timestamp in seconds
+    // Set token expiration time - 24 hours from now
+    const expirationTimeInSeconds = 24 * 3600;
     const currentTimestamp = Math.floor(Date.now() / 1000);
-    const tokenExpireTimestamp = currentTimestamp + tokenExpirationInSeconds;
-    const privilegeExpireTimestamp = currentTimestamp + privilegeExpirationInSeconds;
+    const privilegeExpiredTs = currentTimestamp + expirationTimeInSeconds;
 
     const finalUid = uid || 0;
 
@@ -130,21 +123,20 @@ export async function POST(req: Request) {
         uid: finalUid,
         timestamps: {
           current: currentTimestamp,
-          tokenExpire: tokenExpireTimestamp,
-          privilegeExpire: privilegeExpireTimestamp,
+          privilegeExpire: privilegeExpiredTs,
         },
       },
     });
 
-    // Build token with uid
+    // Build the token with the required 7 arguments
     const token = RtcTokenBuilder.buildTokenWithUid(
       appId,
       appCertificate,
       channelName,
       finalUid,
-      RtcRole.PUBLISHER,
-      privilegeExpireTimestamp,
-      tokenExpireTimestamp
+      ROLE.PUBLISHER,
+      privilegeExpiredTs,
+      privilegeExpiredTs
     );
 
     logger.debug('Token generated successfully', {
@@ -162,10 +154,9 @@ export async function POST(req: Request) {
       token,
       channelName,
       uid: finalUid,
-      role: RtcRole.PUBLISHER,
+      role: ROLE.PUBLISHER,
       privileges: {
-        tokenExpireTimestamp,
-        privilegeExpireTimestamp,
+        expireTimestamp: privilegeExpiredTs,
       },
     });
   } catch (error) {

@@ -35,12 +35,14 @@ export function PartyChat() {
   const { members: presenceMembers, initialize: initializePresence, cleanup: cleanupPresence } = usePresence();
 
   const {
-    micPermissionDenied,
+    state,
     requestMicrophonePermission,
     toggleMute,
     volume,
     isMuted,
-  } = useVoice({ currentUser, partyState });
+  } = useVoice({ currentUser, partyState, updatePresence: initializePresence });
+
+  const micPermissionDenied = state.status === 'permission_denied';
 
   const volumeLevels = useMemo(() => ({ [currentUser?.id || '']: volume }), [currentUser?.id, volume]);
 

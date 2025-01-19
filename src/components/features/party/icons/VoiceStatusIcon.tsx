@@ -2,7 +2,6 @@ import { VoiceStatus } from '@/lib/types/party';
 import { cn } from '@/lib/utils';
 import { 
   IoVolumeHighSharp,
-  IoVolumeMediumSharp,
   IoVolumeLowSharp,
   IoVolumeOffSharp,
   IoVolumeMuteSharp
@@ -14,13 +13,11 @@ interface VoiceStatusIconProps {
   volumeLevel?: number;
 }
 
-
-
 export function VoiceStatusIcon({ status, className, volumeLevel = 0 }: VoiceStatusIconProps) {
   const iconClass = cn(
     className,
     'text-[#282b2f]',
-    'h-10 w-10'
+    'h-9 w-9'
   );
 
   // If muted, show mute icon regardless of volume
@@ -28,19 +25,18 @@ export function VoiceStatusIcon({ status, className, volumeLevel = 0 }: VoiceSta
     return <IoVolumeMuteSharp className={iconClass} />;
   }
 
-  // If deafened or not speaking, show off icon
-  if (status === 'deafened' || status === 'silent' || volumeLevel === 0) {
+  // If not speaking or low volume, show off icon
+  if (status === 'silent' || volumeLevel < 30) {
     return <IoVolumeOffSharp className={iconClass} />;
   }
 
-  // Volume thresholds for different icons
-  if (volumeLevel > 80) {
+  // Volume ranges for different icons:
+  // High: > 65%
+  // Low: 30-65%
+  if (volumeLevel > 65) {
     return <IoVolumeHighSharp className={iconClass} />;
   }
 
-  if (volumeLevel > 40) {
-    return <IoVolumeMediumSharp className={iconClass} />;
-  }
-
+  // Default to low volume icon for normal speaking
   return <IoVolumeLowSharp className={iconClass} />;
 }

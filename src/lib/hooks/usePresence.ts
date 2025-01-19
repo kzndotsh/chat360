@@ -112,7 +112,7 @@ export function usePresence() {
         if (!mountedRef.current) return;
         
         const state = channel.presenceState<PresenceMemberState>();
-        logger.info('Presence sync', {
+        logger.info('Presence state refresh (sync)', {
           ...LOG_CONTEXT,
           action: 'sync',
           metadata: { state },
@@ -121,7 +121,7 @@ export function usePresence() {
         // Ensure we have a valid state object
         if (state && Object.keys(state).length > 0) {
           const newMembers = convertPresenceToMembers(state);
-          logger.info('Updating members from sync', {
+          logger.info('Presence state update from sync', {
             ...LOG_CONTEXT,
             action: 'sync',
             metadata: { 
@@ -143,7 +143,7 @@ export function usePresence() {
       .on('presence', { event: 'join' }, ({ key, newPresences }) => {
         if (!mountedRef.current) return;
 
-        logger.info('Member joined', {
+        logger.info('New member presence detected', {
           ...LOG_CONTEXT,
           action: 'join',
           metadata: { key, newPresences },
@@ -169,7 +169,7 @@ export function usePresence() {
       .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
         if (!mountedRef.current) return;
 
-        logger.info('Member left', {
+        logger.info('Member presence removed', {
           ...LOG_CONTEXT,
           action: 'leave',
           metadata: { key, leftPresences },
@@ -179,7 +179,7 @@ export function usePresence() {
         const state = channel.presenceState<PresenceMemberState>();
         const remainingMembers = convertPresenceToMembers(state);
         
-        logger.info('Updated members after leave', {
+        logger.info('Member list updated after presence removal', {
           ...LOG_CONTEXT,
           action: 'leave',
           metadata: { 
@@ -256,6 +256,45 @@ export function usePresence() {
       release();
     }
   }, [validateState, setupHandlers]);
+
+  const updatePresence = useCallback(async (data: PresenceMemberState) => {
+    if (!channelRef.current) return;
+
+    try {
+      // Track presence with debouncing
+      const trackStatus = await channelRef.current.track(data);
+      
+      if (trackStatus !== 'ok') {
+        logger.warn('Failed to track presence', {
+          ...LOG_CONTEXT,
+          action: 'track',
+          metadata: { status: trackStatus }
+        });
+        return;
+      }
+
+      // Get final state after sync
+      const state = channelRef.current.presenceState<PresenceMemberState>();
+      const newMembers = convertPresenceToMembers(state);
+      
+      logger.info('Setting members after presence update', {
+        ...LOG_CONTEXT,
+        action: 'track',
+        metadata: { 
+          memberCount: newMembers.length,
+          members: newMembers 
+        }
+      });
+
+      updateMembers(newMembers);
+    } catch (error) {
+      logger.error('Failed to update presence', {
+        ...LOG_CONTEXT,
+        action: 'track',
+        metadata: { error }
+      });
+    }
+  }, [convertPresenceToMembers, updateMembers]);
 
   // Initialize presence subscription
   useEffect(() => {
@@ -434,7 +473,7 @@ export function usePresence() {
       deafened_users: member.deafened_users || [],
       online_at: new Date().toISOString(),
       voice_status: member.voice_status || 'silent',
-      agora_uid: member.agora_uid,
+      agora_uid: member.agora_uid?.toString(),
     };
 
     logger.info('Tracking presence with data', {
@@ -443,37 +482,14 @@ export function usePresence() {
       metadata: { presenceData }
     });
 
-    // Track presence
-    await channelRef.current.track(presenceData);
-    
-    // Get final state after sync
-    const state = channelRef.current.presenceState<PresenceMemberState>();
-    const newMembers = convertPresenceToMembers(state);
-    
-    logger.info('Setting members after track', {
-      ...LOG_CONTEXT,
-      action: 'track',
-      metadata: { 
-        memberCount: newMembers.length,
-        members: newMembers 
-      }
-    });
-
-    updateMembers(newMembers);
-
-    logger.info('Successfully tracked presence', {
-      ...LOG_CONTEXT,
-      action: 'initialize',
-      metadata: {
-        userId: member.id,
-        channelState: channelRef.current.state
-      }
-    });
-  }, [initializeChannel, convertPresenceToMembers, updateMembers]);
+    // Update presence
+    await updatePresence(presenceData);
+  }, [initializeChannel, updatePresence]);
 
   return {
     members,
     initialize,
     cleanup: safeCleanup,
+    updatePresence,
   };
 }
