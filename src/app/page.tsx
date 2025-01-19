@@ -1,90 +1,70 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import dynamic from 'next/dynamic';
-import { ErrorBoundary, FallbackProps } from 'react-error-boundary';
-
+import { PartyChat } from '@/components/features/party/PartyChat';
 import { XboxIntro } from '@/components/features/party/XboxIntro';
-import { RoomSkeleton } from '@/components/features/party/RoomSkeleton';
 import { logger } from '@/lib/utils/logger';
+import { BACKGROUND_VIDEO_URL } from '@/lib/config/constants';
 
-function ErrorFallback({ error, resetErrorBoundary }: FallbackProps) {
-  useEffect(() => {
-    logger.error('Page error boundary caught error', {
-      component: 'Page',
-      action: 'error',
-      metadata: { error },
-    });
-  }, [error]);
-
-  return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-black text-white">
-      <h2 className="mb-4 text-xl">Something went wrong</h2>
-      <button
-        onClick={resetErrorBoundary}
-        className="rounded bg-white px-4 py-2 text-black transition-colors hover:bg-gray-200"
-      >
-        Try again
-      </button>
-    </div>
-  );
-}
-
-const PartyChat = dynamic(
-  () =>
-    import('@/components/features/party/PartyChat')
-      .then((mod) => mod.PartyChat)
-      .catch((err) => {
-        logger.error(`Error loading PartyChat: ${err.message}`);
-        const FallbackComponent = () => <div>Failed to load chat component</div>;
-        FallbackComponent.displayName = 'FallbackComponent';
-        return FallbackComponent;
-      }),
-  {
-    ssr: false,
-    loading: () => {
-      logger.info('Loading PartyChat component...');
-      return <RoomSkeleton />;
-    },
-  }
-);
-
-export default function Page() {
+export default function Home() {
   const [showIntro, setShowIntro] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
+  const [videoLoaded, setVideoLoaded] = useState(false);
 
+  // Preload video during intro
   useEffect(() => {
-    logger.info('Showing XboxIntro', {
-      component: 'Page.tsx',
-      action: 'render',
-    });
-  }, []);
-
-  if (error) {
-    return (
-      <ErrorFallback
-        error={error}
-        resetErrorBoundary={() => {
-          setError(null);
-          window.location.reload();
-        }}
-      />
-    );
-  }
+    if (showIntro) {
+      const video = document.createElement('video');
+      video.src = BACKGROUND_VIDEO_URL;
+      video.preload = "auto";
+      video.onloadedmetadata = () => setVideoLoaded(true);
+      video.onerror = () => {
+        logger.error('Video preload error', {
+          action: 'videoPreload',
+          metadata: { url: BACKGROUND_VIDEO_URL }
+        });
+      };
+    }
+  }, [showIntro]);
 
   return (
-    <ErrorBoundary
-      FallbackComponent={ErrorFallback}
-      onError={(error: Error) => {
-        logger.error('Page error boundary caught error', {
-          component: 'Page',
-          action: 'error',
-          metadata: { error },
-        });
-        setError(error);
-      }}
-    >
-      {showIntro ? <XboxIntro onIntroEnd={() => setShowIntro(false)} /> : <PartyChat />}
-    </ErrorBoundary>
+    <div className="fixed inset-0 min-h-screen overflow-hidden bg-black">
+      {showIntro ? (
+        <XboxIntro onIntroEnd={() => {
+          if (videoLoaded) {
+            setShowIntro(false);
+          }
+        }} />
+      ) : (
+        <main className="relative h-full w-full">
+          <div className="absolute inset-0 z-0">
+            <video
+              id="xbox-bg"
+              autoPlay
+              loop
+              muted
+              playsInline
+              preload="metadata"
+              src={BACKGROUND_VIDEO_URL}
+              className="absolute left-1/2 top-1/2 min-h-full min-w-full -translate-x-1/2 -translate-y-1/2 transform object-cover"
+              style={{ filter: 'blur(6px)' }}
+              onError={() => {
+                logger.error('Video playback error', {
+                  action: 'videoPlayback',
+                  metadata: { elementId: 'xbox-bg', url: BACKGROUND_VIDEO_URL }
+                });
+              }}
+            >
+              <source src={BACKGROUND_VIDEO_URL} type="video/mp4" />
+            </video>
+          </div>
+
+          <div className="absolute inset-0 z-10 bg-black opacity-55" />
+
+          <div className="absolute inset-0 z-20 flex items-center justify-center">
+            <PartyChat />
+          </div>
+        </main>
+      )}
+    </div>
   );
 }

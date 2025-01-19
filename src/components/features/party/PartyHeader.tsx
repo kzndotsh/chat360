@@ -103,7 +103,7 @@ export function PartyHeader({ membersCount }: PartyHeaderProps) {
   return (
     <div
       role="banner"
-      className="flex flex-col items-center justify-between shadow-[0_2px_4px_rgba(0,0,0,0.05)]"
+      className="flex flex-col items-center justify-between"
     >
       <div className="flex w-full flex-col sm:flex-row">
         <div className="order-2 flex h-[40px] flex-1 items-center justify-center bg-[#f8f8f8] sm:order-1 sm:items-center sm:justify-start">
@@ -141,16 +141,16 @@ export function PartyHeader({ membersCount }: PartyHeaderProps) {
         className="flex h-[38px] w-full cursor-pointer items-center gap-2 bg-gradient-to-b from-[#70cc00] to-[#409202] pl-[30px] shadow-[inset_0_-2px_4px_rgba(0,0,0,0.1)] transition-all hover:brightness-110"
         onClick={handleCopyURL}
         onKeyDown={handleKeyDown}
-        aria-label="Copy party URL"
+        aria-label="Copy CA"
         aria-live="polite"
       >
         <span className="text-[1.15rem] font-medium text-white">
-          {copyStatus === 'success' ? 'Copied!' : copyStatus === 'error' ? 'Failed!' : 'Copy URL'}
+          {copyStatus === 'success' ? 'Copied!' : copyStatus === 'error' ? 'Failed!' : 'Copy CA'}
         </span>
         <Clipboard className="h-4 w-4 text-white opacity-90" />
       </button>
 
-      <div className="h-[38px] w-full border-b border-gray-400 bg-[#f0f0fa] pl-[30px] shadow-[inset_0_-2px_4px_rgba(0,0,0,0.08)]">
+      <div className="h-[38px] w-full border-b border-gray-400 bg-[#f0f0fa] pl-[30px]">
         <span className="text-[1.15rem] font-medium leading-[38px] text-[#282b2f]">
           Party Options: Party Chat
         </span>

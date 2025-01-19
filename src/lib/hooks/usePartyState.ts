@@ -1,191 +1,334 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { supabase } from '@/lib/api/supabase';
+import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
+import { v4 as uuidv4 } from 'uuid';
+import { PartyMember } from '@/lib/types/party';
 import { logger } from '@/lib/utils/logger';
-import type { PartyMember } from '@/lib/types/party';
-import { usePresence } from './usePresence';
+import { usePresence } from '@/lib/hooks/usePresence';
+import { Mutex } from 'async-mutex';
 
 type PartyState = 'idle' | 'joining' | 'joined' | 'leaving';
 
+// Create a single mutex instance for all hook instances
+const stateMutex = new Mutex();
+
 interface PartyStateReturn {
   currentUser: PartyMember | null;
-  members: PartyMember[];
   partyState: PartyState;
   joinParty: (name: string, avatar: string, game: string) => Promise<PartyMember>;
   leaveParty: () => Promise<void>;
   editProfile: (name: string, avatar: string, game: string) => Promise<void>;
-  setJoinedState: () => void;
 }
 
 const LOG_CONTEXT = { component: 'usePartyState' };
 
 export function usePartyState(): PartyStateReturn {
-  // Core state
-  const [currentUser, setCurrentUser] = useState<PartyMember | null>(null);
-  const [partyState, setPartyState] = useState<PartyState>('idle');
-  
+  const [currentUser, setCurrentUser] = useState<PartyMember | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const saved = localStorage.getItem('currentUser');
+    return saved ? JSON.parse(saved) : null;
+  });
+
+  const [partyState, setPartyState] = useState<PartyState>(() => {
+    if (typeof window === 'undefined') return 'idle';
+    const saved = localStorage.getItem('partyState');
+    return (saved as PartyState) || 'idle';
+  });
+
   // Refs
   const mountedRef = useRef(true);
-  const loggerRef = useRef(logger);
+  const initializingRef = useRef(false);
+  const joinInProgress = useRef(false);
+  const subscriptionRef = useRef<boolean>(false);
 
   // Custom hooks
-  const {
-    members: presenceMembers,
-    initialize: initializePresence,
-    cleanup,
-  } = usePresence();
-
-  // Initialize state from localStorage
-  useEffect(() => {
-    try {
-      const savedUser = localStorage.getItem('currentUser');
-      const savedPartyState = localStorage.getItem('partyState');
-
-      if (savedUser && savedPartyState === 'joined') {
-        const parsedUser = JSON.parse(savedUser) as PartyMember;
-        setCurrentUser(parsedUser);
-        
-        // Re-initialize presence for the restored user
-        initializePresence(parsedUser)
-          .then(() => {
-            logger.debug('Successfully restored session and initialized presence', {
-              component: 'usePartyState',
-              metadata: { userId: parsedUser.id }
-            });
-            setPartyState('joined');
-          })
-          .catch((error) => {
-            logger.error('Failed to initialize presence for restored user', {
-              component: 'usePartyState',
-              action: 'restoreSession',
-              metadata: { error },
-            });
-            // On presence init error, clear the session
-            setCurrentUser(null);
-            setPartyState('idle');
-            localStorage.removeItem('currentUser');
-            localStorage.removeItem('partyState');
-          });
-      }
-    } catch (error) {
-      logger.error('Failed to restore session from localStorage', {
-        component: 'usePartyState',
-        action: 'restoreSession',
-        metadata: { error },
-      });
-      // On error, clear potentially corrupted data
-      localStorage.removeItem('currentUser');
-      localStorage.removeItem('partyState');
-    }
-  }, [initializePresence]);
-
-  // Track party state changes
-  useEffect(() => {
-    logger.debug('Party state changed in usePartyState', {
-      component: 'usePartyState',
-      metadata: {
-        from: partyState,
-        userId: currentUser?.id,
-        timestamp: new Date().toISOString()
-      }
-    });
-
-    // Ensure state is persisted to localStorage immediately
-    if (partyState === 'joined') {
-      localStorage.setItem('partyState', 'joined');
-    } else if (partyState === 'idle') {
-      localStorage.removeItem('partyState');
-    }
-  }, [partyState, currentUser?.id]);
+  const { members: presenceMembers, initialize: initializePresence, cleanup } = usePresence();
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       mountedRef.current = false;
+      if (subscriptionRef.current) {
+        void cleanup().catch(err => {
+          logger.error('Failed to cleanup on unmount', {
+            ...LOG_CONTEXT,
+            action: 'cleanup',
+            metadata: { error: err },
+          });
+        });
+      }
     };
-  }, []);
+  }, [cleanup]);
 
-  const joinParty = useCallback(
-    async (name: string, avatar: string, game: string) => {
+  // Initialize state from localStorage with retry logic
+  useEffect(() => {
+    const initializeFromStorage = async () => {
+      if (initializingRef.current || !mountedRef.current) return;
+      
       try {
-        // Clear any existing session first
-        if (currentUser) {
+        initializingRef.current = true;
+        const savedUser = localStorage.getItem('currentUser');
+        const savedState = localStorage.getItem('partyState');
+        
+        if (savedUser && savedState === 'joined' && !subscriptionRef.current) {
+          const user = JSON.parse(savedUser);
+          
+          // Set initial state before attempting subscription
+          setCurrentUser(user);
+          setPartyState('joining');
+          
+          // Wait for WebSocket connection to be ready
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          // Clean up any existing subscriptions first
           await cleanup();
-          setCurrentUser(null);
-          localStorage.removeItem('currentUser');
+          
+          try {
+            // Initialize presence and wait for subscription to be ready
+            await initializePresence(user);
+            subscriptionRef.current = true;
+            
+            if (mountedRef.current) {
+              setPartyState('joined');
+            }
+          } catch (err) {
+            logger.error('Failed to initialize presence during restore', {
+              ...LOG_CONTEXT,
+              action: 'initializeFromStorage',
+              metadata: { error: err },
+            });
+            
+            // Clean up failed subscription
+            if (subscriptionRef.current) {
+              await cleanup();
+              subscriptionRef.current = false;
+            }
+            
+            // Reset state on failure
+            if (mountedRef.current) {
+              setCurrentUser(null);
+              setPartyState('idle');
+              localStorage.removeItem('currentUser');
+              localStorage.removeItem('partyState');
+            }
+            
+            throw err;
+          }
         }
+      } catch (err) {
+        logger.error('Failed to initialize from storage', {
+          ...LOG_CONTEXT,
+          action: 'initializeFromStorage',
+          metadata: { error: err },
+        });
+        // Clear invalid state
+        localStorage.removeItem('currentUser');
+        localStorage.removeItem('partyState');
+        if (mountedRef.current) {
+          setCurrentUser(null);
+          setPartyState('idle');
+        }
+      } finally {
+        initializingRef.current = false;
+      }
+    };
 
-        // Set joining state
-        setPartyState('joining');
+    void initializeFromStorage();
+  }, [initializePresence, cleanup]);
 
-        // Generate new user ID
-        const newUserId = crypto.randomUUID();
+  // Track party state changes with better error handling and state validation
+  useEffect(() => {
+    const timestamp = new Date().toISOString();
+    
+    logger.debug('Party state changed in usePartyState', {
+      ...LOG_CONTEXT,
+      metadata: {
+        from: partyState,
+        userId: currentUser?.id,
+        timestamp,
+      },
+    });
+
+    // Validate state transitions
+    if (partyState === 'joined' && !currentUser) {
+      logger.error('Invalid state: joined without current user', {
+        ...LOG_CONTEXT,
+        metadata: { partyState, timestamp },
+      });
+      setPartyState('idle');
+      return;
+    }
+
+    // Handle state persistence with error checking
+    try {
+      if (partyState === 'joined' && currentUser) {
+        // Wait for any pending state updates before persisting
+        setTimeout(() => {
+          if (mountedRef.current) {
+            localStorage.setItem('partyState', 'joined');
+            localStorage.setItem('currentUser', JSON.stringify(currentUser));
+          }
+        }, 500);
+      } else if (partyState === 'idle') {
+        localStorage.removeItem('partyState');
+        localStorage.removeItem('currentUser');
+      }
+    } catch (error) {
+      logger.error('Failed to persist party state', {
+        ...LOG_CONTEXT,
+        metadata: { error, partyState, timestamp },
+      });
+    }
+  }, [partyState, currentUser]);
+
+  const joinParty = useCallback(async (name: string, avatar: string, game: string) => {
+    if (joinInProgress.current) {
+      throw new Error('Join already in progress');
+    }
+
+    if (subscriptionRef.current) {
+      throw new Error('Already subscribed to party');
+    }
+
+    joinInProgress.current = true;
+    let lastError: Error | null = null;
+
+    return await stateMutex.runExclusive(async () => {
+      try {
         const newMember: PartyMember = {
-          id: newUserId,
+          id: uuidv4(),
           name,
           avatar,
           game,
           is_active: true,
-          voice_status: 'silent',
           created_at: new Date().toISOString(),
           last_seen: new Date().toISOString(),
+          voice_status: 'silent',
         };
 
-        // Update database
-        const { error: dbError } = await supabase.from('party_members').upsert({
-          id: newMember.id,
-          name: newMember.name,
-          avatar: newMember.avatar,
-          game: newMember.game,
-          is_active: true,
-          last_seen: newMember.last_seen,
-        });
+        // Set state to joining before any async operations
+        setPartyState('joining');
+        setCurrentUser(newMember);
+        
+        // Wait for WebSocket connection to be ready
+        await new Promise(resolve => setTimeout(resolve, 1000));
 
-        if (dbError) throw dbError;
+        // Clean up any existing subscriptions first
+        await cleanup();
 
-        // Update state and store user data
-        if (mountedRef.current) {
-          setCurrentUser(newMember);
-          localStorage.setItem('currentUser', JSON.stringify(newMember));
-        }
-
-        // Initialize presence
-        await initializePresence(newMember);
-
-        // Set party state to joined only after presence is initialized
-        if (mountedRef.current) {
-          logger.debug('Setting party state to joined', {
-            component: 'usePartyState',
-            action: 'setJoinedState',
-            metadata: { 
-              userId: newMember.id,
-              timestamp: new Date().toISOString(),
-              mounted: mountedRef.current,
-              currentState: partyState
-            }
-          });
-          localStorage.setItem('partyState', 'joined');
-          setPartyState('joined');
+        try {
+          // Initialize presence and wait for subscription to be ready
+          await initializePresence(newMember);
+          subscriptionRef.current = true;
           
-          logger.info('Successfully completed party join sequence', {
-            component: 'usePartyState',
-            action: 'joinComplete',
-            metadata: { 
-              userId: newMember.id,
-              timestamp: new Date().toISOString()
-            }
+          logger.info('Successfully joined party', {
+            ...LOG_CONTEXT,
+            action: 'joinParty',
+            metadata: { memberId: newMember.id },
           });
+          
+          // Update state and localStorage atomically
+          if (mountedRef.current) {
+            setPartyState('joined');
+            localStorage.setItem('currentUser', JSON.stringify(newMember));
+            localStorage.setItem('partyState', 'joined');
+          }
+          
+          return newMember;
+        } catch (err) {
+          lastError = err instanceof Error ? err : new Error(String(err));
+          logger.error('Failed to initialize presence', {
+            ...LOG_CONTEXT,
+            action: 'joinParty',
+            metadata: { error: lastError },
+          });
+          
+          // Ensure cleanup on failed subscription
+          if (subscriptionRef.current) {
+            await cleanup();
+            subscriptionRef.current = false;
+          }
+          throw lastError;
         }
-
-        return newMember;
       } catch (error) {
         logger.error('Failed to join party', {
-          component: 'usePartyState',
+          ...LOG_CONTEXT,
           action: 'joinParty',
           metadata: { error },
         });
-        // Reset state on error
+
+        // Clean up any partial state
+        if (mountedRef.current) {
+          setCurrentUser(null);
+          setPartyState('idle');
+          localStorage.removeItem('currentUser');
+          localStorage.removeItem('partyState');
+        }
+        
+        throw error;
+      } finally {
+        joinInProgress.current = false;
+      }
+    });
+  }, [cleanup, initializePresence]);
+
+  const leaveParty = useCallback(async () => {
+    return stateMutex.runExclusive(async () => {
+      if (!currentUser) {
+        throw new Error('No user to remove from party');
+      }
+
+      if (partyState === 'leaving') {
+        throw new Error('Already leaving party');
+      }
+
+      try {
+        logger.info('Starting party leave sequence', {
+          ...LOG_CONTEXT,
+          action: 'leaveParty',
+          metadata: {
+            userId: currentUser.id,
+            timestamp: new Date().toISOString(),
+          },
+        });
+
+        setPartyState('leaving');
+
+        // Ensure cleanup happens in correct order
+        if (subscriptionRef.current) {
+          // First untrack presence
+          await cleanup();
+          subscriptionRef.current = false;
+          
+          // Then clear local state
+          localStorage.removeItem('currentUser');
+          localStorage.removeItem('partyState');
+          
+          // Finally update component state
+          if (mountedRef.current) {
+            setCurrentUser(null);
+            setPartyState('idle');
+          }
+        }
+
+        logger.info('Successfully completed party leave sequence', {
+          ...LOG_CONTEXT,
+          action: 'leaveParty',
+          metadata: {
+            userId: currentUser.id,
+            timestamp: new Date().toISOString(),
+          },
+        });
+      } catch (error) {
+        logger.error('Failed to leave party', {
+          ...LOG_CONTEXT,
+          action: 'leaveParty',
+          metadata: { 
+            error,
+            userId: currentUser.id,
+          },
+        });
+        // On error, still try to clean up user state
         if (mountedRef.current) {
           setPartyState('idle');
           setCurrentUser(null);
@@ -194,64 +337,15 @@ export function usePartyState(): PartyStateReturn {
         }
         throw error;
       }
-    },
-    [currentUser, cleanup, initializePresence, partyState]
-  );
-
-  const leaveParty = useCallback(async () => {
-    if (!currentUser || partyState === 'leaving') return;
-
-    try {
-      setPartyState('leaving');
-
-      // Update database
-      await supabase
-        .from('party_members')
-        .update({ is_active: false, last_seen: new Date().toISOString() })
-        .eq('id', currentUser.id);
-
-      // Clear user data and cleanup presence
-      localStorage.removeItem('currentUser');
-      localStorage.removeItem('partyState');
-      setCurrentUser(null);
-      await cleanup();
-
-      if (mountedRef.current) {
-        setPartyState('idle');
-      }
-    } catch (error) {
-      loggerRef.current.error('Failed to leave party', {
-        component: 'usePartyState',
-        action: 'leaveParty',
-        metadata: { error },
-      });
-      // On error, still try to clean up user data
-      if (mountedRef.current) {
-        setPartyState('idle');
-        setCurrentUser(null);
-      }
-      throw error;
-    }
+    });
   }, [currentUser, partyState, cleanup]);
 
   const editProfile = useCallback(
     async (name: string, avatar: string, game: string) => {
       if (!currentUser) throw new Error('No user to edit');
+      if (!subscriptionRef.current) throw new Error('Not subscribed to party');
 
       try {
-        // Update database
-        const { error: dbError } = await supabase
-          .from('party_members')
-          .update({
-            name,
-            avatar,
-            game,
-            last_seen: new Date().toISOString(),
-          })
-          .eq('id', currentUser.id);
-
-        if (dbError) throw dbError;
-
         // Update local state
         const updatedUser = {
           ...currentUser,
@@ -261,16 +355,31 @@ export function usePartyState(): PartyStateReturn {
           last_seen: new Date().toISOString(),
         };
 
-        setCurrentUser(updatedUser);
-        localStorage.setItem('currentUser', JSON.stringify(updatedUser));
-
-        // Update presence
+        // Update presence state
         await initializePresence(updatedUser);
-      } catch (error) {
-        loggerRef.current.error('Failed to update profile', {
-          component: 'usePartyState',
+
+        // Update local storage and state
+        localStorage.setItem('currentUser', JSON.stringify(updatedUser));
+        if (mountedRef.current) {
+          setCurrentUser(updatedUser);
+        }
+
+        logger.info('Successfully updated profile', {
+          ...LOG_CONTEXT,
           action: 'editProfile',
-          metadata: { error },
+          metadata: { 
+            userId: currentUser.id,
+            updates: { name, avatar, game }
+          },
+        });
+      } catch (error) {
+        logger.error('Failed to update profile', {
+          ...LOG_CONTEXT,
+          action: 'editProfile',
+          metadata: { 
+            error,
+            userId: currentUser.id,
+          },
         });
         throw error;
       }
@@ -278,36 +387,15 @@ export function usePartyState(): PartyStateReturn {
     [currentUser, initializePresence]
   );
 
-  const setJoinedState = useCallback(() => {
-    if (!currentUser?.id) {
-      logger.error('Cannot set joined state - no user ID', {
-        ...LOG_CONTEXT,
-        action: 'setJoinedState',
-        metadata: { currentUser }
-      });
-      return;
-    }
-
-    logger.info('Setting party state to joined', {
-      ...LOG_CONTEXT,
-      action: 'setJoinedState',
-      metadata: {
-        userId: currentUser.id,
-        timestamp: new Date().toISOString(),
-        currentState: partyState
-      }
-    });
-
-    setPartyState('joined');
-  }, [currentUser, partyState]);
-
-  return useMemo(() => ({
-    currentUser,
-    members: presenceMembers,
-    partyState,
-    joinParty,
-    leaveParty,
-    editProfile,
-    setJoinedState,
-  }), [currentUser, presenceMembers, partyState, joinParty, leaveParty, editProfile, setJoinedState]);
+  return useMemo(
+    () => ({
+      currentUser,
+      members: presenceMembers,
+      partyState,
+      joinParty,
+      leaveParty,
+      editProfile,
+    }),
+    [currentUser, presenceMembers, partyState, joinParty, leaveParty, editProfile]
+  );
 }

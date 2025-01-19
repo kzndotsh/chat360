@@ -1,17 +1,12 @@
+// "use client";
+
 import { ReactNode } from 'react';
 import type { Viewport } from 'next';
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
 import { ClientProviders } from '@/components/providers/ClientProviders';
-import { ErrorBoundaryProvider } from '@/components/providers/ErrorBoundaryProvider';
+
 import '@/styles/globals.css';
 
-const inter = Inter({
-  subsets: ['latin'],
-  display: 'swap',
-  variable: '--font-inter',
-  preload: false,
-});
 
 export const metadata: Metadata = {
   title: 'Chat360',
@@ -119,20 +114,13 @@ export default function RootLayout({ children }: RootLayoutProps) {
   return (
     <html
       lang="en"
-      className={`${inter.variable} font-sans`}
       suppressHydrationWarning
+      className="bg-black"
     >
-      <head>
-        <meta charSet="utf-8" />
-        <meta
-          name="viewport"
-          content="width=device-width, initial-scale=1"
-        />
-      </head>
-      <body suppressHydrationWarning>
-        <ErrorBoundaryProvider>
+      <body suppressHydrationWarning className="bg-black">
+        <div className="min-h-screen bg-black">
           <ClientProviders>{children}</ClientProviders>
-        </ErrorBoundaryProvider>
+        </div>
       </body>
     </html>
   );

@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 
-type ModalType = 'profile' | 'join';
+export type ModalType = 'profile' | 'join';
 
-interface ModalData {
+export interface ModalData {
   name: string;
   avatar: string;
   game: string;

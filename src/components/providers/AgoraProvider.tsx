@@ -33,7 +33,9 @@ interface AgoraContextType {
 
 const AgoraContext = createContext<AgoraContextType>({
   client: null,
-  getClient: async () => { throw new Error('AgoraProvider not initialized') },
+  getClient: async () => {
+    throw new Error('AgoraProvider not initialized');
+  },
   cleanupClient: async () => {},
   isInitializing: false,
   error: null,
@@ -50,202 +52,135 @@ let AgoraRTC: IAgoraRTC | null = null;
 
 async function loadAgoraSDK(): Promise<void> {
   if (typeof window === 'undefined' || AgoraRTC) return;
-  
+
   const mod = await import('agora-rtc-sdk-ng');
   AgoraRTC = mod.default;
   if (AgoraRTC) {
     // Configure Agora SDK
-    AgoraRTC.disableLogUpload(); // Disable log upload for privacy
     AgoraRTC.setLogLevel(0); // Set to INFO level
   }
 }
 
 // Initialize SDK loading
 if (typeof window !== 'undefined') {
-  loadAgoraSDK().catch(error => {
+  loadAgoraSDK().catch((error) => {
     logger.error('Failed to load Agora SDK', {
       ...LOG_CONTEXT,
       action: 'loadSDK',
-      metadata: { error }
+      metadata: { error },
     });
   });
 }
 
 export function AgoraProvider({ children }: AgoraProviderProps) {
   const [client, setClient] = useState<IAgoraRTCClient | null>(null);
-  const [error, setError] = useState<Error | null>(null);
   const [isInitializing, setIsInitializing] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
   const mountedRef = useRef(true);
-  const isCleaningUpRef = useRef(false);
-  const initializingRef = useRef(false);
-  const clientRef = useRef<IAgoraRTCClient | null>(null);
   const retryCountRef = useRef(0);
 
-  // Keep clientRef in sync with client state
-  useEffect(() => {
-    clientRef.current = client;
-  }, [client]);
-
-  // Enhanced cleanup function
-  const cleanupClient = useCallback(async () => {
-    const currentClient = clientRef.current;
-    if (!currentClient || isCleaningUpRef.current) return;
-
-    logger.info('Starting client cleanup...', LOG_CONTEXT);
-    isCleaningUpRef.current = true;
-
-    try {
-      // Remove all event listeners
-      currentClient.removeAllListeners();
-
-      // Leave the channel if connected
-      if (currentClient.connectionState !== 'DISCONNECTED') {
-        await currentClient.leave();
+  const initClient = useCallback(async () => {
+    if (!AgoraRTC) {
+      try {
+        await loadAgoraSDK();
+      } catch (err) {
+        logger.error('Failed to load Agora SDK during init', {
+          ...LOG_CONTEXT,
+          action: 'initClient',
+          metadata: { error: err },
+        });
+        throw err;
       }
+    }
 
-      // Add delay to ensure cleanup propagates
-      await new Promise((resolve) => setTimeout(resolve, CLEANUP_DELAY));
+    if (!AgoraRTC) {
+      throw new Error('Failed to load Agora SDK');
+    }
 
-      // Reset state if still mounted
-      if (mountedRef.current) {
-        setClient(null);
-        clientRef.current = null;
-        setError(null);
-      }
+    const newClient = AgoraRTC.createClient({
+      mode: 'rtc',
+      codec: 'vp8',
+    });
 
-      logger.info('Client cleanup completed', LOG_CONTEXT);
-    } catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error));
-      logger.error('Error during cleanup', {
+    // Configure client settings
+    await newClient.enableDualStream().catch((err) => {
+      logger.error('Failed to enable dual stream', {
         ...LOG_CONTEXT,
-        action: 'cleanup',
+        action: 'initClient',
         metadata: { error: err },
       });
-      if (mountedRef.current) {
-        setError(err);
-      }
-    } finally {
-      isCleaningUpRef.current = false;
-    }
+    });
+
+    return newClient;
   }, []);
 
-  // Get or initialize client
-  const getClient = useCallback(async (): Promise<IAgoraRTCClient> => {
-    if (clientRef.current) {
-      return clientRef.current;
-    }
-
-    if (initializingRef.current) {
-      throw new Error('Client initialization already in progress');
-    }
-
-    if (retryCountRef.current >= MAX_INIT_RETRIES) {
-      throw new Error('Max initialization retries reached');
-    }
+  const cleanupClient = useCallback(async () => {
+    if (!client) return;
 
     try {
-      setIsInitializing(true);
-      initializingRef.current = true;
-
-      // Ensure SDK is loaded
-      if (!AgoraRTC) {
-        const mod = await import('agora-rtc-sdk-ng');
-        AgoraRTC = mod.default;
-        if (AgoraRTC) {
-          AgoraRTC.disableLogUpload();
-          AgoraRTC.setLogLevel(0);
-        }
-      }
-
-      // Create new client
-      const newClient = AgoraRTC.createClient({
-        mode: 'rtc',
-        codec: 'vp8',
+      await client.leave();
+      logger.debug('Client left channel', LOG_CONTEXT);
+    } catch (err) {
+      logger.error('Error during client cleanup', {
+        ...LOG_CONTEXT,
+        action: 'cleanupClient',
+        metadata: { error: err },
       });
+    }
 
-      // Configure client
-      newClient.enableAudioVolumeIndicator();
-      
-      // Set up connection state monitoring
-      newClient.on('connection-state-change', (curState, prevState) => {
-        logger.info('Client connection state changed', {
-          ...LOG_CONTEXT,
-          action: 'connectionStateChange',
-          metadata: { 
-            curState, 
-            prevState,
-            channelName: newClient.channelName,
-            uid: newClient.uid
-          }
-        });
-      });
+    // Add delay to ensure cleanup is complete
+    await new Promise((resolve) => setTimeout(resolve, CLEANUP_DELAY));
+  }, [client]);
 
-      // Set up error handling
-      newClient.on('error', (err: Error) => {
-        logger.error('Client error', {
-          ...LOG_CONTEXT,
-          action: 'clientError',
-          metadata: { 
-            error: err instanceof Error ? {
-              name: err.name,
-              message: err.message,
-              stack: err.stack
-            } : err,
-            connectionState: newClient.connectionState,
-            channelName: newClient.channelName,
-            uid: newClient.uid
-          }
-        });
-        setError(err instanceof Error ? err : new Error(String(err)));
-      });
+  const getClient = useCallback(async () => {
+    if (client) return client;
 
+    setIsInitializing(true);
+    setError(null);
+
+    try {
+      const newClient = await initClient();
       if (mountedRef.current) {
         setClient(newClient);
-        clientRef.current = newClient;
-        setError(null);
         retryCountRef.current = 0;
       }
-
-      logger.info('Client initialized successfully', LOG_CONTEXT);
       return newClient;
-    } catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error));
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
       logger.error('Failed to initialize client', {
         ...LOG_CONTEXT,
-        action: 'initialize',
-        metadata: { error: err, retry: retryCountRef.current },
+        action: 'getClient',
+        metadata: { 
+          error,
+          retryCount: retryCountRef.current 
+        },
       });
 
-      retryCountRef.current++;
       if (mountedRef.current) {
-        setError(err);
-      }
+        setError(error);
+        retryCountRef.current++;
 
-      // Retry after delay
-      if (retryCountRef.current < MAX_INIT_RETRIES) {
-        await new Promise((resolve) => setTimeout(resolve, INIT_RETRY_DELAY));
-        return getClient();
+        // Retry initialization if under max retries
+        if (retryCountRef.current < MAX_INIT_RETRIES) {
+          await new Promise((resolve) => 
+            setTimeout(resolve, INIT_RETRY_DELAY * Math.pow(2, retryCountRef.current - 1))
+          );
+          return getClient();
+        }
       }
-      throw err;
+      throw error;
     } finally {
       if (mountedRef.current) {
         setIsInitializing(false);
       }
-      initializingRef.current = false;
     }
-  }, []);
+  }, [client, initClient]);
 
-  // Cleanup on unmount
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      cleanupClient().catch((error) => {
-        logger.error('Error during cleanup on unmount', {
-          ...LOG_CONTEXT,
-          action: 'unmount',
-          metadata: { error },
-        });
-      });
+      void cleanupClient();
     };
   }, [cleanupClient]);
 

@@ -13,14 +13,14 @@ export async function POST(req: Request) {
       component: 'api/agora/token',
       action: 'generateToken',
       metadata: {
-        timestamp: Date.now()
-      }
+        timestamp: Date.now(),
+      },
     });
 
     if (!req.body) {
       logger.error('Missing request body', {
         component: 'api/agora/token',
-        action: 'generateToken'
+        action: 'generateToken',
       });
       return NextResponse.json({ error: 'Missing request body' }, { status: 400 });
     }
@@ -31,8 +31,8 @@ export async function POST(req: Request) {
         action: 'generateToken',
         metadata: {
           hasAppId: !!appId,
-          hasCertificate: !!appCertificate
-        }
+          hasCertificate: !!appCertificate,
+        },
       });
       return NextResponse.json({ error: 'Agora credentials not configured' }, { status: 500 });
     }
@@ -43,8 +43,8 @@ export async function POST(req: Request) {
         action: 'generateToken',
         metadata: {
           hasAppId: appId.trim() !== '',
-          hasCertificate: appCertificate.trim() !== ''
-        }
+          hasCertificate: appCertificate.trim() !== '',
+        },
       });
       return NextResponse.json({ error: 'Invalid Agora credentials' }, { status: 500 });
     }
@@ -57,14 +57,14 @@ export async function POST(req: Request) {
       metadata: {
         channelName,
         uid,
-        timestamp: Date.now()
-      }
+        timestamp: Date.now(),
+      },
     });
 
     if (!channelName) {
       logger.error('Channel name is required', {
         component: 'api/agora/token',
-        action: 'generateToken'
+        action: 'generateToken',
       });
       return NextResponse.json({ error: 'Channel name is required' }, { status: 400 });
     }
@@ -72,7 +72,7 @@ export async function POST(req: Request) {
     if (channelName.trim() === '') {
       logger.error('Channel name cannot be empty', {
         component: 'api/agora/token',
-        action: 'generateToken'
+        action: 'generateToken',
       });
       return NextResponse.json({ error: 'Channel name cannot be empty' }, { status: 400 });
     }
@@ -81,7 +81,7 @@ export async function POST(req: Request) {
       logger.error('Channel name too long', {
         component: 'api/agora/token',
         action: 'generateToken',
-        metadata: { length: channelName.length }
+        metadata: { length: channelName.length },
       });
       return NextResponse.json({ error: 'Channel name too long' }, { status: 400 });
     }
@@ -90,7 +90,7 @@ export async function POST(req: Request) {
       logger.error('Invalid channel name format', {
         component: 'api/agora/token',
         action: 'generateToken',
-        metadata: { channelName }
+        metadata: { channelName },
       });
       return NextResponse.json({ error: 'Invalid channel name format' }, { status: 400 });
     }
@@ -100,7 +100,7 @@ export async function POST(req: Request) {
         logger.error('Invalid UID format', {
           component: 'api/agora/token',
           action: 'generateToken',
-          metadata: { uid, type: typeof uid }
+          metadata: { uid, type: typeof uid },
         });
         return NextResponse.json({ error: 'Invalid UID format' }, { status: 400 });
       }
@@ -109,7 +109,7 @@ export async function POST(req: Request) {
         logger.error('UID must be non-negative', {
           component: 'api/agora/token',
           action: 'generateToken',
-          metadata: { uid }
+          metadata: { uid },
         });
         return NextResponse.json({ error: 'UID must be a non-negative number' }, { status: 400 });
       }
@@ -131,9 +131,9 @@ export async function POST(req: Request) {
         timestamps: {
           current: currentTimestamp,
           tokenExpire: tokenExpireTimestamp,
-          privilegeExpire: privilegeExpireTimestamp
-        }
-      }
+          privilegeExpire: privilegeExpireTimestamp,
+        },
+      },
     });
 
     // Build token with uid
@@ -154,8 +154,8 @@ export async function POST(req: Request) {
         channelName,
         uid: finalUid,
         tokenLength: token.length,
-        timestamp: Date.now()
-      }
+        timestamp: Date.now(),
+      },
     });
 
     return NextResponse.json({
@@ -173,7 +173,7 @@ export async function POST(req: Request) {
       logger.error('Invalid JSON format', {
         component: 'api/agora/token',
         action: 'generateToken',
-        metadata: { error }
+        metadata: { error },
       });
       return NextResponse.json({ error: 'Invalid JSON format' }, { status: 400 });
     }
@@ -183,8 +183,8 @@ export async function POST(req: Request) {
       metadata: {
         error,
         errorMessage: error instanceof Error ? error.message : String(error),
-        timestamp: Date.now()
-      }
+        timestamp: Date.now(),
+      },
     });
     return NextResponse.json({ error: 'Failed to generate token' }, { status: 500 });
   }

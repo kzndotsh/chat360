@@ -1,3 +1,5 @@
+export type VoiceStatus = 'silent' | 'muted' | 'speaking' | 'deafened';
+
 export interface PartyMember {
   id: string;
   name: string;
@@ -6,10 +8,12 @@ export interface PartyMember {
   is_active: boolean;
   created_at: string;
   last_seen: string;
-  voice_status?: 'silent' | 'muted' | 'speaking';
+  voice_status?: VoiceStatus;
   muted?: boolean;
   agora_uid?: number;
   deafened_users?: string[];
+  presence_ref?: string;
+  _lastUpdate?: number;
 }
 
 export interface PresenceMemberState {
@@ -17,9 +21,10 @@ export interface PresenceMemberState {
   name: string;
   avatar: string;
   game: string;
-  online_at: string;
-  voice_status?: 'silent' | 'muted' | 'speaking';
   muted?: boolean;
-  agora_uid?: number;
+  online_at?: string;
+  voice_status?: VoiceStatus;
   deafened_users?: string[];
+  agora_uid?: string;
+  _lastUpdate?: number;
 }

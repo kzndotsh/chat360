@@ -1,1075 +1,777 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
-import { useVoiceStore } from '@/lib/stores/useVoiceStore';
-import { logger } from '@/lib/utils/logger';
-import { usePartyState } from './usePartyState';
+/* eslint-disable @typescript-eslint/no-floating-promises */
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { IMicrophoneAudioTrack } from 'agora-rtc-sdk-ng';
+import AgoraRTC from 'agora-rtc-sdk-ng';
 import { useAgoraContext } from '@/components/providers/AgoraProvider';
-import AgoraRTC, { IAgoraRTCClient, IAgoraRTCRemoteUser } from 'agora-rtc-sdk-ng';
+import { PartyMember } from '@/lib/types/party';
+import { logger } from '@/lib/utils/logger';
+import { Mutex } from 'async-mutex';
 
-if (!process.env.NEXT_PUBLIC_AGORA_APP_ID) {
-  throw new Error('NEXT_PUBLIC_AGORA_APP_ID is required');
+const VOLUME_CHECK_INTERVAL = 100;
+const VOICE_JOIN_TIMEOUT = navigator.userAgent.includes('Firefox') ? 45000 : 30000; // 45 seconds for Firefox, 30 for others
+const VOICE_RETRY_DELAY = 2000; // 2 seconds between retries
+const MAX_VOICE_JOIN_RETRIES = 3;
+
+// Create a single mutex instance for all hook instances
+const voiceMutex = new Mutex();
+
+interface VoiceHookProps {
+  currentUser?: PartyMember | null;
+  partyState?: 'idle' | 'joining' | 'joined' | 'leaving';
 }
 
-const LOG_CONTEXT = { component: 'useVoice' };
+export function useVoice({ currentUser, partyState }: VoiceHookProps) {
+  const { getClient } = useAgoraContext();
+  const [micPermissionDenied, setMicPermissionDenied] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [volume, setVolume] = useState(0);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isJoining, setIsJoining] = useState(false);
+  const [lastError, setLastError] = useState<Error | null>(null);
+  const trackRef = useRef<IMicrophoneAudioTrack | null>(null);
+  const volumeIntervalRef = useRef<number | null>(null);
+  const retryCountRef = useRef(0);
+  const retryTimeoutRef = useRef<number | null>(null);
+  const joinTimeoutRef = useRef<number | null>(null);
+  const mountedRef = useRef(true);
 
-const AGORA_APP_ID = process.env.NEXT_PUBLIC_AGORA_APP_ID!;
-
-// Helper function to handle client subscription
-function subscribeToConnectionState(
-  client: IAgoraRTCClient,
-  onStateChange: (curState: string, prevState: string) => void
-) {
-  // Log initial state
-  logger.info('Current Agora connection state', {
-    ...LOG_CONTEXT,
-    action: 'connectionState',
-    metadata: { 
-      state: client.connectionState,
-      uid: client.uid,
-      channelName: client.channelName
-    }
+  // Add refs for state values that need to be accessed in async contexts
+  const stateRef = useRef({
+    isMuted: false,
+    isJoining: false,
+    micPermissionDenied: false
   });
 
-  // Define event handlers with proper types from Agora SDK
-  const handlePublishedUsers = (users: IAgoraRTCRemoteUser[]) => {
-    logger.debug('Published users in channel', {
-      ...LOG_CONTEXT,
-      action: 'publishedUsers',
-      metadata: { users }
-    });
-  };
-
-  const handleUserJoined = (user: IAgoraRTCRemoteUser) => {
-    logger.debug('User joined channel', {
-      ...LOG_CONTEXT,
-      action: 'userJoined',
-      metadata: { user }
-    });
-  };
-
-  const handleUserLeft = (user: IAgoraRTCRemoteUser) => {
-    logger.debug('User left channel', {
-      ...LOG_CONTEXT,
-      action: 'userLeft',
-      metadata: { user }
-    });
-  };
-
-  // Subscribe to events
-  client.on('connection-state-change', onStateChange);
-  client.on('user-published', handlePublishedUsers);
-  client.on('user-joined', handleUserJoined);
-  client.on('user-left', handleUserLeft);
-  
-  // Return cleanup function
-  return () => {
-    client.off('connection-state-change', onStateChange);
-    client.off('user-published', handlePublishedUsers);
-    client.off('user-joined', handleUserJoined);
-    client.off('user-left', handleUserLeft);
-  };
-}
-
-// Separate hook for handling connection state changes
-function useConnectionState(
-  client: IAgoraRTCClient | null,
-  isReconnecting: boolean,
-  onDisconnect: () => void
-): boolean {
-  const [isConnected, setIsConnected] = useState(false);
-  const lastStateRef = useRef<string | null>(null);
+  // Update state refs when state changes
+  useEffect(() => {
+    stateRef.current.isMuted = isMuted;
+  }, [isMuted]);
 
   useEffect(() => {
-    if (!client) {
-      setIsConnected(false);
-      return;
-    }
+    stateRef.current.isJoining = isJoining;
+  }, [isJoining]);
 
-    function handleConnectionStateChange(curState: string, prevState: string) {
-      lastStateRef.current = curState;
-      
-      // Safe access to client properties
-      const metadata = client ? {
-        curState, 
-        prevState,
-        uid: client.uid,
-        channelName: client.channelName,
-        localTracks: client.localTracks.length,
-        remoteUsers: client.remoteUsers.length
-      } : {
-        curState,
-        prevState
-      };
-      
-      logger.info('Agora connection state changed', {
-        ...LOG_CONTEXT,
-        action: 'connectionStateChange',
-        metadata
-      });
+  useEffect(() => {
+    stateRef.current.micPermissionDenied = micPermissionDenied;
+  }, [micPermissionDenied]);
 
-      setIsConnected(curState === 'CONNECTED');
-
-      // Handle disconnection scenarios
-      if (curState === 'DISCONNECTED' && prevState === 'CONNECTED') {
-        logger.warn('Agora connection disconnected', {
-          ...LOG_CONTEXT,
-          action: 'disconnect',
-          metadata: { 
-            isReconnecting,
-            lastState: lastStateRef.current,
-            uid: client?.uid
-          }
-        });
-        
-        if (!isReconnecting) {
-          onDisconnect();
+  // Add track event handlers with better error handling
+  const setupTrackListeners = useCallback((track: IMicrophoneAudioTrack) => {
+    const handleTrackEnded = () => {
+      logger.info('Track ended', {
+        action: 'track-ended',
+        metadata: {
+          trackId: track.getTrackId(),
+          reason: 'ended'
         }
+      });
+      if (mountedRef.current) {
+        setIsSpeaking(false);
       }
-    }
-
-    // Set initial state and log it
-    const initialState = client.connectionState;
-    setIsConnected(initialState === 'CONNECTED');
-    
-    logger.info('Initializing Agora connection state monitoring', {
-      ...LOG_CONTEXT,
-      action: 'initConnectionState',
-      metadata: { 
-        initialState,
-        uid: client.uid,
-        channelName: client.channelName
-      }
-    });
-
-    // Subscribe to state changes and get cleanup function
-    const cleanup = subscribeToConnectionState(client, handleConnectionStateChange);
-    
-    // Return cleanup function
-    return () => {
-      cleanup();
-      setIsConnected(false);
-      logger.debug('Cleaned up Agora connection state monitoring', LOG_CONTEXT);
     };
-  }, [client, isReconnecting, onDisconnect]);
 
-  return isConnected;
-}
-
-export function useVoice() {
-  const { currentUser, partyState } = usePartyState();
-  const { client, getClient, cleanupClient } = useAgoraContext();
-  const { track, setTrack } = useVoiceStore();
-  const [isMuted, setIsMuted] = useState(false);
-  const [micPermissionDenied, setMicPermissionDenied] = useState(false);
-  const [hasPermission, setHasPermission] = useState(false);
-  const [voiceToken, setVoiceToken] = useState<string | null>(null);
-  const joinAttemptedRef = useRef(false);
-  const permissionRequestInProgressRef = useRef(false);
-  const [isReconnecting, setIsReconnecting] = useState(false);
-  const reconnectAttemptRef = useRef(0);
-  const MAX_RECONNECT_ATTEMPTS = 3;
-  const RECONNECT_DELAY = 1000;
-
-  // Memoize createAudioTrack to avoid recreating it on every render
-  const createAudioTrack = useCallback(async () => {
-    try {
-      // Request permissions first to handle denials gracefully
-      await navigator.mediaDevices.getUserMedia({ audio: true });
-      
-      const audioTrack = await AgoraRTC.createMicrophoneAudioTrack({
-        // Optimize for voice chat
-        encoderConfig: {
-          sampleRate: 48000,
-          stereo: false,
-          bitrate: 64, // Lower bitrate optimized for voice
-        },
-        // Enable echo cancellation and noise suppression
-        AEC: true,
-        ANS: true,
-        // Automatically manage audio routing
-        bypassWebAudio: false
+    const handleTrackUpdated = () => {
+      logger.debug('Track updated', {
+        action: 'track-updated',
+        metadata: {
+          trackId: track.getTrackId(),
+          enabled: track.enabled,
+          muted: track.muted
+        }
       });
+    };
 
-      // Monitor track state
-      audioTrack.on("track-ended", () => {
-        logger.warn('Audio track ended unexpectedly', {
-          ...LOG_CONTEXT,
-          action: 'trackEnded',
+    track.on('track-ended', handleTrackEnded);
+    track.on('track-updated', handleTrackUpdated);
+
+    return () => {
+      track.off('track-ended', handleTrackEnded);
+      track.off('track-updated', handleTrackUpdated);
+    };
+  }, []);
+
+  // Enhanced track management with better cleanup
+  const setTrack = useCallback(async (newTrack: IMicrophoneAudioTrack | null) => {
+    const currentTrack = trackRef.current;
+    if (currentTrack && currentTrack !== newTrack) {
+      try {
+        logger.debug('Cleaning up existing track', {
+          action: 'setTrack',
           metadata: {
-            trackId: audioTrack.getTrackId(),
-            muted: audioTrack.muted
+            trackId: currentTrack.getTrackId(),
+            enabled: currentTrack.enabled
           }
         });
-      });
-
-      logger.debug('Audio track created successfully', {
-        ...LOG_CONTEXT,
-        action: 'createAudioTrack',
-        metadata: {
-          trackId: audioTrack.getTrackId(),
-          muted: audioTrack.muted
-        }
-      });
-
-      return audioTrack;
-    } catch (error) {
-      logger.error('Failed to create audio track', {
-        ...LOG_CONTEXT,
-        action: 'createAudioTrackError',
-        metadata: { 
-          error: error instanceof Error ? {
-            name: error.name,
-            message: error.message,
-            stack: error.stack
-          } : error
-        }
-      });
-      throw error;
-    }
-  }, []); // No dependencies needed as it doesn't use any external values
-
-  // Update cleanup to include all dependencies
-  const cleanup = useCallback(async () => {
-    const startTime = new Date().toISOString();
-    logger.info('Starting voice cleanup', {
-      ...LOG_CONTEXT,
-      action: 'cleanup',
-      metadata: {
-        startTime,
-        hasTrack: !!track,
-        hasClient: !!client,
-        clientState: client?.connectionState,
-        joinAttempted: joinAttemptedRef.current
-      }
-    });
-
-    try {
-      // Stop and close track first
-      if (track) {
-        logger.debug('Stopping and closing audio track', {
-          ...LOG_CONTEXT,
-          action: 'cleanup_track',
-          metadata: {
-            trackId: track.getTrackId(),
-            timestamp: startTime
-          }
-        });
-        track.stop();
-        track.close();
-        setTrack(null);
-      }
-      
-      // Leave channel if connected
-      if (client && client.connectionState !== 'DISCONNECTED') {
-        logger.debug('Leaving voice channel', {
-          ...LOG_CONTEXT,
-          action: 'cleanup_leave',
-          metadata: {
-            connectionState: client.connectionState,
-            channelName: client.channelName,
-            timestamp: startTime
-          }
-        });
-        await client.leave();
-      }
-      
-      // Clean up client
-      await cleanupClient();
-      joinAttemptedRef.current = false;
-      setMicPermissionDenied(false);
-      reconnectAttemptRef.current = 0;
-      
-      logger.info('Successfully cleaned up voice connection', {
-        ...LOG_CONTEXT,
-        action: 'cleanup_success',
-        metadata: {
-          hadTrack: !!track,
-          hadClient: !!client,
-          duration: new Date().getTime() - new Date(startTime).getTime(),
-          timestamp: new Date().toISOString()
-        }
-      });
-    } catch (error) {
-      logger.error('Failed to cleanup voice connection', {
-        ...LOG_CONTEXT,
-        action: 'cleanup_error',
-        metadata: { 
-          error,
-          hadTrack: !!track,
-          hadClient: !!client,
-          duration: new Date().getTime() - new Date(startTime).getTime(),
-          timestamp: new Date().toISOString()
-        }
-      });
-    }
-  }, [track, client, setTrack, cleanupClient]);
-
-  // Update leaveVoice to include client dependency
-  const leaveVoice = useCallback(async () => {
-    try {
-      if (client) {
-        await client.leave();
-      }
-      setTrack(null);
-      logger.info('Successfully left voice', LOG_CONTEXT);
-    } catch (error) {
-      logger.error('Failed to leave voice', {
-        ...LOG_CONTEXT,
-        action: 'leaveVoice',
-        metadata: { error }
-      });
-      throw error;
-    }
-  }, [client, setTrack]);
-
-  // Memoize joinVoice to include all its dependencies
-  const joinVoice = useCallback(async () => {
-    // Don't throw if no user ID, just return
-    if (!currentUser?.id) {
-      logger.debug('Cannot join voice - no user ID', {
-        ...LOG_CONTEXT,
-        action: 'joinVoiceNoUser',
-        metadata: { currentUser }
-      });
-      return;
-    }
-
-    if (!voiceToken) {
-      logger.debug('Cannot join voice - no token', {
-        ...LOG_CONTEXT,
-        action: 'joinVoiceNoToken'
-      });
-      return;
-    }
-
-    logger.info('Attempting to join voice', {
-      ...LOG_CONTEXT,
-      action: 'joinVoiceAttempt',
-      metadata: {
-        userId: currentUser.id,
-        hasPermission,
-        micPermissionDenied,
-        hasToken: !!voiceToken
-      }
-    });
-
-    try {
-      const agoraClient = await getClient();
-      if (!agoraClient) {
-        throw new Error('Failed to initialize Agora client');
-      }
-
-      logger.info('Joining Agora channel', {
-        ...LOG_CONTEXT,
-        action: 'joiningChannel',
-        metadata: {
-          appId: AGORA_APP_ID,
-          channel: 'main',
-          uid: currentUser.id
-        }
-      });
-
-      await agoraClient.join(AGORA_APP_ID, 'main', voiceToken, currentUser.id.toString());
-
-      const audioTrack = await createAudioTrack();
-      
-      logger.info('Publishing audio track', {
-        ...LOG_CONTEXT,
-        action: 'publishTrack',
-        metadata: {
-          trackId: audioTrack.getTrackId()
-        }
-      });
-
-      await agoraClient.publish(audioTrack);
-
-      logger.info('Successfully joined voice', {
-        ...LOG_CONTEXT, 
-        action: 'joinVoiceSuccess',
-        metadata: {
-          userId: currentUser.id,
-          channelName: 'main',
-          trackId: audioTrack.getTrackId()
-        }
-      });
-
-      return audioTrack;
-    } catch (error) {
-      logger.error('Failed to join voice', {
-        ...LOG_CONTEXT,
-        action: 'joinVoiceError',
-        metadata: {
-          error: error instanceof Error ? {
-            name: error.name,
-            message: error.message,
-            stack: error.stack
-          } : error,
-          userId: currentUser.id
-        }
-      });
-      // Clear token on join error to force re-fetch
-      setVoiceToken(null);
-      throw error;
-    }
-  }, [currentUser, voiceToken, hasPermission, micPermissionDenied, getClient, createAudioTrack, setVoiceToken]);
-
-  // Enhanced reconnection logic
-  const attemptReconnect = useCallback(async () => {
-    if (reconnectAttemptRef.current >= MAX_RECONNECT_ATTEMPTS) {
-      logger.error('Max reconnection attempts reached', {
-        ...LOG_CONTEXT,
-        action: 'reconnect',
-        metadata: { attempts: reconnectAttemptRef.current }
-      });
-      setIsReconnecting(false);
-      return;
-    }
-
-    try {
-      setIsReconnecting(true);
-      reconnectAttemptRef.current++;
-
-      // Clean up existing connection
-      await cleanup();
-
-      // Wait before attempting reconnect
-      await new Promise(resolve => setTimeout(resolve, RECONNECT_DELAY));
-
-      // Attempt to rejoin
-      await joinVoice();
-      
-      setIsReconnecting(false);
-      reconnectAttemptRef.current = 0;
-      
-      logger.info('Successfully reconnected to voice', {
-        ...LOG_CONTEXT,
-        action: 'reconnect',
-        metadata: { attempts: reconnectAttemptRef.current }
-      });
-    } catch (error) {
-      logger.error('Failed to reconnect', {
-        ...LOG_CONTEXT,
-        action: 'reconnect',
-        metadata: { error, attempts: reconnectAttemptRef.current }
-      });
-      
-      if (reconnectAttemptRef.current < MAX_RECONNECT_ATTEMPTS) {
-        attemptReconnect();
-      } else {
-        setIsReconnecting(false);
-      }
-    }
-  }, [cleanup, joinVoice]);
-
-  // Use the connection state hook
-  const isConnected = useConnectionState(client, isReconnecting, attemptReconnect);
-
-  // Wrap fetchVoiceToken in useCallback
-  const fetchVoiceToken = useCallback(async () => {
-    logger.info('Fetching voice token', {
-      ...LOG_CONTEXT,
-      action: 'fetchToken',
-      metadata: { 
-        currentUser,
-        channelName: 'main',
-        conditions: {
-          hasUser: !!currentUser?.id,
-          partyState,
-          hasPermission,
-          isConnected
-        }
-      }
-    });
-
-    try {
-      const response = await fetch('/api/agora/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          channelName: 'main',
-          uid: currentUser?.id
-        })
-      });
-
-      logger.debug('Token fetch response received', {
-        ...LOG_CONTEXT,
-        action: 'fetchTokenResponse',
-        metadata: {
-          status: response.status,
-          ok: response.ok,
-          statusText: response.statusText,
-          headers: Object.fromEntries(response.headers.entries())
-        }
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        logger.error('Failed to fetch token', {
-          ...LOG_CONTEXT,
-          action: 'fetchTokenError',
-          metadata: {
-            status: response.status,
-            statusText: response.statusText,
-            errorText,
-            currentUser,
-            conditions: {
-              hasUser: !!currentUser?.id,
-              partyState,
-              hasPermission,
-              isConnected
-            }
-          }
-        });
-        throw new Error(`Failed to fetch token: ${response.status} ${response.statusText} - ${errorText}`);
-      }
-
-      const { token } = await response.json();
-      logger.info('Successfully fetched token', {
-        ...LOG_CONTEXT,
-        action: 'fetchTokenSuccess',
-        metadata: {
-          currentUser,
-          channelName: 'main',
-          tokenPreview: token.slice(0, 8) + '...',
-          conditions: {
-            hasUser: !!currentUser?.id,
-            partyState,
-            hasPermission,
-            isConnected
-          }
-        }
-      });
-      return token;
-    } catch (error) {
-      logger.error('Token fetch failed', {
-        ...LOG_CONTEXT,
-        action: 'fetchTokenFailed',
-        metadata: {
-          error: error instanceof Error ? {
-            name: error.name,
-            message: error.message,
-            stack: error.stack
-          } : error,
-          currentUser,
-          conditions: {
-            hasUser: !!currentUser?.id,
-            partyState,
-            hasPermission,
-            isConnected
-          }
-        }
-      });
-      throw error;
-    }
-  }, [currentUser, partyState, hasPermission, isConnected]);
-
-  // Update the token fetch effect to use the memoized function
-  useEffect(() => {
-    if (currentUser?.id && hasPermission && !voiceToken) {
-      logger.info('Pre-fetching voice token', {
-        ...LOG_CONTEXT,
-        action: 'preFetchToken',
-        metadata: { 
-          userId: currentUser.id,
-          hasPermission,
-          partyState,
-          isConnected,
-          micPermissionDenied,
-          conditions: {
-            hasUser: !!currentUser?.id,
-            hasPermission,
-            noToken: !voiceToken,
-            notDenied: !micPermissionDenied,
-            notConnected: !isConnected,
-            isJoinedOrJoining: partyState === 'joined' || partyState === 'joining'
-          }
-        }
-      });
-
-      void fetchVoiceToken().then(token => {
-        logger.info('Successfully pre-fetched voice token', {
-          ...LOG_CONTEXT,
-          action: 'tokenFetched',
-          metadata: {
-            token: token.slice(0, 8) + '...',
-            partyState,
-            isConnected,
-            micPermissionDenied,
-            conditions: {
-              hasUser: !!currentUser?.id,
-              hasPermission,
-              notDenied: !micPermissionDenied,
-              notConnected: !isConnected,
-              isJoinedOrJoining: partyState === 'joined' || partyState === 'joining'
-            }
-          }
-        });
-        setVoiceToken(token);
-      }).catch(error => {
-        logger.error('Failed to pre-fetch voice token', {
-          ...LOG_CONTEXT,
-          action: 'tokenFetchError',
+        currentTrack.removeAllListeners();
+        await currentTrack.setEnabled(false);
+        currentTrack.close();
+      } catch (err) {
+        logger.error('Error closing track', {
+          action: 'setTrack',
           metadata: { 
-            error,
-            conditions: {
-              hasUser: !!currentUser?.id,
-              hasPermission,
-              noToken: !voiceToken,
-              notDenied: !micPermissionDenied,
-              notConnected: !isConnected,
-              isJoinedOrJoining: partyState === 'joined' || partyState === 'joining'
-            }
+            error: err,
+            trackId: currentTrack.getTrackId()
           }
         });
-      });
+      }
+    }
+
+    if (newTrack && mountedRef.current) {
+      try {
+        logger.debug('Initializing new track', {
+          action: 'setTrack',
+          metadata: {
+            trackId: newTrack.getTrackId(),
+            label: newTrack.getTrackLabel()
+          }
+        });
+        const cleanup = setupTrackListeners(newTrack);
+        // Use ref state instead of closure state
+        await newTrack.setEnabled(!stateRef.current.isMuted);
+        trackRef.current = newTrack;
+        return cleanup;
+      } catch (err) {
+        logger.error('Error initializing track', {
+          action: 'setTrack',
+          metadata: { 
+            error: err,
+            trackId: newTrack.getTrackId()
+          }
+        });
+        if (mountedRef.current) {
+          setLastError(err instanceof Error ? err : new Error(String(err)));
+        }
+      }
     } else {
-      logger.debug('Skipping token fetch', {
-        ...LOG_CONTEXT,
-        action: 'skipTokenFetch',
-        metadata: {
-          hasUser: !!currentUser?.id,
-          hasPermission,
-          hasToken: !!voiceToken,
-          partyState,
-          conditions: {
-            hasUser: !!currentUser?.id,
-            hasPermission,
-            noToken: !voiceToken,
-            notDenied: !micPermissionDenied,
-            notConnected: !isConnected,
-            isJoinedOrJoining: partyState === 'joined' || partyState === 'joining'
-          }
-        }
-      });
+      trackRef.current = null;
     }
-  }, [currentUser?.id, hasPermission, voiceToken, fetchVoiceToken, partyState, isConnected, micPermissionDenied]);
+  }, [setupTrackListeners]); // Remove isMuted from dependencies
 
-  // Check initial microphone permission state
-  useEffect(() => {
-    async function checkInitialPermissionState() {
-      try {
-        // Query the browser's permission state
-        const permissionStatus = await navigator.permissions.query({ name: 'microphone' as PermissionName });
-        
-        logger.info('Checking initial microphone permission state', {
-          ...LOG_CONTEXT,
-          action: 'checkInitialPermission',
-          metadata: { 
-            state: permissionStatus.state,
-            partyState,
-            userId: currentUser?.id
-          }
-        });
-
-        // Update our state based on browser's state
-        if (permissionStatus.state === 'granted') {
-          setHasPermission(true);
-          setMicPermissionDenied(false);
-        } else if (permissionStatus.state === 'denied') {
-          setHasPermission(false);
-          setMicPermissionDenied(true);
-        }
-
-        // Listen for permission changes
-        permissionStatus.addEventListener('change', () => {
-          logger.info('Microphone permission state changed', {
-            ...LOG_CONTEXT,
-            action: 'permissionStateChange',
-            metadata: { 
-              newState: permissionStatus.state,
-              partyState,
-              userId: currentUser?.id
-            }
-          });
-
-          if (permissionStatus.state === 'granted') {
-            setHasPermission(true);
-            setMicPermissionDenied(false);
-          } else if (permissionStatus.state === 'denied') {
-            setHasPermission(false);
-            setMicPermissionDenied(true);
-          }
-        });
-      } catch (error) {
-        logger.error('Failed to check initial microphone permission', {
-          ...LOG_CONTEXT,
-          action: 'checkInitialPermissionError',
-          metadata: { error }
-        });
-      }
-    }
-
-    void checkInitialPermissionState();
-  }, [currentUser?.id, partyState]);
-
-  // Handle microphone permission separately from join
-  const requestMicrophonePermission = useCallback(async () => {
-    if (hasPermission) {
-      logger.debug('Already have microphone permission', {
-        ...LOG_CONTEXT,
-        action: 'requestPermission',
-        metadata: { 
-          hasPermission, 
-          micPermissionDenied,
-          currentUser
-        }
-      });
-      return;
-    }
-
-    // Prevent multiple simultaneous requests
-    if (permissionRequestInProgressRef.current) {
-      logger.debug('Permission request already in progress', {
-        ...LOG_CONTEXT,
-        action: 'requestPermission',
-        metadata: { 
-          hasPermission, 
-          micPermissionDenied,
-          currentUser
-        }
-      });
-      return;
-    }
-
+  // Enhanced cleanup with timeouts
+  const cleanup = useCallback(async () => {
+    const release = await voiceMutex.acquire();
     try {
-      permissionRequestInProgressRef.current = true;
-      logger.info('Requesting microphone permission', {
-        ...LOG_CONTEXT,
-        action: 'requestPermission',
-        metadata: { 
-          hasPermission, 
-          micPermissionDenied,
-          partyState,
-          currentUser
-        }
-      });
-
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach(track => track.stop());
-      
-      // Update permission states
-      setMicPermissionDenied(false);
-      setHasPermission(true);
-      
-      logger.info('Microphone permission granted', {
-        ...LOG_CONTEXT,
-        action: 'permissionGranted',
-        metadata: { 
-          partyState,
-          currentUser,
-          isConnected
-        }
-      });
-    } catch (error) {
-      logger.error('Failed to get microphone permission', {
-        ...LOG_CONTEXT,
-        action: 'permissionDenied',
-        metadata: { 
-          error,
-          partyState,
-          currentUser
-        }
-      });
-      setMicPermissionDenied(true);
-      throw error;
-    } finally {
-      permissionRequestInProgressRef.current = false;
-    }
-  }, [hasPermission, micPermissionDenied, partyState, currentUser, isConnected]);
-
-  // Handle token expiration
-  useEffect(() => {
-    if (!client) return;
-
-    const handleTokenExpiring = async () => {
-      try {
-        logger.debug('Token expiring, requesting new token', LOG_CONTEXT);
-
-        // Request new token from your server
-        const response = await fetch('/api/agora/token', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            channelName: 'main',
-            uid: currentUser?.id ? parseInt(currentUser.id.replace(/-/g, '').slice(-8), 16) % 1000000 : undefined
-          })
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to fetch token');
-        }
-
-        const { token } = await response.json();
-        await client.renewToken(token);
-
-        logger.info('Successfully renewed token', LOG_CONTEXT);
-      } catch (error) {
-        logger.error('Failed to renew token', {
-          ...LOG_CONTEXT,
-          action: 'handleTokenExpiring',
-          metadata: { error }
-        });
-      }
-    };
-
-    client.on('token-privilege-will-expire', handleTokenExpiring);
-    return () => {
-      client.off('token-privilege-will-expire', handleTokenExpiring);
-    };
-  }, [client, currentUser?.id]);
-
-  // Handle party state changes
-  useEffect(() => {
-    const shouldJoinVoice = (partyState === 'joined' || partyState === 'joining') && 
-                           hasPermission && 
-                           !isConnected && 
-                           !micPermissionDenied && 
-                           !!currentUser?.id &&
-                           !!voiceToken;
-
-    logger.info('Party state change effect triggered', {
-      ...LOG_CONTEXT,
-      action: 'partyStateChangeEffect',
-      metadata: {
-        partyState,
-        hasPermission,
-        micPermissionDenied,
-        isConnected,
-        userId: currentUser?.id,
-        joinAttempted: joinAttemptedRef.current,
-        hasToken: !!voiceToken,
-        shouldJoinVoice,
-        conditions: {
-          isJoinedOrJoining: partyState === 'joined' || partyState === 'joining',
-          hasPermission,
-          notConnected: !isConnected,
-          notDenied: !micPermissionDenied,
-          hasUser: !!currentUser?.id,
-          hasToken: !!voiceToken,
-          notAttempted: !joinAttemptedRef.current
-        }
-      }
-    });
-
-    // If we're leaving, cleanup voice immediately
-    if (partyState === 'leaving') {
-      // Reset flags before cleanup
-      joinAttemptedRef.current = false;
-      setMicPermissionDenied(false);
-      setHasPermission(false);
-      setVoiceToken(null);
-      
-      // Call cleanup directly
-      cleanup();
-      return;
-    }
-
-    // If we're joined/joining and have permission but not connected, attempt to join voice
-    if (shouldJoinVoice && !joinAttemptedRef.current) {
-      logger.info('Attempting to join voice after permission granted', {
-        ...LOG_CONTEXT,
-        action: 'joinAfterPermission',
-        metadata: {
-          partyState,
-          hasPermission,
-          micPermissionDenied,
-          isConnected,
-          userId: currentUser?.id,
-          joinAttempted: joinAttemptedRef.current,
-          hasToken: !!voiceToken,
-          conditions: {
-            isJoinedOrJoining: partyState === 'joined' || partyState === 'joining',
-            hasPermission,
-            notConnected: !isConnected,
-            notDenied: !micPermissionDenied,
-            hasUser: !!currentUser?.id,
-            hasToken: !!voiceToken,
-            notAttempted: !joinAttemptedRef.current
-          }
-        }
-      });
-
-      // Set join attempted before the async call
-      joinAttemptedRef.current = true;
-      
-      // Attempt to join voice
-      void joinVoice().then(audioTrack => {
-        if (audioTrack) {
-          setTrack(audioTrack);
-          logger.info('Successfully set audio track after join', {
-            ...LOG_CONTEXT,
-            action: 'setTrackAfterJoin',
-            metadata: {
-              trackId: audioTrack.getTrackId(),
-              muted: audioTrack.muted,
-              partyState,
-              conditions: {
-                hasUser: !!currentUser?.id,
-                hasPermission,
-                notDenied: !micPermissionDenied,
-                notConnected: !isConnected,
-                hasToken: !!voiceToken
-              }
-            }
-          });
-        }
-      }).catch(error => {
-        // Reset join attempted on error to allow retry
-        joinAttemptedRef.current = false;
-        logger.error('Failed to join voice after permission granted', {
-          ...LOG_CONTEXT,
-          action: 'joinAfterPermissionError',
-          metadata: { 
-            error, 
-            partyState,
-            conditions: {
-              hasUser: !!currentUser?.id,
-              hasPermission,
-              notDenied: !micPermissionDenied,
-              notConnected: !isConnected,
-              hasToken: !!voiceToken
-            }
-          }
-        });
-      });
-      return;
-    }
-
-    // If we don't have permission and haven't been denied, request it
-    if ((partyState === 'joined' || partyState === 'joining') && !hasPermission && !micPermissionDenied && !permissionRequestInProgressRef.current) {
-      logger.info('Requesting microphone permission after join', {
-        ...LOG_CONTEXT,
-        action: 'requestPermissionAfterJoin',
-        metadata: {
-          partyState,
-          hasPermission,
-          micPermissionDenied,
-          isConnected,
-          userId: currentUser?.id
-        }
-      });
-      void requestMicrophonePermission().catch(error => {
-        logger.error('Failed to request microphone permission after join', {
-          ...LOG_CONTEXT,
-          action: 'requestPermissionAfterJoinError',
-          metadata: { error, partyState }
-        });
-      });
-    }
-  }, [partyState, hasPermission, micPermissionDenied, isConnected, currentUser?.id, cleanup, joinVoice, requestMicrophonePermission, setTrack, voiceToken]);
-
-  // Separate effect for debug logging
-  useEffect(() => {
-    if (process.env.NODE_ENV !== 'production') {
-      const now = new Date().toISOString();
-      logger.debug('Party state changed in useVoice', {
-        ...LOG_CONTEXT,
-        action: 'partyStateChange',
-        metadata: {
-          partyState,
-          hasPermission,
-          micPermissionDenied,
-          joinAttempted: joinAttemptedRef.current,
-          isConnected,
-          timestamp: now,
-          userId: currentUser?.id
-        }
-      });
-
-      if (partyState === 'leaving') {
-        logger.info('Party is leaving, cleaning up voice', {
-          ...LOG_CONTEXT,
-          action: 'partyLeaving',
-          metadata: {
-            hasPermission,
-            micPermissionDenied,
-            joinAttempted: joinAttemptedRef.current,
-            isConnected,
-            userId: currentUser?.id,
-            timestamp: now,
-          }
-        });
-      }
-
-      if (!hasPermission && !micPermissionDenied && !permissionRequestInProgressRef.current) {
-        logger.info('Requesting microphone permission', {
-          ...LOG_CONTEXT,
-          action: 'requestPermission',
-          metadata: {
-            partyState,
-            userId: currentUser?.id,
-            timestamp: now
-          }
-        });
-      }
-    }
-  }, [partyState, hasPermission, micPermissionDenied, isConnected, currentUser?.id]);
-
-  // Update toggleMute to include all dependencies
-  const toggleMute = useCallback(async () => {
-    if (!track) {
-      logger.debug('No track to mute - attempting to join voice', {
-        ...LOG_CONTEXT,
-        action: 'toggleMute',
-        metadata: {
-          hasTrack: false,
-          currentUser,
-          conditions: {
-            hasUser: !!currentUser?.id
-          }
-        }
-      });
-      if (!currentUser?.id) {
-        logger.error('Cannot join voice - no user ID', {
-          ...LOG_CONTEXT,
-          action: 'toggleMuteError',
-          metadata: { currentUser }
+      // Check if already cleaning up
+      if (!mountedRef.current) {
+        logger.debug('Skipping cleanup - component unmounted', {
+          action: 'cleanup'
         });
         return;
       }
-      await joinVoice();
+
+      logger.debug('Starting voice cleanup', {
+        action: 'cleanup',
+        metadata: { 
+          hasTrack: !!trackRef.current,
+          isHotReload: !!(window as any).__NEXT_DATA__?.buildId
+        }
+      });
+
+      // Clear all intervals/timeouts atomically
+      const timeouts = [
+        volumeIntervalRef,
+        retryTimeoutRef,
+        joinTimeoutRef
+      ];
+      
+      timeouts.forEach(ref => {
+        if (ref.current) {
+          window.clearTimeout(ref.current);
+          ref.current = null;
+        }
+      });
+
+      // Ensure track cleanup happens before client cleanup
+      await setTrack(null);
+
+      try {
+        const client = await getClient();
+        const connectionState = client.connectionState;
+        
+        if (connectionState !== 'DISCONNECTED') {
+          logger.debug('Leaving voice channel', {
+            action: 'cleanup',
+            metadata: { 
+              connectionState,
+              channelName: client.channelName 
+            }
+          });
+          await client.leave();
+        }
+      } catch (err) {
+        // Only log error if not during hot reload
+        if (!((window as any).__NEXT_DATA__?.buildId)) {
+          logger.error('Error leaving voice channel', {
+            action: 'cleanup',
+            metadata: { error: err }
+          });
+        }
+      }
+
+      if (mountedRef.current) {
+        setIsMuted(false);
+        setVolume(0);
+        setIsSpeaking(false);
+        setIsJoining(false);
+        setLastError(null);
+        retryCountRef.current = 0;
+      }
+    } catch (err) {
+      logger.error('Error during cleanup', {
+        action: 'cleanup',
+        metadata: { error: err }
+      });
+    } finally {
+      release();
+    }
+  }, [getClient, setTrack]);
+
+  // Enhanced microphone permission request with better error handling
+  const requestMicrophonePermission = useCallback(async () => {
+    const release = await voiceMutex.acquire();
+    try {
+      logger.debug('Starting microphone permission request', {
+        action: 'requestMicrophonePermission',
+        metadata: {
+          userAgent: navigator.userAgent,
+          timeout: VOICE_JOIN_TIMEOUT
+        }
+      });
+
+      // Check permissions API first to determine if blocked
+      if (navigator.permissions && navigator.permissions.query) {
+        try {
+          const result = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+          if (result.state === 'denied') {
+            logger.info('Microphone permission is blocked in browser settings', {
+              action: 'requestMicrophonePermission',
+              metadata: { state: result.state }
+            });
+            if (mountedRef.current) {
+              setMicPermissionDenied(true);
+            }
+            // Show Firefox-specific instructions
+            window.alert(
+              'Microphone access is blocked. You must change browser settings to enable it:\n\n' +
+              '1. Click the lock icon in the address bar\n' +
+              '2. Click "Connection Secure"\n' +
+              '3. Click "More Information"\n' +
+              '4. Go to "Permissions" tab\n' +
+              '5. Find "Use the Microphone" and remove the setting or change to "Allow"\n' +
+              '6. Return to this page and click "Re-request Mic" again\n\n' +
+              'Note: Simply refreshing the page will not work until you change this setting.'
+            );
+            return false;
+          }
+        } catch (permErr) {
+          logger.warn('Failed to query microphone permission state', {
+            action: 'requestMicrophonePermission',
+            metadata: { error: permErr }
+          });
+        }
+      }
+
+      // Try to get microphone access
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        });
+        
+        logger.debug('Successfully got microphone stream', {
+          action: 'requestMicrophonePermission',
+          metadata: { 
+            tracks: stream.getAudioTracks().length,
+            trackSettings: stream.getAudioTracks()[0]?.getSettings(),
+            trackLabels: stream.getAudioTracks().map(t => t.label)
+          }
+        });
+
+        // Clean up test stream
+        stream.getTracks().forEach(track => {
+          track.stop();
+          logger.debug('Stopped test track', {
+            action: 'requestMicrophonePermission',
+            metadata: { 
+              trackId: track.id,
+              trackLabel: track.label,
+              trackEnabled: track.enabled
+            }
+          });
+        });
+        
+        if (mountedRef.current) {
+          setMicPermissionDenied(false);
+        }
+        return true;
+      } catch (err) {
+        const error = err as Error;
+        const isPermissionDenied = error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError';
+        
+        if (isPermissionDenied) {
+          logger.info('User denied microphone permission', {
+            action: 'requestMicrophonePermission',
+            metadata: { 
+              name: error.name,
+              message: error.message
+            }
+          });
+          
+          if (mountedRef.current) {
+            setMicPermissionDenied(true);
+          }
+          return false;
+        }
+
+        logger.error('Failed to get microphone stream', {
+          action: 'requestMicrophonePermission',
+          metadata: { 
+            name: error.name,
+            message: error.message,
+            stack: error.stack
+          }
+        });
+        throw error;
+      }
+    } finally {
+      release();
+    }
+  }, []);
+
+  // Enhanced voice join with timeouts and better error handling
+  const joinVoice = useCallback(async () => {
+    // Capture current state values before starting
+    const userId = currentUser?.id;
+    const currentPartyState = partyState;
+
+    // Verify app ID is available first
+    const appId = process.env.NEXT_PUBLIC_AGORA_APP_ID;
+    if (!appId) {
+      logger.error('Voice join failed - Agora App ID not configured', {
+        action: 'joinVoice'
+      });
+      if (mountedRef.current) {
+        setLastError(new Error('Agora App ID not configured'));
+      }
       return;
     }
 
-    const newMuted = !isMuted;
-    track.setEnabled(!newMuted);
-    setIsMuted(newMuted);
-    logger.debug('Toggled mute state', {
-      ...LOG_CONTEXT,
-      action: 'toggleMute',
-      metadata: {
-        hasTrack: true,
-        trackId: track.getTrackId(),
-        newMuted,
-        currentUser
+    // Set join timeout
+    if (joinTimeoutRef.current) {
+      window.clearTimeout(joinTimeoutRef.current);
+    }
+    
+    let joinPromiseResolve: () => void = () => {}; // Initialize with no-op
+    const joinTimeout = new Promise<void>((resolve, reject) => {
+      joinPromiseResolve = resolve;
+      joinTimeoutRef.current = window.setTimeout(() => {
+        reject(new Error('Voice join timed out'));
+      }, VOICE_JOIN_TIMEOUT);
+    });
+
+    // Acquire mutex for voice join
+    logger.debug('Attempting to acquire voice mutex', {
+      action: 'joinVoice',
+      metadata: { 
+        userId, 
+        partyState: currentPartyState,
+        isJoining: stateRef.current.isJoining 
       }
     });
-  }, [track, isMuted, joinVoice, currentUser]);
 
-  // Cleanup on unmount
+    const release = await voiceMutex.acquire();
+    try {
+      // Double check state hasn't changed while waiting for mutex
+      if (!mountedRef.current || partyState !== currentPartyState) {
+        logger.debug('State changed while waiting for mutex', {
+          action: 'joinVoice',
+          metadata: {
+            mounted: mountedRef.current,
+            expectedState: currentPartyState,
+            actualState: partyState
+          }
+        });
+        return;
+      }
+
+      if (mountedRef.current) {
+        setIsJoining(true);
+      }
+
+      // Check requirements using captured values first
+      if (!userId) {
+        logger.debug('Voice join failed - no user ID', {
+          action: 'joinVoice',
+          metadata: { userId }
+        });
+        if (mountedRef.current) {
+          setIsJoining(false);
+        }
+        return;
+      }
+
+      if (currentPartyState !== 'joined') {
+        logger.debug('Voice join failed - party not joined', {
+          action: 'joinVoice',
+          metadata: { partyState: currentPartyState }
+        });
+        if (mountedRef.current) {
+          setIsJoining(false);
+        }
+        return;
+      }
+
+      // Skip microphone permission check if already granted
+      if (stateRef.current.micPermissionDenied) {
+        logger.debug('Voice join failed - microphone permission denied', {
+          action: 'joinVoice'
+        });
+        if (mountedRef.current) {
+          setIsJoining(false);
+        }
+        return;
+      }
+
+      // Reset retry count since requirements are met
+      retryCountRef.current = 0;
+      if (retryTimeoutRef.current) {
+        window.clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
+      }
+
+      // Clean up any existing resources
+      logger.debug('Cleaning up existing resources', {
+        action: 'joinVoice'
+      });
+      await cleanup();
+      
+      // Get initialized client
+      logger.debug('Getting Agora client', {
+        action: 'joinVoice'
+      });
+      const client = await getClient();
+      logger.debug('Got Agora client', {
+        action: 'joinVoice',
+        metadata: { 
+          clientState: client.connectionState,
+          clientId: client.uid,
+          hasAppId: !!appId
+        }
+      });
+
+      // Convert string UUID to numeric UID for Agora
+      const numericUid = parseInt(userId.replace(/[^0-9]/g, '').slice(0, 10));
+      
+      // Generate token
+      logger.debug('Starting token generation request', {
+        action: 'joinVoice',
+        metadata: { 
+          url: '/api/agora/token',
+          channelName: 'main',
+          numericUid,
+          hasAppId: !!appId,
+          clientState: client.connectionState
+        }
+      });
+
+      const tokenResponse = await fetch('/api/agora/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          channelName: 'main',
+          uid: numericUid,
+        }),
+      }).catch(err => {
+        logger.error('Token request network error', {
+          action: 'joinVoice',
+          metadata: { error: err }
+        });
+        throw err;
+      });
+
+      logger.debug('Token response received', {
+        action: 'joinVoice',
+        metadata: { 
+          status: tokenResponse.status,
+          ok: tokenResponse.ok,
+          statusText: tokenResponse.statusText,
+          headers: Object.fromEntries(tokenResponse.headers.entries())
+        }
+      });
+
+      if (!tokenResponse.ok) {
+        const responseText = await tokenResponse.text().catch(() => 'Failed to get response text');
+        logger.error('Failed to generate token', {
+          action: 'joinVoice',
+          metadata: { 
+            status: tokenResponse.status,
+            numericUid,
+            responseText,
+            headers: Object.fromEntries(tokenResponse.headers.entries())
+          }
+        });
+        throw new Error(`Failed to generate token: ${responseText}`);
+      }
+
+      const { token } = await tokenResponse.json().catch(err => {
+        logger.error('Failed to parse token response', {
+          action: 'joinVoice',
+          metadata: { error: err }
+        });
+        throw err;
+      });
+      
+      // Join channel with token and numeric UID
+      logger.debug('Joining Agora channel', {
+        action: 'joinVoice',
+        metadata: { 
+          userId, 
+          numericUid, 
+          appId,
+          clientState: client.connectionState,
+          tokenLength: token.length
+        }
+      });
+
+      // Race the join operation against the timeout
+      await Promise.race([
+        client.join(appId, 'main', token, numericUid),
+        joinTimeout
+      ]).catch(err => {
+        logger.error('Failed to join channel', {
+          action: 'joinVoice',
+          metadata: { error: err }
+        });
+        throw err;
+      });
+
+      logger.debug('Joined Agora channel', {
+        action: 'joinVoice',
+        metadata: { 
+          userId, 
+          numericUid,
+          clientState: client.connectionState
+        }
+      });
+
+      // Create and publish track
+      logger.debug('Creating microphone track', {
+        action: 'joinVoice'
+      });
+      const track = await AgoraRTC.createMicrophoneAudioTrack({
+        encoderConfig: {
+          sampleRate: 48000,
+          stereo: false,
+          bitrate: 128
+        }
+      }).catch(err => {
+        logger.error('Failed to create microphone track', {
+          action: 'joinVoice',
+          metadata: { error: err }
+        });
+        throw err;
+      });
+
+      logger.debug('Created microphone track', {
+        action: 'joinVoice',
+        metadata: { 
+          trackId: track.getTrackId(),
+          trackLabel: track.getTrackLabel(),
+          enabled: track.enabled
+        }
+      });
+
+      if (!mountedRef.current) {
+        track.close();
+        throw new Error('Component unmounted during join');
+      }
+
+      logger.debug('Setting track', {
+        action: 'joinVoice'
+      });
+      await setTrack(track);
+
+      logger.debug('Publishing track', {
+        action: 'joinVoice'
+      });
+      await client.publish([track]).catch(err => {
+        logger.error('Failed to publish track', {
+          action: 'joinVoice',
+          metadata: { error: err }
+        });
+        throw err;
+      });
+
+      logger.debug('Published audio track', {
+        action: 'joinVoice',
+        metadata: { trackId: track.getTrackId() }
+      });
+
+      // Start volume monitoring
+      if (volumeIntervalRef.current) {
+        window.clearInterval(volumeIntervalRef.current);
+      }
+
+      volumeIntervalRef.current = window.setInterval(() => {
+        if (trackRef.current && mountedRef.current) {
+          const currentVolume = trackRef.current.getVolumeLevel() * 100;
+          setVolume(prev => {
+            // Only update if changed significantly to reduce renders
+            return Math.abs(prev - currentVolume) > 5 ? currentVolume : prev;
+          });
+          setIsSpeaking(currentVolume > 20);
+        }
+      }, VOLUME_CHECK_INTERVAL);
+
+      logger.info('Successfully joined voice', {
+        action: 'joinVoice',
+        metadata: { userId },
+      });
+      
+      if (mountedRef.current) {
+        setIsJoining(false);
+      }
+
+      // Resolve join timeout if successful
+      joinPromiseResolve();
+    } catch (err) {
+      logger.error('Failed to join voice', {
+        action: 'joinVoice',
+        metadata: { 
+          message: err instanceof Error ? err.message : String(err),
+          retryCount: retryCountRef.current,
+          stack: err instanceof Error ? err.stack : undefined
+        }
+      });
+
+      // Always clean up on error
+      await cleanup();
+      
+      if (mountedRef.current) {
+        setIsJoining(false);
+        setLastError(err instanceof Error ? err : new Error(String(err)));
+
+        // Schedule retry if appropriate
+        if (retryCountRef.current < MAX_VOICE_JOIN_RETRIES) {
+          retryCountRef.current++;
+          retryTimeoutRef.current = window.setTimeout(() => {
+            void joinVoice();
+          }, VOICE_RETRY_DELAY * Math.pow(2, retryCountRef.current - 1));
+        }
+      }
+    } finally {
+      release();
+      if (joinTimeoutRef.current) {
+        window.clearTimeout(joinTimeoutRef.current);
+        joinTimeoutRef.current = null;
+      }
+    }
+  }, [currentUser, partyState, cleanup, getClient, setTrack]);
+
+  const toggleMute = useCallback(async () => {
+    const release = await voiceMutex.acquire();
+    try {
+      if (trackRef.current) {
+        const newMutedState = !isMuted;
+        await trackRef.current.setEnabled(!newMutedState);
+        if (mountedRef.current) {
+          setIsMuted(newMutedState);
+        }
+        logger.debug('Toggled mute state', {
+          action: 'toggleMute',
+          metadata: { 
+            newState: newMutedState,
+            trackId: trackRef.current.getTrackId()
+          }
+        });
+      }
+    } catch (err) {
+      logger.error('Failed to toggle mute', {
+        action: 'toggleMute',
+        metadata: { error: err }
+      });
+    } finally {
+      release();
+    }
+  }, [isMuted]);
+
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
-      logger.debug('Cleaning up voice on unmount', LOG_CONTEXT);
-      cleanup();
+      mountedRef.current = false;
     };
-  }, [cleanup]);
+  }, []);
 
-  return useMemo(() => ({
-    isMuted,
-    toggleMute,
+  useEffect(() => {
+    let timeoutId: number | null = null;
+    let cleanupTimeoutId: number | null = null;
+    
+    // Skip initial join if this is a hot reload
+    const isHotReload = !!(window as any).__NEXT_DATA__?.buildId;
+    
+    if (partyState === 'joined' && currentUser?.id && !isHotReload) {
+      // Clear any pending cleanup
+      if (cleanupTimeoutId) {
+        window.clearTimeout(cleanupTimeoutId);
+        cleanupTimeoutId = null;
+      }
+      // Add delay before join to allow presence sync
+      timeoutId = window.setTimeout(() => {
+        void joinVoice();
+      }, 3000); // Increased from 2000ms to 3000ms to ensure presence is fully synced
+    } else if (partyState === 'leaving') {
+      // Immediate cleanup when leaving
+      void cleanup();
+    } else if (partyState === 'idle' && !isJoining) {
+      // Add longer delay before cleanup to allow join to complete if in progress
+      cleanupTimeoutId = window.setTimeout(() => {
+        if (!isJoining) { // Double check we're not joining before cleanup
+          void cleanup();
+        }
+      }, 3000); // Increased from 2000ms to 3000ms to ensure join has time to complete
+    }
+
+    return () => {
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
+      if (cleanupTimeoutId) {
+        window.clearTimeout(cleanupTimeoutId);
+      }
+      // Only cleanup on unmount if we're not in the middle of joining and not a hot reload
+      if (!isJoining && !isHotReload) {
+        void cleanup();
+      }
+    };
+  }, [currentUser, partyState, cleanup, joinVoice, isJoining]);
+
+  return {
     micPermissionDenied,
     requestMicrophonePermission,
-    isConnected,
     joinVoice,
-    leaveVoice
-  }), [
-    isMuted,
     toggleMute,
-    micPermissionDenied, 
-    requestMicrophonePermission,
-    isConnected,
-    joinVoice,
-    leaveVoice
-  ]);
-} 
+    volume,
+    isSpeaking,
+    isMuted,
+    isJoining,
+    lastError,
+    track: trackRef.current,
+    setTrack,
+    cleanup
+  };
+}
+
+// Add default export with default props
+export default function useVoiceWithDefaults(props: Partial<VoiceHookProps> = {}) {
+  return useVoice({
+    currentUser: props.currentUser || null,
+    partyState: props.partyState || 'idle'
+  });
+}

@@ -3,6 +3,7 @@
 import React from 'react';
 import { useModalStore } from '@/lib/stores/useModalStore';
 import type { PartyMember } from '@/lib/types/party';
+import { AVATARS } from '@/lib/config/constants';
 
 type PartyState = 'idle' | 'joining' | 'joined' | 'leaving';
 
@@ -38,18 +39,22 @@ export function PartyControls({
       <div className="mt-1 flex flex-wrap items-center gap-1 text-sm sm:gap-2 sm:text-base">
         {!currentUser && (
           <button
-            onClick={() => showModal('join', {
-              name: '',
-              avatar: 'https://i.imgur.com/LCycgcq.png',
-              game: 'Offline'
-            })}
-            className={buttonClass(partyState === 'idle', false)}
+            onClick={() =>
+              showModal('join', {
+                name: '',
+                avatar: AVATARS[Math.floor(Math.random() * AVATARS.length)] ?? AVATARS[0]!,
+                game: 'Offline',
+              })
+            }
+            className={buttonClass(partyState === 'idle', partyState === 'joining')}
             disabled={partyState !== 'idle'}
           >
             <div className="flex h-3 w-3 items-center justify-center rounded-full bg-[#55b611] text-[8px] font-bold text-white sm:h-4 sm:w-4 sm:text-[10px]">
               A
             </div>
-            <span className="ml-[-3px] text-white">Join Party</span>
+            <span className="ml-[-3px] text-white">
+              {partyState === 'joining' ? 'Joining...' : 'Join Party'}
+            </span>
           </button>
         )}
 
@@ -58,18 +63,21 @@ export function PartyControls({
             <button
               onClick={onLeave}
               className={buttonClass(true, isLeaving)}
-              disabled={isLeaving}
+              disabled={isLeaving || partyState === 'joining'}
             >
               <div className="flex h-3 w-3 items-center justify-center rounded-full bg-[#ae1228] text-[8px] font-bold text-white sm:h-4 sm:w-4 sm:text-[10px]">
                 B
               </div>
-              <span className="ml-[-3px] text-white">{isLeaving ? 'Leaving...' : 'Leave Party'}</span>
+              <span className="ml-[-3px] text-white">
+                {isLeaving ? 'Leaving...' : 'Leave Party'}
+              </span>
             </button>
 
             {onToggleMute && (
               <button
                 onClick={onToggleMute}
                 className={buttonClass(true, false)}
+                disabled={partyState === 'joining'}
               >
                 <div className="flex h-3 w-3 items-center justify-center rounded-full bg-[#0c71ba] text-[8px] font-bold text-white sm:h-4 sm:w-4 sm:text-[10px]">
                   X
@@ -78,15 +86,29 @@ export function PartyControls({
               </button>
             )}
 
+            {micPermissionDenied && onRequestMicrophonePermission && (
+              <button
+                onClick={onRequestMicrophonePermission}
+                className={buttonClass(true, false)}
+                disabled={partyState === 'joining'}
+              >
+                <div className="flex h-3 w-3 items-center justify-center rounded-full bg-[#0c71ba] text-[8px] font-bold text-white sm:h-4 sm:w-4 sm:text-[10px]">
+                  R
+                </div>
+                <span className="ml-[-3px] text-white">Re-request Mic</span>
+              </button>
+            )}
+
             <button
               onClick={() => {
                 showModal('profile', {
                   name: currentUser.name,
                   avatar: currentUser.avatar || 'https://i.imgur.com/LCycgcq.png',
-                  game: currentUser.game || 'Offline'
+                  game: currentUser.game || 'Offline',
                 });
               }}
               className={buttonClass(true, false)}
+              disabled={partyState === 'joining'}
             >
               <div className="flex h-3 w-3 items-center justify-center rounded-full bg-[#e09a23] text-[8px] font-bold text-white sm:h-4 sm:w-4 sm:text-[10px]">
                 Y
@@ -96,15 +118,6 @@ export function PartyControls({
           </>
         )}
       </div>
-
-      {micPermissionDenied && onRequestMicrophonePermission && (
-        <button
-          onClick={onRequestMicrophonePermission}
-          className="mt-1 flex items-center justify-center gap-2 bg-[#0c71ba] py-2 text-white transition-colors hover:bg-[#0a5c94]"
-        >
-          <span>Re-request Microphone Access</span>
-        </button>
-      )}
     </div>
   );
 }

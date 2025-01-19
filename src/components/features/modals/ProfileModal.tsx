@@ -6,9 +6,22 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import Image from 'next/image';
 import { BaseModal } from './BaseModal';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { AVATARS, STATUSES } from '@/lib/config/constants';
 import { logger } from '@/lib/utils/logger';
 
@@ -33,10 +46,18 @@ export function ProfileModal({ onSubmit, onClose, initialData }: ProfileModalPro
     resolver: zodResolver(formSchema),
     defaultValues: initialData || {
       name: '',
-      avatar: AVATARS[0],
+      avatar: AVATARS[Math.floor(Math.random() * AVATARS.length)] ?? AVATARS[0]!,
       game: STATUSES[0],
     },
   });
+
+  React.useEffect(() => {
+    if (!initialData) {
+      const randomIndex = Math.floor(Math.random() * AVATARS.length);
+      const randomAvatar = AVATARS[randomIndex] ?? AVATARS[0]!;
+      form.setValue('avatar', randomAvatar);
+    }
+  }, [form, initialData]);
 
   const onSubmitForm = async (data: FormData) => {
     try {
@@ -53,8 +74,11 @@ export function ProfileModal({ onSubmit, onClose, initialData }: ProfileModalPro
   };
 
   return (
-    <BaseModal onClose={onClose} isSubmitting={form.formState.isSubmitting}>
-      <div className="w-[480px] min-h-[520px] rounded-lg bg-white p-6 shadow-xl">
+    <BaseModal
+      onClose={onClose}
+      isSubmitting={form.formState.isSubmitting}
+    >
+      <div className="min-h-[520px] w-[480px] rounded-lg bg-white p-6 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-xl font-bold text-[#161718]">
             {initialData ? 'Edit Profile' : 'Join Party'}
@@ -62,8 +86,11 @@ export function ProfileModal({ onSubmit, onClose, initialData }: ProfileModalPro
         </div>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmitForm)} className="flex flex-col h-full space-y-4">
-            <div className="flex-1 space-y-4">
+          <form
+            onSubmit={form.handleSubmit(onSubmitForm)}
+            className="flex h-full flex-col"
+          >
+            <div className="flex-1 space-y-8">
               <FormField
                 control={form.control}
                 name="name"
@@ -74,8 +101,9 @@ export function ProfileModal({ onSubmit, onClose, initialData }: ProfileModalPro
                       <Input
                         {...field}
                         placeholder="Enter your name"
-                        className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-black transition-colors focus:border-[#616b83] focus:outline-none focus:ring-1 focus:ring-[#616b83]"
+                        className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-black transition-colors focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                         disabled={form.formState.isSubmitting}
+                        autoComplete="off"
                       />
                     </FormControl>
                     <FormMessage />
@@ -88,7 +116,9 @@ export function ProfileModal({ onSubmit, onClose, initialData }: ProfileModalPro
                 name="avatar"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-sm font-medium text-[#161718]">Select Avatar</FormLabel>
+                    <FormLabel className="text-sm font-medium text-[#161718]">
+                      Select Avatar
+                    </FormLabel>
                     <div className="grid grid-cols-5 gap-2">
                       {AVATARS.map((avatar, index) => (
                         <button
@@ -96,8 +126,8 @@ export function ProfileModal({ onSubmit, onClose, initialData }: ProfileModalPro
                           type="button"
                           onClick={() => field.onChange(avatar)}
                           disabled={form.formState.isSubmitting}
-                          className={`h-12 w-12 overflow-hidden rounded-md ${
-                            field.value === avatar ? 'ring-[3px] ring-[#55b611]' : ''
+                          className={`h-12 w-12 overflow-hidden rounded-md transition-all ${
+                            field.value === avatar ? 'ring-[3px] ring-[#55b611]' : 'hover:ring-2 hover:ring-[#55b611]/50'
                           }`}
                         >
                           <Image
@@ -105,6 +135,7 @@ export function ProfileModal({ onSubmit, onClose, initialData }: ProfileModalPro
                             alt={`Avatar ${index + 1}`}
                             width={48}
                             height={48}
+                            className="h-full w-full object-cover"
                           />
                         </button>
                       ))}
@@ -117,17 +148,22 @@ export function ProfileModal({ onSubmit, onClose, initialData }: ProfileModalPro
                 control={form.control}
                 name="game"
                 render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-sm font-medium text-[#161718]">Current Game</FormLabel>
+                  <FormItem className="mb-6">
+                    <FormLabel className="text-sm font-medium text-[#161718]">
+                      Current Game
+                    </FormLabel>
                     <Select
                       value={field.value}
                       onValueChange={field.onChange}
                       disabled={form.formState.isSubmitting}
                     >
-                      <SelectTrigger className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-black transition-colors focus:border-[#616b83] focus:outline-none focus:ring-1 focus:ring-[#616b83]">
-                        <SelectValue placeholder="Select a game" className="text-black" />
+                      <SelectTrigger className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-black transition-colors focus:outline-none">
+                        <SelectValue
+                          placeholder="Select a game"
+                          className="text-black"
+                        />
                       </SelectTrigger>
-                      <SelectContent className="bg-white border border-gray-300 shadow-lg">
+                      <SelectContent className="border border-gray-300 bg-white shadow-lg">
                         {STATUSES.map((status) => (
                           <SelectItem
                             key={status}
@@ -169,28 +205,34 @@ export function ProfileModal({ onSubmit, onClose, initialData }: ProfileModalPro
                 </div>
               )}
 
-              <div className="mt-6 flex items-center justify-between">
+              <div className="mt-12 flex items-center justify-between">
                 <button
                   type="button"
                   onClick={onClose}
                   disabled={form.formState.isSubmitting}
-                  className="flex items-center gap-2 rounded-none border-2 border-[#ae1228] px-4 py-2 text-[#ae1228] transition-colors hover:bg-[#ae1228] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex items-center gap-0 opacity-80 transition-opacity hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-50 sm:gap-2"
                 >
                   <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#ae1228] text-xs font-bold text-white">
                     B
                   </div>
-                  Cancel
+                  <span className="text-sm text-[#161718] sm:text-base">Cancel</span>
                 </button>
 
                 <button
                   type="submit"
                   disabled={form.formState.isSubmitting}
-                  className="flex items-center gap-2 rounded-none border-2 border-[#55b611] px-4 py-2 text-[#55b611] transition-colors hover:bg-[#55b611] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex items-center gap-0 opacity-80 transition-opacity hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-50 sm:gap-2"
                 >
                   <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#55b611] text-xs font-bold text-white">
                     A
                   </div>
-                  {form.formState.isSubmitting ? 'Saving...' : initialData ? 'Save Changes' : 'Join Party'}
+                  <span className="text-sm text-[#161718] sm:text-base">
+                    {form.formState.isSubmitting
+                      ? 'Saving...'
+                      : initialData
+                        ? 'Save Changes'
+                        : 'Join Party'}
+                  </span>
                 </button>
               </div>
             </div>
@@ -199,4 +241,4 @@ export function ProfileModal({ onSubmit, onClose, initialData }: ProfileModalPro
       </div>
     </BaseModal>
   );
-} 
+}

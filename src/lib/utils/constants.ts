@@ -1,1 +1,1 @@
-export const SHARED_CHANNEL_NAME = 'shared_presence'; 
+export const SHARED_CHANNEL_NAME = 'shared_presence';
