@@ -4,7 +4,6 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Volume2, VolumeX } from 'lucide-react';
 import { logger } from '@/lib/utils/logger';
-import { INTRO_VIDEO_URL } from '@/lib/config/constants';
 
 interface XboxIntroProps {
   onIntroEnd: () => void;
@@ -16,12 +15,12 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [hasAttemptedPlay, setHasAttemptedPlay] = useState(false);
   const [playAttemptCount, setPlayAttemptCount] = useState(0);
-  const [blobUrl, setBlobUrl] = useState<string>('');
+  const [isEnded, setIsEnded] = useState(false);
+  const [videoSrc] = useState<string>('/intro.mp4');
   const loggerRef = useRef(logger);
   const playTimeoutRef = useRef<ReturnType<typeof setTimeout>>(setTimeout(() => {}));
   const mountedRef = useRef(false);
   const hasLoadedRef = useRef(false);
-  const [isEnded, setIsEnded] = useState(false);
 
   const attemptPlay = useCallback(async () => {
     const videoElement = videoRef.current;
@@ -34,7 +33,7 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
       component: 'XboxIntro',
       action: 'playVideo',
       metadata: {
-        url: INTRO_VIDEO_URL,
+        url: videoSrc,
         muted: false,
         attempt: playAttemptCount + 1,
         videoElement: videoElement.outerHTML,
@@ -52,7 +51,7 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
         metadata: {
           status: 'success',
           muted: false,
-          url: INTRO_VIDEO_URL,
+          url: videoSrc,
         },
       });
     } catch (error) {
@@ -62,7 +61,7 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
         action: 'playVideo',
         metadata: {
           error: error instanceof Error ? error : new Error(String(error)),
-          url: INTRO_VIDEO_URL,
+          url: videoSrc,
         },
       });
 
@@ -78,7 +77,7 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
           metadata: {
             status: 'success',
             muted: true,
-            url: INTRO_VIDEO_URL,
+            url: videoSrc,
           },
         });
       } catch (mutedError) {
@@ -88,7 +87,7 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
           action: 'playVideo',
           metadata: {
             error: mutedError instanceof Error ? mutedError : new Error(String(mutedError)),
-            url: INTRO_VIDEO_URL,
+            url: videoSrc,
             videoElement: videoElement.outerHTML,
           },
         });
@@ -98,7 +97,7 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
         }
       }
     }
-  }, [hasAttemptedPlay, onIntroEnd, playAttemptCount]);
+  }, [hasAttemptedPlay, onIntroEnd, playAttemptCount, videoSrc]);
 
   // Handle mounting/unmounting and video loading
   useEffect(() => {
@@ -106,7 +105,6 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
     const videoElement = videoRef.current;
     
     const loadVideo = async () => {
-      // Skip if we've already loaded the video
       if (hasLoadedRef.current) return;
       hasLoadedRef.current = true;
 
@@ -115,43 +113,21 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
           component: 'XboxIntro',
           action: 'loadVideo',
           metadata: {
-            url: INTRO_VIDEO_URL,
-            existingBlobUrl: blobUrl,
+            url: videoSrc
           },
         });
 
-        const response = await fetch(INTRO_VIDEO_URL, {
-          mode: 'cors',
-          credentials: 'omit',
-        });
-        
+        // Check if video file exists
+        const response = await fetch(videoSrc, { method: 'HEAD' });
         if (!response.ok) {
-          throw new Error(`Failed to fetch video: ${response.status} ${response.statusText}`);
+          throw new Error(`Video file not found: ${videoSrc}`);
         }
-
-        // Log response headers for debugging
-        const headers = Object.fromEntries(response.headers.entries());
-        loggerRef.current.info('Video response headers', {
+        
+        loggerRef.current.info('Local video file verified', {
           component: 'XboxIntro',
           action: 'loadVideo',
-          metadata: { headers },
+          metadata: { url: videoSrc }
         });
-
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        
-        if (mountedRef.current) {
-          setBlobUrl(url);
-          loggerRef.current.info('Successfully created blob URL', {
-            component: 'XboxIntro',
-            action: 'loadVideo',
-            metadata: {
-              blobUrl: url,
-              blobSize: blob.size,
-              blobType: blob.type,
-            },
-          });
-        }
       } catch (error) {
         loggerRef.current.error('Failed to load video', {
           component: 'XboxIntro',
@@ -162,7 +138,7 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
               message: error.message,
               stack: error.stack,
             } : new Error(String(error)),
-            url: INTRO_VIDEO_URL,
+            url: videoSrc,
           },
         });
         if (mountedRef.current) {
@@ -181,11 +157,8 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
         videoElement.removeAttribute('src');
         videoElement.load();
       }
-      if (blobUrl) {
-        URL.revokeObjectURL(blobUrl);
-      }
     };
-  }, [onIntroEnd]);
+  }, [onIntroEnd, videoSrc]);
 
   // Add video element event debugging
   useEffect(() => {
@@ -211,66 +184,19 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
           videoHeight: videoElement.videoHeight,
         },
       });
-      // Make video visible as soon as metadata is loaded
       setIsLoading(false);
-    };
-
-    const handleError = () => {
-      const error = videoElement.error;
-      loggerRef.current.error('Video element error', {
-        component: 'XboxIntro',
-        action: 'videoEvent',
-        metadata: {
-          event: 'error',
-          code: error?.code,
-          message: error?.message,
-          src: videoElement.src,
-        },
-      });
+      // Attempt to play after metadata is loaded
+      void attemptPlay();
     };
 
     videoElement.addEventListener('loadstart', handleLoadStart);
     videoElement.addEventListener('loadedmetadata', handleLoadedMetadata);
-    videoElement.addEventListener('error', handleError);
 
     return () => {
       videoElement.removeEventListener('loadstart', handleLoadStart);
       videoElement.removeEventListener('loadedmetadata', handleLoadedMetadata);
-      videoElement.removeEventListener('error', handleError);
     };
-  }, []); // Remove blobUrl dependency since we access src directly from videoElement
-
-  useEffect(() => {
-    if (!mountedRef.current || !blobUrl) return;
-    
-    const videoElement = videoRef.current;
-    if (!videoElement) return;
-
-    const handleLoadedData = () => {
-      if (!mountedRef.current || hasAttemptedPlay) return;
-      
-      // Clear any existing timeout
-      if (playTimeoutRef.current) {
-        clearTimeout(playTimeoutRef.current);
-      }
-      
-      // Attempt to play after a short delay
-      playTimeoutRef.current = setTimeout(() => {
-        if (mountedRef.current) {
-          void attemptPlay();
-        }
-      }, 100);
-    };
-
-    videoElement.addEventListener('loadeddata', handleLoadedData);
-    
-    return () => {
-      if (playTimeoutRef.current) {
-        clearTimeout(playTimeoutRef.current);
-      }
-      videoElement.removeEventListener('loadeddata', handleLoadedData);
-    };
-  }, [attemptPlay, hasAttemptedPlay, blobUrl]);
+  }, [videoSrc, attemptPlay]); // Add attemptPlay as dependency
 
   useEffect(() => {
     if (!mountedRef.current) return;
@@ -284,21 +210,20 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
       loggerRef.current.info('Video playback ended', {
         component: 'XboxIntro',
         action: 'videoEnded',
-        metadata: { url: INTRO_VIDEO_URL },
+        metadata: { url: videoSrc },
       });
       setIsEnded(true);
-      // Add a longer delay before calling onIntroEnd to allow for fade out
       setTimeout(() => {
         if (mountedRef.current) {
           onIntroEnd();
         }
-      }, 700); // Match the duration-700 class
+      }, 700);
     };
 
     return () => {
       videoElement.onended = null;
     };
-  }, [onIntroEnd]);
+  }, [onIntroEnd, videoSrc]);
 
   const handleSkip = () => {
     if (playTimeoutRef.current) {
@@ -316,7 +241,7 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
       component: 'XboxIntro',
       action: 'skipVideo',
       metadata: {
-        url: INTRO_VIDEO_URL,
+        url: videoSrc,
         currentTime: videoRef.current?.currentTime,
       },
     });
@@ -334,18 +259,24 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
         metadata: {
           muted: newMutedState,
           currentTime: videoRef.current.currentTime,
-          url: INTRO_VIDEO_URL,
+          url: videoSrc,
         },
       });
     }
   };
 
+  useEffect(() => {
+    if (isEnded) {
+      onIntroEnd();
+    }
+  }, [isEnded, onIntroEnd]);
+
   return (
     <div className={`fixed inset-0 z-50 bg-black transition-all duration-700 ease-in-out ${isEnded ? 'opacity-0 scale-105' : 'opacity-100 scale-100'}`}>
       <video
         ref={videoRef}
-        className={`h-full w-full object-cover transition-all duration-700 ease-in-out ${blobUrl && !isLoading ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}
-        src={blobUrl || undefined}
+        className={`h-full w-full object-cover transition-all duration-700 ease-in-out ${!isLoading ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}
+        src={videoSrc}
         playsInline
         preload="eager"
         role="video"
@@ -358,7 +289,7 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
             action: 'videoError',
             metadata: {
               error: e.currentTarget.error,
-              url: INTRO_VIDEO_URL,
+              url: videoSrc,
               videoElement: e.currentTarget.outerHTML,
             },
           });

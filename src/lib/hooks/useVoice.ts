@@ -44,6 +44,9 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
   const connectRef = useRef<() => Promise<void>>(null!);
   const handleDisconnectRef = useRef<(error?: Error) => Promise<void>>(null!);
 
+  // Add state for tracking remote users
+  const [remoteUsers, setRemoteUsers] = useState<Set<string>>(new Set());
+
   // Initialize stable function references
   connectRef.current = async () => {
     // Only attempt to connect if we're idle or disconnected
@@ -55,19 +58,36 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
     setState({ status: 'connecting', attempt });
 
     try {
+      // Initialize AudioContext first to handle autoplay policy
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      if (audioContext.state === 'suspended') {
+        await audioContext.resume();
+      }
+      
       // Get client
       const client = await getClient();
       
-      // Create track
+      // Create track with explicit audio processing settings
       const track = await AgoraRTC.createMicrophoneAudioTrack({
         encoderConfig: {
           sampleRate: 48000,
           stereo: false,
-          bitrate: 64
+          bitrate: 192 // Increased for better quality
         },
-        AEC: true,
-        ANS: true,
-        AGC: true
+        AEC: true, // Echo cancellation
+        ANS: true, // Noise suppression
+        AGC: true  // Auto gain control
+      });
+
+      // Verify track is created and getting input
+      const initialVolume = track.getVolumeLevel();
+      logger.info('Audio track created', {
+        action: 'connect',
+          metadata: {
+          initialVolume,
+          sampleRate: 48000,
+          bitrate: 192
+        }
       });
 
       // Generate UID
@@ -99,7 +119,217 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
 
       // Set up track
       await track.setEnabled(!isMuted);
+      await client.publish(track);
+
+      // Set up remote user handlers
+      client.on('user-published', async (user, mediaType) => {
+        try {
+          if (mediaType === 'audio') {
+            logger.info('Remote user published audio', {
+              action: 'user-published',
+              metadata: { userId: user.uid }
+            });
+
+            // Subscribe to the remote user's audio track
+            await client.subscribe(user, mediaType);
+            
+            // Verify we got the audio track
+            if (!user.audioTrack) {
+              throw new Error('No audio track after subscription');
+            }
+            
+            // Initialize audio context if needed
+            const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+            if (audioContext.state === 'suspended') {
+              await audioContext.resume();
+            }
+            
+            // Play the remote audio track
+            user.audioTrack.play();
+            
+            // Track the new user
+            setRemoteUsers(prev => new Set([...Array.from(prev), user.uid.toString()]));
+            
+            logger.info('Subscribed and playing remote audio track', {
+              action: 'subscribe',
+              metadata: { 
+                userId: user.uid,
+                currentRemoteUsers: Array.from(remoteUsers),
+                totalUsers: remoteUsers.size + 1,
+                hasAudioTrack: !!user.audioTrack,
+                trackState: user.audioTrack?.isPlaying,
+                audioContextState: audioContext.state
+              }
+            });
+          }
+        } catch (err) {
+          logger.error('Failed to subscribe to remote user', {
+            action: 'subscribe',
+            metadata: {
+              error: String(err), 
+              userId: user.uid,
+              mediaType,
+              hasAudioTrack: !!user.audioTrack
+            }
+          });
+        }
+      });
+
+      client.on('user-unpublished', async (user, mediaType) => {
+        try {
+          if (mediaType === 'audio') {
+            // Stop playing the remote audio track
+            user.audioTrack?.stop();
+            
+            // Unsubscribe from the remote user's audio track
+            await client.unsubscribe(user, mediaType);
+            
+            // Remove the user from tracking
+            setRemoteUsers(prev => {
+              const next = new Set(prev);
+              next.delete(user.uid.toString());
+              return next;
+            });
+            
+            logger.info('Stopped and unsubscribed from remote audio track', {
+              action: 'unsubscribe',
+            metadata: { 
+                userId: user.uid,
+                remainingUsers: Array.from(remoteUsers),
+                totalUsers: remoteUsers.size - 1
+            }
+          });
+        }
+      } catch (err) {
+          logger.error('Failed to unsubscribe from remote user', {
+            action: 'unsubscribe',
+            metadata: { error: String(err), userId: user.uid }
+          });
+        }
+      });
+
+      // Add user-left handler
+      client.on('user-left', async (user) => {
+        logger.info('User left channel', {
+          action: 'user-left',
+        metadata: { 
+            userId: user.uid,
+            remainingUsers: Array.from(remoteUsers),
+            totalUsers: remoteUsers.size
+          }
+        });
+      });
+
+      // Handle audio level warnings and errors
+      const handleException = (event: any) => {
+        // Audio device errors (1005-1013)
+        if (event.code >= 1005 && event.code <= 1013) {
+          logger.error('Audio device error', {
+            action: 'audio-error',
+      metadata: { 
+              code: event.code,
+              msg: event.msg,
+              isMuted,
+              volume: track.getVolumeLevel() * 100,
+              deviceState: {
+                enabled: track.enabled,
+                muted: track.muted
+              }
+            }
+          });
+
+          // Handle specific audio device errors
+          switch (event.code) {
+            case 1005: // Unspecified audio device error
+            case 1011: // Recording device initialization error
+            case 1012: // Recording device start error
+              void handleDisconnectRef.current?.(new Error(`Audio device error: ${event.msg}`));
+              break;
+          }
+        return;
+      }
+
+        // Audio level warnings (2001, 2003)
+        if (event.code === 2001 || event.code === 2003) {
+          logger.warn('Audio level warning', {
+            action: 'audio-warning',
+            metadata: {
+              code: event.code,
+              msg: event.msg,
+              isMuted,
+              volume: track.getVolumeLevel() * 100,
+              audioSettings: {
+                bitrate: 192,
+                sampleRate: 48000
+              }
+            }
+          });
+          
+          // Only attempt recovery if not muted
+          if (!isMuted) {
+            try {
+              // Try to recover audio
+              track.setVolume(150);
+              
+              // Check audio context
+              const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+              if (audioContext.state === 'suspended') {
+                void audioContext.resume();
+              }
+
+              // Try to reinitialize track if issues persist
+              if (event.code === 2001) { // AUDIO_INPUT_LEVEL_TOO_LOW
+                setTimeout(async () => {
+                  const level = track.getVolumeLevel() * 100;
+                  if (level < 1) {
+                    logger.warn('Audio level still too low, attempting recovery', {
+                      action: 'audio-recovery',
+                      metadata: { currentLevel: level }
+                    });
+                    void handleDisconnectRef.current?.(new Error('Audio input level too low'));
+                  }
+                }, 5000);
+              }
+            } catch (err) {
+              logger.error('Failed to recover from audio warning', {
+                action: 'audio-recovery',
+                metadata: { error: String(err) }
+              });
+            }
+          }
+        }
+
+        // Connection/Network errors
+        if ([111, 112].includes(event.code)) {
+          logger.error('Network connection error', {
+            action: 'connection-error',
+            metadata: {
+              code: event.code,
+              msg: event.msg
+            }
+          });
+          void handleDisconnectRef.current?.(new Error(`Network error: ${event.msg}`));
+        }
+      };
+
+      // Add event listeners with proper cleanup
+      client.on('exception', handleException);
       
+      // Add track-ended handler
+      const handleTrackEnded = () => {
+        logger.warn('Audio track ended unexpectedly', {
+          action: 'track-ended',
+            metadata: {
+            isMuted,
+            volume,
+            lastKnownState: state.status
+          }
+        });
+        void handleDisconnectRef.current?.(new Error('Audio track ended unexpectedly'));
+      };
+      
+      track.on('track-ended', handleTrackEnded);
+
       // Start volume monitoring
       if (volumeIntervalRef.current) {
         clearInterval(volumeIntervalRef.current);
@@ -113,45 +343,83 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
             if (volume !== 0 || isSpeaking) {
               setVolume(0);
               setIsSpeaking(false);
+              
+              // Log state reset
+              logger.info('Reset audio state on mute', {
+                action: 'volume-monitor',
+                metadata: {
+                  prevVolume: volume,
+                  wasSpeaking: isSpeaking
+                }
+              });
             }
             return;
           }
 
           // If this doesn't throw, the track is still valid
           const currentLevel = track.getVolumeLevel() * 100;
+          
           // Smooth the volume changes
           const smoothedLevel = lastVolumeRef.current + (currentLevel - lastVolumeRef.current) * VOLUME_SMOOTHING_FACTOR;
           lastVolumeRef.current = smoothedLevel;
           
-          setVolume(smoothedLevel);
+          // Only update volume if it would change significantly
+          if (Math.abs(volume - smoothedLevel) > 1) {
+            setVolume(smoothedLevel);
+          }
+          
           const isSpeakingNow = smoothedLevel > 30; // Match VoiceStatusIcon threshold
           
           // Only update speaking state and presence if it would change
           if (isSpeaking !== isSpeakingNow) {
             setIsSpeaking(isSpeakingNow);
             
-            // Only update presence if we have the required data and track is valid
-            if (currentUser?.id && updatePresence) {
-              const newVoiceStatus = isSpeakingNow ? ('speaking' as const) : ('silent' as const);
-              // Only update if voice status would change
-              if (currentUser.voice_status !== newVoiceStatus) {
-                const presence = {
-                  ...currentUser,
-                  muted: false, // Ensure muted state is correct
-                  voice_status: newVoiceStatus
-                };
-                void updatePresence(presence);
+            logger.info('Speaking state changed', {
+              action: 'volume-monitor',
+            metadata: { 
+                volume: smoothedLevel,
+                fromState: isSpeaking ? 'speaking' : 'silent',
+                toState: isSpeakingNow ? 'speaking' : 'silent'
               }
+            });
+            
+            // Only update presence if we have the required data
+            if (currentUser?.id && updatePresence) {
+              // Always send a presence update with the complete voice state
+              const presence = {
+                ...currentUser,
+                muted: isMuted,
+                voice_status: isMuted ? ('muted' as const) : (isSpeakingNow ? ('speaking' as const) : ('silent' as const)),
+                last_voice_update: Date.now()
+              };
+              
+              // Send presence update
+              void updatePresence(presence).catch(err => {
+                logger.error('Failed to update presence with voice state', {
+                  action: 'update-presence',
+                  metadata: { 
+                    error: String(err),
+                    presence,
+                    isSpeaking: isSpeakingNow,
+                    volume: smoothedLevel
+                  }
+                });
+              });
             }
           }
-        } catch {
+        } catch (err) {
           // Track is invalid, stop monitoring
+          logger.error('Volume monitoring failed', {
+            action: 'volume-monitor',
+            metadata: { error: String(err) }
+          });
+          
           if (volumeIntervalRef.current) {
             clearInterval(volumeIntervalRef.current);
             volumeIntervalRef.current = null;
           }
-        }
-      }, VOLUME_CHECK_INTERVAL);
+            }
+          }, VOLUME_CHECK_INTERVAL);
 
       // Update state
       setState({ status: 'connected', track });
@@ -238,32 +506,32 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
     try {
       // Check permissions API first
       if (navigator.permissions && navigator.permissions.query) {
-        const result = await navigator.permissions.query({ name: 'microphone' as PermissionName });
-        if (result.state === 'denied') {
+          const result = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+          if (result.state === 'denied') {
           setState({ status: 'permission_denied' });
-          return false;
+            return false;
         }
       }
 
       // Try to get microphone access
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
-      });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        });
 
-      // Clean up test stream
+        // Clean up test stream
       stream.getTracks().forEach(track => track.stop());
       
       setState({ status: 'idle' });
-      return true;
-    } catch (err) {
-      const error = err as Error;
-      const isPermissionDenied = error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError';
-      
-      if (isPermissionDenied) {
+        return true;
+      } catch (err) {
+        const error = err as Error;
+        const isPermissionDenied = error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError';
+        
+        if (isPermissionDenied) {
         setState({ status: 'permission_denied' });
         return false;
       }
@@ -292,23 +560,67 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
             lastVolumeRef.current = 0;
             setVolume(0);
             setIsSpeaking(false);
+          } else {
+            // When unmuting, ensure track is properly initialized
+            try {
+              // Try to recover audio settings
+              track.setVolume(100); // Reset to default volume
+              
+              // Check audio context
+              const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+              if (audioContext.state === 'suspended') {
+                await audioContext.resume();
+              }
+              
+              // Wait a moment for audio to stabilize
+              await new Promise(resolve => setTimeout(resolve, 100));
+              
+              // Get fresh volume reading
+              const currentVolume = track.getVolumeLevel() * 100;
+              lastVolumeRef.current = currentVolume;
+              setVolume(currentVolume);
+            } catch (err) {
+              logger.warn('Failed to initialize audio on unmute', {
+                action: 'toggleMute',
+                metadata: { error: String(err) }
+              });
+            }
           }
           
-          // Then update presence once with all changes
+          // Send immediate presence update with complete state
           if (currentUser?.id && updatePresence) {
             const presence = {
               ...currentUser,
               muted: newMutedState,
-              // If muted, always show as muted. If unmuted, use current volume to determine status
-              voice_status: newMutedState ? ('muted' as const) : (volume > 30 ? ('speaking' as const) : ('silent' as const))
+              voice_status: newMutedState ? ('muted' as const) : (volume > 30 ? ('speaking' as const) : ('silent' as const)),
+              last_voice_update: Date.now()
             };
             await updatePresence(presence);
+            
+            logger.info('Voice state updated after mute toggle', {
+              action: 'toggleMute',
+              metadata: { 
+                newState: presence.voice_status,
+                muted: newMutedState,
+                volume,
+                isSpeaking,
+                audioSettings: {
+                  bitrate: 192,
+                  sampleRate: 48000
+                }
+              }
+            });
           }
 
         } catch {
           // Track is invalid, log warning
           logger.warn('Track is invalid, ignoring mute request', {
-            action: 'toggleMute'
+            action: 'toggleMute',
+            metadata: {
+              currentState: state.status,
+              isMuted,
+              volume
+            }
           });
         }
       } catch (err) {
@@ -318,7 +630,7 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
         });
       }
     }
-  }, [state, isMuted, currentUser, updatePresence, volume]);
+  }, [state, isMuted, currentUser, updatePresence, volume, isSpeaking]);
 
   // Handle party state changes
   useEffect(() => {
@@ -344,6 +656,8 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
     isMuted,
     volume,
     isSpeaking,
+    remoteUsers: Array.from(remoteUsers),
+    remoteUserCount: remoteUsers.size,
     requestMicrophonePermission,
     toggleMute,
     connect,

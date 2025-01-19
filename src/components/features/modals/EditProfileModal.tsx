@@ -5,7 +5,7 @@ import { useForm, Controller } from 'react-hook-form';
 import Image from 'next/image';
 import { BaseModal } from './BaseModal';
 import { Input } from '@/components/ui/input';
-import { Select } from '@/components/ui/select';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { AVATARS, STATUSES } from '@/lib/config/constants';
 import { logger } from '@/lib/utils/logger';
 
@@ -241,17 +241,21 @@ export function EditProfileModal({
             render={({ field }) => (
               <Select
                 {...field}
-                id="game"
-                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-black transition-colors focus:border-[#616b83] focus:outline-none focus:ring-1 focus:ring-[#616b83]"
+                onValueChange={field.onChange}
               >
-                {STATUSES.map((status) => (
-                  <option
-                    key={status}
-                    value={status}
-                  >
-                    {status}
-                  </option>
-                ))}
+                <SelectTrigger className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-black transition-colors focus:border-[#616b83] focus:outline-none focus:ring-1 focus:ring-[#616b83]">
+                  <SelectValue placeholder="Select a game" />
+                </SelectTrigger>
+                <SelectContent>
+                  {STATUSES.map((status) => (
+                    <SelectItem
+                      key={status}
+                      value={status}
+                    >
+                      {status}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
             )}
           />

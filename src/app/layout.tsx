@@ -7,7 +7,6 @@ import { ClientProviders } from '@/components/providers/ClientProviders';
 
 import '@/styles/globals.css';
 
-
 export const metadata: Metadata = {
   title: 'Chat360',
   description: 'nostalgia, onchain.',
@@ -117,7 +116,10 @@ export default function RootLayout({ children }: RootLayoutProps) {
       suppressHydrationWarning
       className="bg-black"
     >
-      <body suppressHydrationWarning className="bg-black">
+      <body
+        suppressHydrationWarning
+        className="bg-black"
+      >
         <div className="min-h-screen bg-black">
           <ClientProviders>{children}</ClientProviders>
         </div>

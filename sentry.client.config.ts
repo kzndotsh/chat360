@@ -52,7 +52,7 @@ Sentry.init({
       nextjs: true,
       agora: true,
       supabase: true,
-    }
+    },
   },
 
   // Capture all console logs
