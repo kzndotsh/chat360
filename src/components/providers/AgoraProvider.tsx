@@ -120,8 +120,8 @@ export function AgoraProvider({ children }: AgoraProviderProps) {
     try {
       // First stop all tracks
       const localTracks = client.localTracks;
-      await Promise.all(localTracks.map(track => track.stop()));
-      
+      await Promise.all(localTracks.map((track) => track.stop()));
+
       // Then leave the channel
       await client.leave();
       logger.debug('Client left channel', LOG_CONTEXT);
@@ -155,9 +155,9 @@ export function AgoraProvider({ children }: AgoraProviderProps) {
       logger.error('Failed to initialize client', {
         ...LOG_CONTEXT,
         action: 'getClient',
-        metadata: { 
+        metadata: {
           error,
-          retryCount: retryCountRef.current 
+          retryCount: retryCountRef.current,
         },
       });
 
@@ -167,7 +167,7 @@ export function AgoraProvider({ children }: AgoraProviderProps) {
 
         // Retry initialization if under max retries
         if (retryCountRef.current < MAX_INIT_RETRIES) {
-          await new Promise((resolve) => 
+          await new Promise((resolve) =>
             setTimeout(resolve, INIT_RETRY_DELAY * Math.pow(2, retryCountRef.current - 1))
           );
           return getClient();
@@ -200,9 +200,5 @@ export function AgoraProvider({ children }: AgoraProviderProps) {
     [client, getClient, cleanupClient, isInitializing, error]
   );
 
-  return (
-    <AgoraContext.Provider value={contextValue}>
-      {children}
-    </AgoraContext.Provider>
-  );
+  return <AgoraContext.Provider value={contextValue}>{children}</AgoraContext.Provider>;
 }

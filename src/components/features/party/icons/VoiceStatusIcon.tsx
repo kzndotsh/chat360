@@ -1,10 +1,6 @@
 import { VoiceStatus } from '@/lib/types/party';
 import { cn } from '@/lib/utils';
-import { 
-  IoVolumeHighSharp,
-  IoVolumeOffSharp,
-  IoVolumeMuteSharp
-} from "react-icons/io5";
+import { IoVolumeHighSharp, IoVolumeOffSharp, IoVolumeMuteSharp } from 'react-icons/io5';
 import { logger } from '@/lib/utils/logger';
 
 interface VoiceStatusIconProps {
@@ -13,19 +9,15 @@ interface VoiceStatusIconProps {
 }
 
 export function VoiceStatusIcon({ status, className }: VoiceStatusIconProps) {
-  const iconClass = cn(
-    className,
-    'text-[#282b2f]',
-    'h-9 w-9'
-  );
+  const iconClass = cn(className, 'text-[#282b2f]', 'h-9 w-9');
 
   logger.debug('Rendering VoiceStatusIcon', {
     component: 'VoiceStatusIcon',
     action: 'render',
     metadata: {
       status,
-      className
-    }
+      className,
+    },
   });
 
   // Show appropriate icon based on voice status only

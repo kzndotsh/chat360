@@ -42,7 +42,7 @@ export async function getGlobalPresenceChannel() {
     try {
       // Remove any existing channels with the same name
       const existingChannels = realtime.getChannels();
-      existingChannels.forEach(channel => {
+      existingChannels.forEach((channel) => {
         if (channel.topic === SHARED_CHANNEL_NAME) {
           try {
             void channel.untrack();
@@ -51,7 +51,7 @@ export async function getGlobalPresenceChannel() {
             logger.warn('Error cleaning up existing channel', {
               ...LOG_CONTEXT,
               action: 'cleanup',
-              metadata: { error: e }
+              metadata: { error: e },
             });
           }
           void realtime.removeChannel(channel);
@@ -62,7 +62,7 @@ export async function getGlobalPresenceChannel() {
       const channel = realtime.channel(SHARED_CHANNEL_NAME, {
         config: {
           presence: {
-            key: SHARED_CHANNEL_NAME
+            key: SHARED_CHANNEL_NAME,
           },
           broadcast: {
             self: true,
@@ -140,7 +140,7 @@ export async function getGlobalPresenceChannel() {
             logger.info('Channel already joined or joining', {
               ...LOG_CONTEXT,
               action: 'subscribe',
-              metadata: { state: channel.state }
+              metadata: { state: channel.state },
             });
             return;
           }
@@ -178,9 +178,9 @@ export async function getGlobalPresenceChannel() {
             logger.warn('Retrying subscription', {
               ...LOG_CONTEXT,
               action: 'retry',
-              metadata: { retriesLeft: retries - 1, error }
+              metadata: { retriesLeft: retries - 1, error },
             });
-            await new Promise(resolve => setTimeout(resolve, delay));
+            await new Promise((resolve) => setTimeout(resolve, delay));
             return subscribeWithRetry(retries - 1, delay * 2);
           }
           throw error;

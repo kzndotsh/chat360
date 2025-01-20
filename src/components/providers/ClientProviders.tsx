@@ -5,9 +5,9 @@ import dynamic from 'next/dynamic';
 import { getGlobalPresenceChannel } from '@/lib/api/supabase';
 import { logger } from '@/lib/utils/logger';
 
-const AgoraProvider = dynamic(() => import('./AgoraProvider').then(mod => mod.AgoraProvider), {
+const AgoraProvider = dynamic(() => import('./AgoraProvider').then((mod) => mod.AgoraProvider), {
   ssr: false,
-  loading: () => null
+  loading: () => null,
 });
 
 interface ClientProvidersProps {
@@ -22,13 +22,13 @@ export function ClientProviders({ children }: ClientProvidersProps) {
         await getGlobalPresenceChannel();
         logger.info('Successfully initialized global presence channel', {
           component: 'ClientProviders',
-          action: 'initializePresenceChannel'
+          action: 'initializePresenceChannel',
         });
       } catch (error) {
         logger.error('Failed to initialize global presence channel', {
           component: 'ClientProviders',
           action: 'initializePresenceChannel',
-          metadata: { error }
+          metadata: { error },
         });
       }
     };

@@ -56,10 +56,7 @@ export async function POST(req: NextRequest) {
         component: 'api/agora/token',
         action: 'generateToken',
       });
-      return NextResponse.json(
-        { error: 'channelName is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'channelName is required' }, { status: 400 });
     }
 
     if (channelName.trim() === '') {

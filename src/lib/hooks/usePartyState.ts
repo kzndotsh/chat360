@@ -12,7 +12,7 @@ const LOG_CONTEXT = {
   file: 'usePartyState.ts',
 };
 
-type PartyAction = 
+type PartyAction =
   | { type: 'INITIALIZE'; payload: { currentUser: PartyMember | null; partyState: PartyState } }
   | { type: 'START_JOIN'; payload: { userId: string } }
   | { type: 'JOIN_SUCCESS'; payload: { user: PartyMember } }
@@ -52,7 +52,7 @@ function partyReducer(state: PartyStateType, action: PartyAction): PartyStateTyp
         partyState: action.payload.partyState,
         lastUpdate: Date.now(),
       };
-    
+
     case 'START_JOIN':
       return {
         ...state,
@@ -60,7 +60,7 @@ function partyReducer(state: PartyStateType, action: PartyAction): PartyStateTyp
         error: null,
         lastUpdate: Date.now(),
       };
-    
+
     case 'JOIN_SUCCESS':
       return {
         ...state,
@@ -69,7 +69,7 @@ function partyReducer(state: PartyStateType, action: PartyAction): PartyStateTyp
         error: null,
         lastUpdate: Date.now(),
       };
-    
+
     case 'JOIN_ERROR':
       return {
         ...state,
@@ -77,14 +77,14 @@ function partyReducer(state: PartyStateType, action: PartyAction): PartyStateTyp
         error: action.payload.error,
         lastUpdate: Date.now(),
       };
-    
+
     case 'START_LEAVE':
       return {
         ...state,
         partyState: 'leaving',
         lastUpdate: Date.now(),
       };
-    
+
     case 'LEAVE_SUCCESS':
       return {
         ...state,
@@ -94,14 +94,14 @@ function partyReducer(state: PartyStateType, action: PartyAction): PartyStateTyp
         error: null,
         lastUpdate: Date.now(),
       };
-    
+
     case 'LEAVE_ERROR':
       return {
         ...state,
         error: action.payload.error,
         lastUpdate: Date.now(),
       };
-    
+
     case 'UPDATE_PROFILE':
       updatedUser = {
         ...action.payload.user,
@@ -112,7 +112,7 @@ function partyReducer(state: PartyStateType, action: PartyAction): PartyStateTyp
         agora_uid: state.currentUser?.agora_uid,
         _lastUpdate: Date.now(),
       };
-      
+
       // Log voice state preservation
       logger.debug('Preserving voice state in profile update', {
         ...LOG_CONTEXT,
@@ -120,52 +120,52 @@ function partyReducer(state: PartyStateType, action: PartyAction): PartyStateTyp
         metadata: {
           oldState: {
             voice_status: state.currentUser?.voice_status,
-            muted: state.currentUser?.muted
+            muted: state.currentUser?.muted,
           },
           newState: {
             voice_status: updatedUser.voice_status,
-            muted: updatedUser.muted
-          }
-        }
+            muted: updatedUser.muted,
+          },
+        },
       });
 
       return {
         ...state,
         currentUser: updatedUser,
         // Also update the user in the members list
-        members: state.members.map(member => 
+        members: state.members.map((member) =>
           member.id === updatedUser.id ? updatedUser : member
         ),
         lastUpdate: Date.now(),
       };
-    
+
     case 'UPDATE_MEMBERS':
       // First, get the current member's state
-      currentMemberInUpdate = action.payload.members.find(
-        m => m.id === state.currentUser?.id
-      );
+      currentMemberInUpdate = action.payload.members.find((m) => m.id === state.currentUser?.id);
 
       // Update members with voice state preserved
-      updatedMembers = action.payload.members.map(member => {
-        const existingMember = state.members.find(m => m.id === member.id);
+      updatedMembers = action.payload.members.map((member) => {
+        const existingMember = state.members.find((m) => m.id === member.id);
         const isCurrentUser = member.id === state.currentUser?.id;
 
         return {
           ...member,
           // For current user, preserve our local voice state
-          ...(isCurrentUser ? {
-            ...state.currentUser,
-            name: member.name,
-            avatar: member.avatar,
-            game: member.game,
-            last_seen: member.last_seen,
-            is_active: member.is_active,
-          } : {
-            // For other members, preserve their existing voice state if any
-            voice_status: existingMember?.voice_status || member.voice_status || 'silent',
-            muted: existingMember?.muted ?? member.muted ?? false,
-            deafened_users: existingMember?.deafened_users || member.deafened_users || [],
-          }),
+          ...(isCurrentUser
+            ? {
+                ...state.currentUser,
+                name: member.name,
+                avatar: member.avatar,
+                game: member.game,
+                last_seen: member.last_seen,
+                is_active: member.is_active,
+              }
+            : {
+                // For other members, preserve their existing voice state if any
+                voice_status: existingMember?.voice_status || member.voice_status || 'silent',
+                muted: existingMember?.muted ?? member.muted ?? false,
+                deafened_users: existingMember?.deafened_users || member.deafened_users || [],
+              }),
           _lastUpdate: Date.now(),
         };
       });
@@ -174,18 +174,20 @@ function partyReducer(state: PartyStateType, action: PartyAction): PartyStateTyp
         ...state,
         members: updatedMembers,
         // Only update current user if it exists in the update and preserve voice state
-        currentUser: currentMemberInUpdate ? {
-          ...state.currentUser!,
-          name: currentMemberInUpdate.name,
-          avatar: currentMemberInUpdate.avatar,
-          game: currentMemberInUpdate.game,
-          last_seen: currentMemberInUpdate.last_seen,
-          is_active: currentMemberInUpdate.is_active,
-          _lastUpdate: Date.now(),
-        } : state.currentUser,
+        currentUser: currentMemberInUpdate
+          ? {
+              ...state.currentUser!,
+              name: currentMemberInUpdate.name,
+              avatar: currentMemberInUpdate.avatar,
+              game: currentMemberInUpdate.game,
+              last_seen: currentMemberInUpdate.last_seen,
+              is_active: currentMemberInUpdate.is_active,
+              _lastUpdate: Date.now(),
+            }
+          : state.currentUser,
         lastUpdate: Date.now(),
       };
-    
+
     default:
       return state;
   }
@@ -193,23 +195,28 @@ function partyReducer(state: PartyStateType, action: PartyAction): PartyStateTyp
 
 export function usePartyState() {
   const [state, dispatch] = useReducer(partyReducer, initialState);
-  
+
   // Refs
   const mountedRef = useRef(true);
   const initializingRef = useRef(false);
   const joinInProgress = useRef(false);
   const subscriptionRef = useRef<boolean>(false);
 
-  const { members: presenceMembers, initialize: initializePresence, cleanup, updatePresence } = usePresence();
+  const {
+    members: presenceMembers,
+    initialize: initializePresence,
+    cleanup,
+    updatePresence,
+  } = usePresence();
 
   // Initialize state from localStorage
   useEffect(() => {
     if (typeof window === 'undefined' || initializingRef.current) return;
-    
+
     initializingRef.current = true;
     const savedUser = localStorage.getItem('currentUser');
-    const savedState = localStorage.getItem('partyState') as PartyState || 'idle';
-    
+    const savedState = (localStorage.getItem('partyState') as PartyState) || 'idle';
+
     dispatch({
       type: 'INITIALIZE',
       payload: {
@@ -228,19 +235,19 @@ export function usePartyState() {
       action: 'syncMembers',
       metadata: {
         memberCount: presenceMembers.length,
-        memberIds: presenceMembers.map(m => m.id),
-        currentUserId: state.currentUser?.id
-      }
+        memberIds: presenceMembers.map((m) => m.id),
+        currentUserId: state.currentUser?.id,
+      },
     });
 
-    dispatch({ 
-      type: 'UPDATE_MEMBERS', 
-      payload: { 
-        members: presenceMembers.map(member => ({
+    dispatch({
+      type: 'UPDATE_MEMBERS',
+      payload: {
+        members: presenceMembers.map((member) => ({
           ...member,
-          _lastUpdate: Date.now()
-        }))
-      } 
+          _lastUpdate: Date.now(),
+        })),
+      },
     });
   }, [presenceMembers, state.currentUser?.id]);
 
@@ -257,7 +264,7 @@ export function usePartyState() {
     return () => {
       mountedRef.current = false;
       if (subscriptionRef.current) {
-        void cleanup().catch(err => {
+        void cleanup().catch((err) => {
           logger.error('Failed to cleanup on unmount', {
             ...LOG_CONTEXT,
             action: 'cleanup',
@@ -275,7 +282,7 @@ export function usePartyState() {
 
       try {
         dispatch({ type: 'START_JOIN', payload: { userId: crypto.randomUUID() } });
-        
+
         const user: PartyMember = {
           id: crypto.randomUUID(),
           name,
@@ -303,12 +310,12 @@ export function usePartyState() {
         logger.info('Successfully joined party', {
           ...LOG_CONTEXT,
           action: 'joinParty',
-          metadata: { 
+          metadata: {
             memberId: user.id,
             voiceState: {
               voice_status: user.voice_status,
-              muted: user.muted
-            }
+              muted: user.muted,
+            },
           },
         });
 
@@ -330,16 +337,16 @@ export function usePartyState() {
 
   const leaveParty = useCallback(async () => {
     if (!state.currentUser) return;
-    
+
     try {
       dispatch({ type: 'START_LEAVE' });
-      
+
       await cleanup();
       subscriptionRef.current = false;
-      
+
       localStorage.removeItem('currentUser');
       localStorage.setItem('partyState', 'idle');
-      
+
       if (mountedRef.current) {
         dispatch({ type: 'LEAVE_SUCCESS' });
       }
@@ -375,10 +382,10 @@ export function usePartyState() {
               ...state.currentUser,
               voice_status: state.currentUser.voice_status,
               muted: state.currentUser.muted,
-              deafened_users: state.currentUser.deafened_users
+              deafened_users: state.currentUser.deafened_users,
             },
-            updates: { name, avatar, game }
-          }
+            updates: { name, avatar, game },
+          },
         });
 
         // Create updated user with preserved voice state
@@ -393,7 +400,7 @@ export function usePartyState() {
           muted: state.currentUser.muted || false,
           deafened_users: state.currentUser.deafened_users || [],
           agora_uid: state.currentUser.agora_uid,
-          _lastUpdate: Date.now()
+          _lastUpdate: Date.now(),
         };
 
         // Update local state first
@@ -409,9 +416,9 @@ export function usePartyState() {
             voiceState: {
               voice_status: updatedUser.voice_status,
               muted: updatedUser.muted,
-              deafened_users: updatedUser.deafened_users
-            }
-          }
+              deafened_users: updatedUser.deafened_users,
+            },
+          },
         });
 
         // Update presence with complete state
@@ -426,7 +433,7 @@ export function usePartyState() {
           muted: updatedUser.muted,
           agora_uid: updatedUser.agora_uid?.toString(),
           deafened_users: updatedUser.deafened_users,
-          _lastUpdate: updatedUser._lastUpdate
+          _lastUpdate: updatedUser._lastUpdate,
         });
 
         logger.info('Successfully updated profile', {
@@ -438,10 +445,10 @@ export function usePartyState() {
             voiceState: {
               voice_status: updatedUser.voice_status,
               muted: updatedUser.muted,
-              deafened_users: updatedUser.deafened_users
+              deafened_users: updatedUser.deafened_users,
             },
-            finalState: updatedUser
-          }
+            finalState: updatedUser,
+          },
         });
       } catch (error) {
         // Revert local changes on error
@@ -457,8 +464,8 @@ export function usePartyState() {
             error,
             userId: state.currentUser.id,
             currentState: state.currentUser,
-            attemptedUpdates: { name, avatar, game }
-          }
+            attemptedUpdates: { name, avatar, game },
+          },
         });
         throw error;
       }

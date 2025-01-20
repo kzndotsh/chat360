@@ -29,15 +29,15 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
         logger.info('Loading video', {
           component: 'XboxIntro',
           action: 'loadVideo',
-          metadata: { url: INTRO_VIDEO_URL }
+          metadata: { url: INTRO_VIDEO_URL },
         });
 
         const response = await fetch(INTRO_VIDEO_URL);
         if (!response.ok) throw new Error(`Failed to fetch video: ${response.status}`);
-        
+
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
-        
+
         if (!mountedRef.current) return;
         videoElement.src = url;
 
@@ -47,7 +47,7 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
           logger.warn('Autoplay failed, trying muted', {
             component: 'XboxIntro',
             action: 'playVideo',
-            metadata: { error }
+            metadata: { error },
           });
           videoElement.muted = true;
           setIsMuted(true);
@@ -59,7 +59,7 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
         logger.error('Video loading failed', {
           component: 'XboxIntro',
           action: 'loadVideo',
-          metadata: { error }
+          metadata: { error },
         });
         if (mountedRef.current) onIntroEnd();
       }
@@ -110,14 +110,18 @@ export function XboxIntro({ onIntroEnd }: XboxIntroProps) {
   };
 
   return (
-    <div className={`fixed inset-0 z-50 bg-black transition-all duration-700 ${isEnded ? 'opacity-0 scale-105' : 'opacity-100 scale-100'}`}>
+    <div
+      className={`fixed inset-0 z-50 bg-black transition-all duration-700 ${isEnded ? 'scale-105 opacity-0' : 'scale-100 opacity-100'}`}
+    >
       <video
         ref={videoRef}
         className={`h-full w-full object-cover transition-opacity duration-700 ${isLoading ? 'opacity-0' : 'opacity-100'}`}
         playsInline
         preload="auto"
       />
-      <div className={`absolute bottom-4 right-4 flex space-x-2 transition-all duration-700 ${isEnded ? 'opacity-0 translate-y-4' : 'opacity-100'}`}>
+      <div
+        className={`absolute bottom-4 right-4 flex space-x-2 transition-all duration-700 ${isEnded ? 'translate-y-4 opacity-0' : 'opacity-100'}`}
+      >
         <Button
           onClick={toggleMute}
           className="rounded-md bg-white px-4 py-2 text-black hover:bg-gray-200"

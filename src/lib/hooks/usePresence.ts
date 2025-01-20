@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 import { useCallback, useRef, useEffect, useReducer } from 'react';
 import { RealtimeChannel } from '@supabase/realtime-js';
@@ -17,7 +17,7 @@ type PresenceState = {
   lastUpdate: number;
 };
 
-type PresenceAction = 
+type PresenceAction =
   | { type: 'CONNECT' }
   | { type: 'CONNECTED' }
   | { type: 'DISCONNECT' }
@@ -32,58 +32,56 @@ function presenceReducer(state: PresenceState, action: PresenceAction): Presence
       return {
         ...state,
         status: 'connecting',
-        error: null
+        error: null,
       };
     case 'CONNECTED':
       return {
         ...state,
         status: 'connected',
-        error: null
+        error: null,
       };
     case 'DISCONNECT':
       return {
         ...state,
         status: 'disconnected',
         members: [],
-        currentMember: null
+        currentMember: null,
       };
     case 'UPDATE_PROFILE': {
       if (!state.currentMember) return state;
       const updatedMember: PartyMember = {
         ...state.currentMember,
         ...action.payload,
-        voice_status: action.payload.voice_status as VoiceStatus || state.currentMember.voice_status,
-        _lastUpdate: Date.now()
+        voice_status:
+          (action.payload.voice_status as VoiceStatus) || state.currentMember.voice_status,
+        _lastUpdate: Date.now(),
       };
       return {
         ...state,
         currentMember: updatedMember,
-        members: state.members.map(m => 
-          m.id === updatedMember.id ? updatedMember : m
-        ),
-        lastUpdate: Date.now()
+        members: state.members.map((m) => (m.id === updatedMember.id ? updatedMember : m)),
+        lastUpdate: Date.now(),
       };
     }
     case 'UPDATE_STATUS': {
       if (!state.currentMember) return state;
       const updatedMember: PartyMember = {
         ...state.currentMember,
-        voice_status: action.payload.voice_status as VoiceStatus || state.currentMember.voice_status,
+        voice_status:
+          (action.payload.voice_status as VoiceStatus) || state.currentMember.voice_status,
         muted: action.payload.muted ?? state.currentMember.muted,
-        _lastUpdate: Date.now()
+        _lastUpdate: Date.now(),
       };
       return {
         ...state,
         currentMember: updatedMember,
-        members: state.members.map(m => 
-          m.id === updatedMember.id ? updatedMember : m
-        ),
-        lastUpdate: Date.now()
+        members: state.members.map((m) => (m.id === updatedMember.id ? updatedMember : m)),
+        lastUpdate: Date.now(),
       };
     }
     case 'SET_MEMBERS': {
       // When setting members from presence sync, preserve current member's profile data
-      const newMembers = action.payload.map(member => {
+      const newMembers = action.payload.map((member) => {
         if (state.currentMember && member.id === state.currentMember.id) {
           // Keep profile fields from current member, but take presence/status fields from sync
           return {
@@ -93,42 +91,42 @@ function presenceReducer(state: PresenceState, action: PresenceAction): Presence
             deafened_users: member.deafened_users,
             is_active: member.is_active,
             last_seen: member.last_seen,
-            _lastUpdate: Date.now()
+            _lastUpdate: Date.now(),
           };
         }
         return {
           ...member,
-          _lastUpdate: Date.now()
+          _lastUpdate: Date.now(),
         };
       });
 
       // Update current member if it exists in new members
-      const updatedCurrentMember = state.currentMember ? 
-        newMembers.find(m => m.id === state.currentMember?.id) || state.currentMember : 
-        null;
+      const updatedCurrentMember = state.currentMember
+        ? newMembers.find((m) => m.id === state.currentMember?.id) || state.currentMember
+        : null;
 
       logger.debug('Setting members', {
         ...LOG_CONTEXT,
         action: 'SET_MEMBERS',
         metadata: {
           memberCount: newMembers.length,
-          memberIds: newMembers.map(m => m.id),
-          currentMemberId: updatedCurrentMember?.id
-        }
+          memberIds: newMembers.map((m) => m.id),
+          currentMemberId: updatedCurrentMember?.id,
+        },
       });
 
       return {
         ...state,
         members: newMembers,
         currentMember: updatedCurrentMember,
-        lastUpdate: Date.now()
+        lastUpdate: Date.now(),
       };
     }
     case 'SET_ERROR':
       return {
         ...state,
         status: 'error',
-        error: action.payload
+        error: action.payload,
       };
     default:
       return state;
@@ -155,7 +153,8 @@ function convertPresenceToMembers(state: Record<string, PresenceMemberState[]>):
         is_active: true,
         created_at: existingMember?.created_at || currentTime,
         last_seen: presence.online_at || currentTime,
-        voice_status: (presence.voice_status as VoiceStatus) || existingMember?.voice_status || 'silent',
+        voice_status:
+          (presence.voice_status as VoiceStatus) || existingMember?.voice_status || 'silent',
         muted: presence.muted ?? existingMember?.muted ?? false,
         _lastUpdate: presence._lastUpdate || Date.now(),
         deafened_users: presence.deafened_users || existingMember?.deafened_users || [],
@@ -174,7 +173,7 @@ export function usePresence() {
     members: [],
     currentMember: null,
     error: null,
-    lastUpdate: Date.now()
+    lastUpdate: Date.now(),
   });
 
   const channelRef = useRef<RealtimeChannel | null>(null);
@@ -192,7 +191,7 @@ export function usePresence() {
       logger.error('No channel available for presence update', {
         ...LOG_CONTEXT,
         action: 'updatePresence',
-        metadata: { presence }
+        metadata: { presence },
       });
       throw new Error('No channel available');
     }
@@ -209,9 +208,9 @@ export function usePresence() {
             oldStatus: stateRef.current.currentMember?.voice_status,
             newStatus: presence.voice_status,
             oldMuted: stateRef.current.currentMember?.muted,
-            newMuted: presence.muted
-          }
-        }
+            newMuted: presence.muted,
+          },
+        },
       });
 
       // Add timeout for presence tracking
@@ -223,130 +222,134 @@ export function usePresence() {
       await Promise.race([trackPromise, timeoutPromise]);
 
       // Update local state immediately after successful presence update
-      dispatch({ 
-        type: 'UPDATE_STATUS', 
-        payload: { 
+      dispatch({
+        type: 'UPDATE_STATUS',
+        payload: {
           voice_status: presence.voice_status,
-          muted: presence.muted
-        } 
+          muted: presence.muted,
+        },
       });
 
       // Log successful update with final state
       logger.info('Successfully updated presence with voice state', {
         ...LOG_CONTEXT,
         action: 'updatePresence',
-        metadata: { 
+        metadata: {
           presence,
           finalState: {
             voice_status: stateRef.current.currentMember?.voice_status,
-            muted: stateRef.current.currentMember?.muted
-          }
-        }
+            muted: stateRef.current.currentMember?.muted,
+          },
+        },
       });
     } catch (error) {
       logger.error('Failed to update presence', {
         ...LOG_CONTEXT,
         action: 'updatePresence',
-        metadata: { 
+        metadata: {
           error,
           presence,
-          currentState: stateRef.current.currentMember
-        }
+          currentState: stateRef.current.currentMember,
+        },
       });
       throw error;
     }
   }, []);
 
-  const initialize = useCallback(async (member: PartyMember) => {
-    if (state.status === 'connecting') return;
-    
-    dispatch({ type: 'CONNECT' });
+  const initialize = useCallback(
+    async (member: PartyMember) => {
+      if (state.status === 'connecting') return;
 
-    try {
-      // Add timeout for channel initialization
-      const channelPromise = getGlobalPresenceChannel();
-      const timeoutPromise = new Promise<RealtimeChannel>((resolve, reject) => {
-        setTimeout(() => reject(new Error('Channel initialization timeout')), 5000);
-      });
+      dispatch({ type: 'CONNECT' });
 
-      const channel = await Promise.race([channelPromise, timeoutPromise]);
-      if (!channel) throw new Error('Failed to get presence channel');
-
-      channelRef.current = channel;
-
-      // Set up handlers with error boundaries
       try {
-        // Set current member first
-        dispatch({ type: 'UPDATE_PROFILE', payload: member });
-
-        // Track initial presence
-        await updatePresence({
-          id: member.id,
-          name: member.name,
-          avatar: member.avatar,
-          game: member.game,
-          muted: member.muted,
-          voice_status: 'silent',
-          online_at: new Date().toISOString(),
-          _lastUpdate: Date.now()
+        // Add timeout for channel initialization
+        const channelPromise = getGlobalPresenceChannel();
+        const timeoutPromise = new Promise<RealtimeChannel>((resolve, reject) => {
+          setTimeout(() => reject(new Error('Channel initialization timeout')), 5000);
         });
 
-        // Get initial state
-        const initialState = channel.presenceState<PresenceMemberState>();
-        if (initialState) {
-          const initialMembers = convertPresenceToMembers(initialState);
-          dispatch({ type: 'SET_MEMBERS', payload: initialMembers });
-        }
+        const channel = await Promise.race([channelPromise, timeoutPromise]);
+        if (!channel) throw new Error('Failed to get presence channel');
 
-        channel
-          .on('presence', { event: 'sync' }, () => {
-            if (!mountedRef.current) return;
-            
-            const state = channel.presenceState<PresenceMemberState>();
-            if (!state) return;
+        channelRef.current = channel;
 
-            const newMembers = convertPresenceToMembers(state);
-            dispatch({ type: 'SET_MEMBERS', payload: newMembers });
-          })
-          .on('presence', { event: 'join' }, () => {
-            if (!mountedRef.current) return;
-            
-            const state = channel.presenceState<PresenceMemberState>();
-            if (!state) return;
+        // Set up handlers with error boundaries
+        try {
+          // Set current member first
+          dispatch({ type: 'UPDATE_PROFILE', payload: member });
 
-            const newMembers = convertPresenceToMembers(state);
-            dispatch({ type: 'SET_MEMBERS', payload: newMembers });
-          })
-          .on('presence', { event: 'leave' }, () => {
-            if (!mountedRef.current) return;
-            
-            const state = channel.presenceState<PresenceMemberState>();
-            if (!state) return;
-
-            const newMembers = convertPresenceToMembers(state);
-            dispatch({ type: 'SET_MEMBERS', payload: newMembers });
+          // Track initial presence
+          await updatePresence({
+            id: member.id,
+            name: member.name,
+            avatar: member.avatar,
+            game: member.game,
+            muted: member.muted,
+            voice_status: 'silent',
+            online_at: new Date().toISOString(),
+            _lastUpdate: Date.now(),
           });
 
-        dispatch({ type: 'CONNECTED' });
+          // Get initial state
+          const initialState = channel.presenceState<PresenceMemberState>();
+          if (initialState) {
+            const initialMembers = convertPresenceToMembers(initialState);
+            dispatch({ type: 'SET_MEMBERS', payload: initialMembers });
+          }
 
+          channel
+            .on('presence', { event: 'sync' }, () => {
+              if (!mountedRef.current) return;
+
+              const state = channel.presenceState<PresenceMemberState>();
+              if (!state) return;
+
+              const newMembers = convertPresenceToMembers(state);
+              dispatch({ type: 'SET_MEMBERS', payload: newMembers });
+            })
+            .on('presence', { event: 'join' }, () => {
+              if (!mountedRef.current) return;
+
+              const state = channel.presenceState<PresenceMemberState>();
+              if (!state) return;
+
+              const newMembers = convertPresenceToMembers(state);
+              dispatch({ type: 'SET_MEMBERS', payload: newMembers });
+            })
+            .on('presence', { event: 'leave' }, () => {
+              if (!mountedRef.current) return;
+
+              const state = channel.presenceState<PresenceMemberState>();
+              if (!state) return;
+
+              const newMembers = convertPresenceToMembers(state);
+              dispatch({ type: 'SET_MEMBERS', payload: newMembers });
+            });
+
+          dispatch({ type: 'CONNECTED' });
+        } catch (error) {
+          logger.error('Failed to set up presence handlers', {
+            ...LOG_CONTEXT,
+            action: 'initialize',
+            metadata: { error },
+          });
+          throw error;
+        }
       } catch (error) {
-        logger.error('Failed to set up presence handlers', {
+        logger.error('Failed to initialize presence', {
           ...LOG_CONTEXT,
           action: 'initialize',
-          metadata: { error }
+          metadata: { error },
         });
-        throw error;
+        dispatch({
+          type: 'SET_ERROR',
+          payload: error instanceof Error ? error : new Error(String(error)),
+        });
       }
-
-    } catch (error) {
-      logger.error('Failed to initialize presence', {
-        ...LOG_CONTEXT,
-        action: 'initialize',
-        metadata: { error }
-      });
-      dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error : new Error(String(error)) });
-    }
-  }, [state.status, updatePresence]);
+    },
+    [state.status, updatePresence]
+  );
 
   const cleanup = useCallback(async () => {
     const release = await subscriptionMutex.current.acquire();
@@ -355,22 +358,21 @@ export function usePresence() {
 
       if (channelRef.current) {
         await channelRef.current.untrack();
-        
+
         const channel = await getGlobalPresenceChannel();
         if (channelRef.current !== channel) {
           await channelRef.current.unsubscribe();
         }
-        
+
         channelRef.current = null;
       }
 
       dispatch({ type: 'DISCONNECT' });
-
     } catch (error) {
       logger.error('Error during cleanup', {
         ...LOG_CONTEXT,
         action: 'cleanup',
-        metadata: { error }
+        metadata: { error },
       });
     } finally {
       release();
@@ -405,7 +407,7 @@ export function usePresence() {
       logger.error('Failed to get members', {
         ...LOG_CONTEXT,
         action: 'getMembers',
-        metadata: { error }
+        metadata: { error },
       });
       return [];
     }
@@ -419,6 +421,6 @@ export function usePresence() {
     initialize,
     cleanup,
     updatePresence,
-    getMembers
+    getMembers,
   };
 }

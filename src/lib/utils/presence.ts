@@ -75,25 +75,33 @@ export async function createPresenceChannel(
         });
         onStateChange(members);
       })
-      .on('presence', { event: 'join' }, ({ key, newPresences }: { key: string; newPresences: PresenceMemberState[] }) => {
-        logger.info('New member presence detected in channel', {
-          ...LOG_CONTEXT,
-          action: 'join',
-          metadata: { key, newPresences },
-        });
-      })
-      .on('presence', { event: 'leave' }, ({ key, leftPresences }: { key: string; leftPresences: PresenceMemberState[] }) => {
-        logger.info('Member presence removed from channel', {
-          ...LOG_CONTEXT,
-          action: 'leave',
-          metadata: { key, leftPresences },
-        });
-        
-        // Get updated state after leave
-        const state = channel.presenceState<PresenceMemberState>();
-        const members = convertPresenceStateToMembers(state);
-        onStateChange(members);
-      });
+      .on(
+        'presence',
+        { event: 'join' },
+        ({ key, newPresences }: { key: string; newPresences: PresenceMemberState[] }) => {
+          logger.info('New member presence detected in channel', {
+            ...LOG_CONTEXT,
+            action: 'join',
+            metadata: { key, newPresences },
+          });
+        }
+      )
+      .on(
+        'presence',
+        { event: 'leave' },
+        ({ key, leftPresences }: { key: string; leftPresences: PresenceMemberState[] }) => {
+          logger.info('Member presence removed from channel', {
+            ...LOG_CONTEXT,
+            action: 'leave',
+            metadata: { key, leftPresences },
+          });
+
+          // Get updated state after leave
+          const state = channel.presenceState<PresenceMemberState>();
+          const members = convertPresenceStateToMembers(state);
+          onStateChange(members);
+        }
+      );
 
     channel.subscribe(async (status: 'SUBSCRIBED' | 'TIMED_OUT' | 'CLOSED' | 'CHANNEL_ERROR') => {
       if (status === 'SUBSCRIBED') {

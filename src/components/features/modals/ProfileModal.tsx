@@ -127,7 +127,9 @@ export function ProfileModal({ onSubmit, onClose, initialData }: ProfileModalPro
                           onClick={() => field.onChange(avatar)}
                           disabled={form.formState.isSubmitting}
                           className={`h-12 w-12 overflow-hidden rounded-md transition-all ${
-                            field.value === avatar ? 'ring-[3px] ring-[#55b611]' : 'hover:ring-2 hover:ring-[#55b611]/50'
+                            field.value === avatar
+                              ? 'ring-[3px] ring-[#55b611]'
+                              : 'hover:ring-2 hover:ring-[#55b611]/50'
                           }`}
                         >
                           <Image

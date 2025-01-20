@@ -15,12 +15,12 @@ export default function Home() {
     if (showIntro) {
       const video = document.createElement('video');
       video.src = BACKGROUND_VIDEO_URL;
-      video.preload = "auto";
+      video.preload = 'auto';
       video.onloadedmetadata = () => setVideoLoaded(true);
       video.onerror = () => {
         logger.error('Video preload error', {
           action: 'videoPreload',
-          metadata: { url: BACKGROUND_VIDEO_URL }
+          metadata: { url: BACKGROUND_VIDEO_URL },
         });
       };
     }
@@ -29,11 +29,13 @@ export default function Home() {
   return (
     <div className="fixed inset-0 min-h-screen overflow-hidden bg-black">
       {showIntro ? (
-        <XboxIntro onIntroEnd={() => {
-          if (videoLoaded) {
-            setShowIntro(false);
-          }
-        }} />
+        <XboxIntro
+          onIntroEnd={() => {
+            if (videoLoaded) {
+              setShowIntro(false);
+            }
+          }}
+        />
       ) : (
         <main className="relative h-full w-full">
           <div className="absolute inset-0 z-0">
@@ -50,11 +52,14 @@ export default function Home() {
               onError={() => {
                 logger.error('Video playback error', {
                   action: 'videoPlayback',
-                  metadata: { elementId: 'xbox-bg', url: BACKGROUND_VIDEO_URL }
+                  metadata: { elementId: 'xbox-bg', url: BACKGROUND_VIDEO_URL },
                 });
               }}
             >
-              <source src={BACKGROUND_VIDEO_URL} type="video/mp4" />
+              <source
+                src={BACKGROUND_VIDEO_URL}
+                type="video/mp4"
+              />
             </video>
           </div>
 

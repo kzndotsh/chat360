@@ -28,29 +28,20 @@ export function PartyChat() {
   const [unjoinedMembers, setUnjoinedMembers] = useState<PartyMember[]>([]);
   const [memberVolumes, setMemberVolumes] = useState<Record<string, number>>({});
 
-  const {
-    currentUser,
-    partyState,
-    leaveParty,
-    joinParty,
-    editProfile,
-  } = usePartyState();
+  const { currentUser, partyState, leaveParty, joinParty, editProfile } = usePartyState();
 
   const {
     members: presenceMembers,
     initialize: initializePresence,
     cleanup: cleanupPresence,
-    getMembers
+    getMembers,
   } = usePresence();
 
-  const {
-    state,
-    requestMicrophonePermission,
-    toggleMute,
-    volume,
-    isMuted,
-    isSpeaking,
-  } = useVoice({ currentUser, partyState, updatePresence: initializePresence });
+  const { state, requestMicrophonePermission, toggleMute, volume, isMuted, isSpeaking } = useVoice({
+    currentUser,
+    partyState,
+    updatePresence: initializePresence,
+  });
 
   const micPermissionDenied = state.status === 'permission_denied';
 
@@ -58,13 +49,13 @@ export function PartyChat() {
   useEffect(() => {
     const members = partyState === 'idle' ? unjoinedMembers : presenceMembers;
     const newVolumes: Record<string, number> = {};
-    
-    members?.forEach(member => {
+
+    members?.forEach((member) => {
       if (member.id === currentUser?.id) {
         // Current user's volume is handled separately
         return;
       }
-      
+
       // For remote users who are muted or not in voice chat, set volume to 0
       if (member.muted || member.voice_status === 'muted') {
         newVolumes[member.id] = 0;
@@ -79,12 +70,13 @@ export function PartyChat() {
       }
     });
 
-    setMemberVolumes(prev => {
+    setMemberVolumes((prev) => {
       // Only update if values have changed
       const hasChanges = Object.entries(newVolumes).some(
-        ([id, vol]) => prev[id] !== vol || 
-        // Also check if any members were removed
-        Object.keys(prev).some(prevId => !newVolumes[prevId])
+        ([id, vol]) =>
+          prev[id] !== vol ||
+          // Also check if any members were removed
+          Object.keys(prev).some((prevId) => !newVolumes[prevId])
       );
       return hasChanges ? newVolumes : prev;
     });
@@ -137,9 +129,9 @@ export function PartyChat() {
       action: 'presenceUpdate',
       metadata: {
         memberCount: presenceMembers?.length || 0,
-        memberIds: presenceMembers?.map(m => m.id) || [],
+        memberIds: presenceMembers?.map((m) => m.id) || [],
         currentUserId: currentUser?.id,
-      }
+      },
     });
   }, [presenceMembers, currentUser?.id]);
 
@@ -158,7 +150,7 @@ export function PartyChat() {
             logger.error('Failed to cleanup presence', {
               component: 'PartyChat',
               action: 'cleanupPresence',
-              metadata: { error }
+              metadata: { error },
             });
           }
         });
@@ -178,7 +170,7 @@ export function PartyChat() {
     const handleBeforeUnload = () => {
       logger.info('Page unloading', {
         component: 'PartyChat',
-        action: 'beforeunload'
+        action: 'beforeunload',
       });
       localStorage.removeItem('lastUsedFormData');
       void cleanupPresence();
@@ -195,11 +187,11 @@ export function PartyChat() {
           release();
           return;
         }
-        
+
         logger.info('Initializing component', {
           ...LOG_CONTEXT,
           action: 'init',
-          metadata: { partyState, currentUser: !!currentUser }
+          metadata: { partyState, currentUser: !!currentUser },
         });
 
         // Show join modal for new sessions
@@ -207,20 +199,20 @@ export function PartyChat() {
           showModal('join', {
             name: '',
             avatar: AVATARS[Math.floor(Math.random() * AVATARS.length)] ?? AVATARS[0]!,
-            game: STATUSES[0]!
+            game: STATUSES[0]!,
           });
         }
-        
+
         logger.info('Initialization complete', {
           ...LOG_CONTEXT,
-          action: 'init'
+          action: 'init',
         });
       } catch (error) {
         if (mounted) {
           logger.error('Initialization error', {
             ...LOG_CONTEXT,
             action: 'init',
-            metadata: { error: error instanceof Error ? error.message : String(error) }
+            metadata: { error: error instanceof Error ? error.message : String(error) },
           });
           Sentry.captureException(error);
         }
@@ -228,137 +220,143 @@ export function PartyChat() {
         release();
       }
     };
-    
+
     void init();
-    
+
     return () => {
       mounted = false;
       abortController.abort();
       window.removeEventListener('beforeunload', handleBeforeUnload);
       logger.info('Component unmounting', {
-        action: 'useEffect: cleanup'
+        action: 'useEffect: cleanup',
       });
       resetForm();
     };
   }, [showModal, currentUser, partyState, resetForm, cleanupPresence]);
 
-  const handleJoinParty = useCallback(async (name: string, avatar: string, game: string) => {
-    logger.debug('Starting party join', {
-      action: 'handleJoinParty',
-      metadata: { name, game, avatar }
-    });
-
-    try {
-      // Request microphone permission first
-      const micPermissionGranted = await requestMicrophonePermission();
-      
-      if (!micPermissionGranted) {
-        logger.info('Proceeding without microphone access', {
-          action: 'handleJoinParty'
-        });
-      }
-
-      // Create member object first with initial voice state
-      const member: PartyMember = {
-        id: crypto.randomUUID(),
-        name,
-        avatar,
-        game,
-        is_active: true,
-        created_at: new Date().toISOString(),
-        last_seen: new Date().toISOString(),
-        // Default to silent/muted until we confirm audio is working
-        voice_status: micPermissionGranted ? 'silent' : 'muted',
-        muted: !micPermissionGranted,
-        deafened_users: [],
-        _lastUpdate: Date.now(),
-        _lastVoiceUpdate: Date.now()
-      };
-
-      // Join party with member info
-      await joinParty(name, game, avatar);
-
-      // Wait a short time for audio track to initialize
-      if (micPermissionGranted) {
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Increased delay for better audio initialization
-      }
-
-      // Now check volume after audio is initialized
-      // Use a higher threshold to reduce status flapping
-      const initialVoiceStatus = micPermissionGranted ? 
-        (volume > 45 ? 'speaking' : 'silent') :
-        'muted';
-
-      // Initialize presence with full member object including voice state
-      await initializePresence({
-        ...member,
-        voice_status: initialVoiceStatus,
-        muted: !micPermissionGranted,
-        _lastVoiceUpdate: Date.now()
+  const handleJoinParty = useCallback(
+    async (name: string, avatar: string, game: string) => {
+      logger.debug('Starting party join', {
+        action: 'handleJoinParty',
+        metadata: { name, game, avatar },
       });
 
-      // Force an update of member volumes to trigger initial render
-      setMemberVolumes(prev => ({
-        ...prev,
-        [member.id]: volume
-      }));
+      try {
+        // Request microphone permission first
+        const micPermissionGranted = await requestMicrophonePermission();
 
-      logger.debug('Successfully joined party', {
-        action: 'handleJoinParty',
-        metadata: { 
-          name, 
-          game, 
-          avatar, 
-          memberId: member.id,
-          voiceState: {
-            voice_status: initialVoiceStatus,
-            muted: !micPermissionGranted,
-            micPermissionGranted,
-            volume
-          }
+        if (!micPermissionGranted) {
+          logger.info('Proceeding without microphone access', {
+            action: 'handleJoinParty',
+          });
         }
+
+        // Create member object first with initial voice state
+        const member: PartyMember = {
+          id: crypto.randomUUID(),
+          name,
+          avatar,
+          game,
+          is_active: true,
+          created_at: new Date().toISOString(),
+          last_seen: new Date().toISOString(),
+          // Default to silent/muted until we confirm audio is working
+          voice_status: micPermissionGranted ? 'silent' : 'muted',
+          muted: !micPermissionGranted,
+          deafened_users: [],
+          _lastUpdate: Date.now(),
+          _lastVoiceUpdate: Date.now(),
+        };
+
+        // Join party with member info
+        await joinParty(name, game, avatar);
+
+        // Wait a short time for audio track to initialize
+        if (micPermissionGranted) {
+          await new Promise((resolve) => setTimeout(resolve, 1000)); // Increased delay for better audio initialization
+        }
+
+        // Now check volume after audio is initialized
+        // Use a higher threshold to reduce status flapping
+        const initialVoiceStatus = micPermissionGranted
+          ? volume > 45
+            ? 'speaking'
+            : 'silent'
+          : 'muted';
+
+        // Initialize presence with full member object including voice state
+        await initializePresence({
+          ...member,
+          voice_status: initialVoiceStatus,
+          muted: !micPermissionGranted,
+          _lastVoiceUpdate: Date.now(),
+        });
+
+        // Force an update of member volumes to trigger initial render
+        setMemberVolumes((prev) => ({
+          ...prev,
+          [member.id]: volume,
+        }));
+
+        logger.debug('Successfully joined party', {
+          action: 'handleJoinParty',
+          metadata: {
+            name,
+            game,
+            avatar,
+            memberId: member.id,
+            voiceState: {
+              voice_status: initialVoiceStatus,
+              muted: !micPermissionGranted,
+              micPermissionGranted,
+              volume,
+            },
+          },
+        });
+
+        // Close modal
+        const hideModal = useModalStore.getState().hideModal;
+        hideModal();
+      } catch (err) {
+        logger.error('Failed to join party', {
+          action: 'handleJoinParty',
+          metadata: { error: err },
+        });
+        throw err;
+      }
+    },
+    [initializePresence, joinParty, requestMicrophonePermission, volume]
+  );
+
+  const handleEditProfile = useCallback(
+    async (name: string, avatar: string, game: string) => {
+      logger.info('Updating profile', {
+        ...LOG_CONTEXT,
+        action: 'editProfile',
+        metadata: { userId: currentUser?.id, name, game },
       });
 
-      // Close modal
-      const hideModal = useModalStore.getState().hideModal;
-      hideModal();
-
-    } catch (err) {
-      logger.error('Failed to join party', {
-        action: 'handleJoinParty',
-        metadata: { error: err }
-      });
-      throw err;
-    }
-  }, [initializePresence, joinParty, requestMicrophonePermission, volume]);
-
-  const handleEditProfile = useCallback(async (name: string, avatar: string, game: string) => {
-    logger.info('Updating profile', {
-      ...LOG_CONTEXT,
-      action: 'editProfile',
-      metadata: { userId: currentUser?.id, name, game }
-    });
-
-    await editProfile(name, avatar, game);
-  }, [currentUser, editProfile]);
+      await editProfile(name, avatar, game);
+    },
+    [currentUser, editProfile]
+  );
 
   const handleLeaveParty = useCallback(async () => {
     // Acquire mutex for leave operation
     const release = await partyMutex.acquire();
     try {
       setIsLeaving(true);
-      
+
       // First cleanup presence to ensure proper state sync
       await cleanupPresence();
-      
+
       // Then leave party and reset form
       await leaveParty();
       resetForm();
-      
+
       // Clear any lingering states
       setUnjoinedMembers([]);
       setMemberVolumes({});
-      
     } catch (error) {
       logger.error('Failed to leave party', {
         ...LOG_CONTEXT,
@@ -374,18 +372,18 @@ export function PartyChat() {
   const handleToggleMute = useCallback(async () => {
     logger.info('Toggling mute', {
       action: 'toggleMute',
-      metadata: { currentUser }
+      metadata: { currentUser },
     });
     try {
       await toggleMute();
       logger.info('Mute toggled successfully', {
         action: 'toggleMute',
-        metadata: { currentUser }
+        metadata: { currentUser },
       });
     } catch (error) {
       logger.error('Error toggling mute', {
         action: 'toggleMute',
-        metadata: { error: error instanceof Error ? error.message : String(error) }
+        metadata: { error: error instanceof Error ? error.message : String(error) },
       });
       Sentry.captureException(error);
     }
@@ -394,47 +392,58 @@ export function PartyChat() {
   // Memoize the member list props to prevent unnecessary re-renders
   const memberListProps = useMemo(() => {
     const members = partyState === 'joined' ? presenceMembers : unjoinedMembers;
-    const stableMembers = members?.map(member => {
-      const isCurrentUser = member.id === currentUser?.id;
-      
-      // For current user, use the volume from useVoice hook
-      const memberVolume = isCurrentUser ? volume : volumeLevels[member.id] || 0;
-      
-      // For current user, respect the voice status from presence
-      // but update it based on volume for immediate feedback
-      let voice_status = member.voice_status || 'silent';
-      if (isCurrentUser) {
-        if (isMuted) {
-          voice_status = 'muted';
-        } else {
-          // Use isSpeaking state for immediate feedback
-          voice_status = isSpeaking ? 'speaking' : 'silent';
-        }
-      }
+    const stableMembers = members
+      ?.map((member) => {
+        const isCurrentUser = member.id === currentUser?.id;
 
-      return {
-        ...member,
-        voice_status,
-        volumeLevel: memberVolume,
-        muted: isCurrentUser ? isMuted : member.muted
-      };
-    })
-    // Sort members by join time (created_at) to maintain stable order
-    ?.sort((a, b) => {
-      // Current user always first
-      if (a.id === currentUser?.id) return -1;
-      if (b.id === currentUser?.id) return 1;
-      // Then sort by created_at
-      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-    });
+        // For current user, use the volume from useVoice hook
+        const memberVolume = isCurrentUser ? volume : volumeLevels[member.id] || 0;
+
+        // For current user, respect the voice status from presence
+        // but update it based on volume for immediate feedback
+        let voice_status = member.voice_status || 'silent';
+        if (isCurrentUser) {
+          if (isMuted) {
+            voice_status = 'muted';
+          } else {
+            // Use isSpeaking state for immediate feedback
+            voice_status = isSpeaking ? 'speaking' : 'silent';
+          }
+        }
+
+        return {
+          ...member,
+          voice_status,
+          volumeLevel: memberVolume,
+          muted: isCurrentUser ? isMuted : member.muted,
+        };
+      })
+      // Sort members by join time (created_at) to maintain stable order
+      ?.sort((a, b) => {
+        // Current user always first
+        if (a.id === currentUser?.id) return -1;
+        if (b.id === currentUser?.id) return 1;
+        // Then sort by created_at
+        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      });
 
     return {
       members: stableMembers || [],
       currentUserId: currentUser?.id,
       volumeLevels,
-      onToggleMute: handleToggleMute
+      onToggleMute: handleToggleMute,
     };
-  }, [partyState, presenceMembers, unjoinedMembers, currentUser, volume, volumeLevels, isMuted, isSpeaking, handleToggleMute]);
+  }, [
+    partyState,
+    presenceMembers,
+    unjoinedMembers,
+    currentUser,
+    volume,
+    volumeLevels,
+    isMuted,
+    isSpeaking,
+    handleToggleMute,
+  ]);
 
   return (
     <div className="z-20 mx-auto w-full max-w-[825px] overflow-hidden p-4 sm:p-6">
@@ -445,13 +454,13 @@ export function PartyChat() {
             onClick={() => {
               logger.info('Opening edit modal', {
                 metadata: {
-                  currentUser
-                }
+                  currentUser,
+                },
               });
               showModal('profile', {
                 name: currentUser?.name || '',
                 avatar: currentUser?.avatar || AVATARS[0]!,
-                game: currentUser?.game || ''
+                game: currentUser?.game || '',
               });
             }}
             className="group flex flex-col items-center"
@@ -480,9 +489,7 @@ export function PartyChat() {
         <PartyHeader membersCount={presenceMembers.length} />
 
         <div className="flex">
-          <MemberList
-            {...memberListProps}
-          />
+          <MemberList {...memberListProps} />
         </div>
       </Card>
 

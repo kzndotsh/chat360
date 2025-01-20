@@ -11,11 +11,11 @@ const VOLUME_CHECK_INTERVAL = 100; // 100ms for volume updates
 const _VOICE_JOIN_TIMEOUT = 30000; // 30 seconds
 const VOICE_RETRY_DELAY = 2000; // 2 seconds between retries
 const MAX_VOICE_JOIN_RETRIES = 3;
-const SPEAKING_THRESHOLD = 0.45;  // Start speaking above 45%
-const SILENCE_THRESHOLD = 0.35;   // Stop speaking below 35%
+const SPEAKING_THRESHOLD = 0.45; // Start speaking above 45%
+const SILENCE_THRESHOLD = 0.35; // Stop speaking below 35%
 
 // Define our possible voice states
-type VoiceState = 
+type VoiceState =
   | { status: 'idle' }
   | { status: 'requesting_permissions' }
   | { status: 'permission_denied' }
@@ -38,7 +38,7 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
   const lastVolumeRef = useRef(0);
   const isSpeakingRef = useRef(false);
   const lastPresenceUpdateRef = useRef(0);
-  
+
   // Refs for intervals/cleanup
   const volumeIntervalRef = useRef<number | null>(null);
   const { getClient } = useAgoraContext();
@@ -66,31 +66,31 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
       if (audioContext.state === 'suspended') {
         await audioContext.resume();
       }
-      
+
       // Get client
       const client = await getClient();
-      
+
       // Create track with explicit audio processing settings
       const track = await AgoraRTC.createMicrophoneAudioTrack({
         encoderConfig: {
           sampleRate: 48000,
           stereo: false,
-          bitrate: 192 // Increased for better quality
+          bitrate: 192, // Increased for better quality
         },
         AEC: true, // Echo cancellation
         ANS: true, // Noise suppression
-        AGC: true  // Auto gain control
+        AGC: true, // Auto gain control
       });
 
       // Verify track is created and getting input
       const initialVolume = track.getVolumeLevel();
       logger.info('Audio track created', {
         action: 'connect',
-          metadata: {
+        metadata: {
           initialVolume,
           sampleRate: 48000,
-          bitrate: 192
-        }
+          bitrate: 192,
+        },
       });
 
       // Generate UID
@@ -113,12 +113,7 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
       const { token } = await response.json();
 
       // Join channel
-      await client.join(
-        process.env.NEXT_PUBLIC_AGORA_APP_ID!,
-        'main-channel',
-        token,
-        numericUid
-      );
+      await client.join(process.env.NEXT_PUBLIC_AGORA_APP_ID!, 'main-channel', token, numericUid);
 
       // Set up track
       await track.setEnabled(!isMuted);
@@ -130,43 +125,43 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
           if (mediaType === 'audio') {
             logger.info('Remote user published audio', {
               action: 'user-published',
-              metadata: { userId: user.uid }
+              metadata: { userId: user.uid },
             });
 
             // Subscribe to the remote user's audio track
             await client.subscribe(user, mediaType);
-            
+
             // Verify we got the audio track
             if (!user.audioTrack) {
               throw new Error('No audio track after subscription');
             }
-            
+
             // Play the remote audio track
             user.audioTrack.play();
-            
+
             // Track the new user
-            setRemoteUsers(prev => new Set([...Array.from(prev), user.uid.toString()]));
-            
+            setRemoteUsers((prev) => new Set([...Array.from(prev), user.uid.toString()]));
+
             logger.info('Subscribed and playing remote audio track', {
               action: 'subscribe',
-              metadata: { 
+              metadata: {
                 userId: user.uid,
                 currentRemoteUsers: Array.from(remoteUsers),
                 totalUsers: remoteUsers.size + 1,
                 hasAudioTrack: !!user.audioTrack,
-                trackState: user.audioTrack?.isPlaying
-              }
+                trackState: user.audioTrack?.isPlaying,
+              },
             });
           }
         } catch (err) {
           logger.error('Failed to subscribe to remote user', {
             action: 'subscribe',
             metadata: {
-              error: String(err), 
+              error: String(err),
               userId: user.uid,
               mediaType,
-              hasAudioTrack: !!user.audioTrack
-            }
+              hasAudioTrack: !!user.audioTrack,
+            },
           });
         }
       });
@@ -176,30 +171,30 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
           if (mediaType === 'audio') {
             // Stop playing the remote audio track
             user.audioTrack?.stop();
-            
+
             // Unsubscribe from the remote user's audio track
             await client.unsubscribe(user, mediaType);
-            
+
             // Remove the user from tracking
-            setRemoteUsers(prev => {
+            setRemoteUsers((prev) => {
               const next = new Set(prev);
               next.delete(user.uid.toString());
               return next;
             });
-            
+
             logger.info('Stopped and unsubscribed from remote audio track', {
               action: 'unsubscribe',
-            metadata: { 
+              metadata: {
                 userId: user.uid,
                 remainingUsers: Array.from(remoteUsers),
-                totalUsers: remoteUsers.size - 1
-            }
-          });
-        }
-      } catch (err) {
+                totalUsers: remoteUsers.size - 1,
+              },
+            });
+          }
+        } catch (err) {
           logger.error('Failed to unsubscribe from remote user', {
             action: 'unsubscribe',
-            metadata: { error: String(err), userId: user.uid }
+            metadata: { error: String(err), userId: user.uid },
           });
         }
       });
@@ -208,11 +203,11 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
       client.on('user-left', async (user) => {
         logger.info('User left channel', {
           action: 'user-left',
-        metadata: { 
+          metadata: {
             userId: user.uid,
             remainingUsers: Array.from(remoteUsers),
-            totalUsers: remoteUsers.size
-          }
+            totalUsers: remoteUsers.size,
+          },
         });
       });
 
@@ -222,16 +217,16 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
         if (event.code >= 1005 && event.code <= 1013) {
           logger.error('Audio device error', {
             action: 'audio-error',
-      metadata: { 
+            metadata: {
               code: event.code,
               msg: event.msg,
               isMuted,
               volume: track.getVolumeLevel() * 100,
               deviceState: {
                 enabled: track.enabled,
-                muted: track.muted
-              }
-            }
+                muted: track.muted,
+              },
+            },
           });
 
           // Handle specific audio device errors
@@ -242,8 +237,8 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
               void handleDisconnectRef.current?.(new Error(`Audio device error: ${event.msg}`));
               break;
           }
-        return;
-      }
+          return;
+        }
 
         // Audio level warnings (2001, 2003)
         if (event.code === 2001 || event.code === 2003) {
@@ -256,31 +251,33 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
               volume: track.getVolumeLevel() * 100,
               audioSettings: {
                 bitrate: 192,
-                sampleRate: 48000
-              }
-            }
+                sampleRate: 48000,
+              },
+            },
           });
-          
+
           // Only attempt recovery if not muted
           if (!isMuted) {
             try {
               // Try to recover audio
               track.setVolume(150);
-              
+
               // Check audio context
-              const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+              const audioContext = new (window.AudioContext ||
+                (window as any).webkitAudioContext)();
               if (audioContext.state === 'suspended') {
                 void audioContext.resume();
               }
 
               // Try to reinitialize track if issues persist
-              if (event.code === 2001) { // AUDIO_INPUT_LEVEL_TOO_LOW
+              if (event.code === 2001) {
+                // AUDIO_INPUT_LEVEL_TOO_LOW
                 setTimeout(async () => {
                   const level = track.getVolumeLevel() * 100;
                   if (level < 1) {
                     logger.warn('Audio level still too low, attempting recovery', {
                       action: 'audio-recovery',
-                      metadata: { currentLevel: level }
+                      metadata: { currentLevel: level },
                     });
                     void handleDisconnectRef.current?.(new Error('Audio input level too low'));
                   }
@@ -289,7 +286,7 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
             } catch (err) {
               logger.error('Failed to recover from audio warning', {
                 action: 'audio-recovery',
-                metadata: { error: String(err) }
+                metadata: { error: String(err) },
               });
             }
           }
@@ -301,8 +298,8 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
             action: 'connection-error',
             metadata: {
               code: event.code,
-              msg: event.msg
-            }
+              msg: event.msg,
+            },
           });
           void handleDisconnectRef.current?.(new Error(`Network error: ${event.msg}`));
         }
@@ -310,20 +307,20 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
 
       // Add event listeners with proper cleanup
       client.on('exception', handleException);
-      
+
       // Add track-ended handler
       const handleTrackEnded = () => {
         logger.warn('Audio track ended unexpectedly', {
           action: 'track-ended',
-            metadata: {
+          metadata: {
             isMuted,
             volume,
-            lastKnownState: state.status
-          }
+            lastKnownState: state.status,
+          },
         });
         void handleDisconnectRef.current?.(new Error('Audio track ended unexpectedly'));
       };
-      
+
       track.on('track-ended', handleTrackEnded);
 
       // Start volume monitoring
@@ -340,7 +337,7 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
               setVolume(0);
               setIsSpeaking(false);
               isSpeakingRef.current = false;
-              
+
               // Update presence with muted state immediately
               if (currentUser?.id && updatePresence) {
                 void (async () => {
@@ -348,15 +345,15 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
                     ...currentUser,
                     muted: true,
                     voice_status: 'muted',
-                    _lastUpdate: Date.now()
+                    _lastUpdate: Date.now(),
                   });
                   lastPresenceUpdateRef.current = Date.now();
                   logger.info('Voice state presence updated', {
                     action: 'presence-update',
-                    metadata: { 
+                    metadata: {
                       newState: 'muted',
-                      volume: 0
-                    }
+                      volume: 0,
+                    },
                   });
                 })();
               }
@@ -366,17 +363,17 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
 
           // Get current volume level
           const currentLevel = track.getVolumeLevel();
-          
+
           // Debug log volume levels
           logger.info('Volume level check', {
             action: 'volume-check',
             metadata: {
               currentLevel,
               isSpeaking: isSpeakingRef.current,
-              lastUpdate: Date.now() - lastPresenceUpdateRef.current
-            }
+              lastUpdate: Date.now() - lastPresenceUpdateRef.current,
+            },
           });
-          
+
           // Always update volume state
           setVolume(currentLevel);
           lastVolumeRef.current = currentLevel;
@@ -392,17 +389,17 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
               metadata: {
                 shouldBeginSpeaking,
                 shouldStopSpeaking,
-                currentLevel
-              }
+                currentLevel,
+              },
             });
           }
-          
+
           // Update state and presence if needed
           if (shouldBeginSpeaking || shouldStopSpeaking) {
             const newSpeakingState = shouldBeginSpeaking;
             setIsSpeaking(newSpeakingState);
             isSpeakingRef.current = newSpeakingState;
-            
+
             // Create a complete presence object
             const presence: PartyMember = {
               id: currentUser!.id,
@@ -417,9 +414,9 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
               deafened_users: currentUser!.deafened_users,
               agora_uid: currentUser!.agora_uid,
               _lastUpdate: Date.now(),
-              _lastVoiceUpdate: Date.now()
+              _lastVoiceUpdate: Date.now(),
             };
-            
+
             // Force presence update
             if (currentUser?.id && updatePresence) {
               void (async () => {
@@ -427,10 +424,10 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
                 lastPresenceUpdateRef.current = Date.now();
                 logger.info('Voice state presence updated', {
                   action: 'presence-update',
-                  metadata: { 
+                  metadata: {
                     newState: presence.voice_status,
-                    volume: currentLevel
-                  }
+                    volume: currentLevel,
+                  },
                 });
               })();
             }
@@ -439,9 +436,9 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
           // Track is invalid, stop monitoring
           logger.error('Volume monitoring failed', {
             action: 'volume-monitor',
-            metadata: { error: String(err) }
+            metadata: { error: String(err) },
           });
-          
+
           if (volumeIntervalRef.current) {
             clearInterval(volumeIntervalRef.current);
             volumeIntervalRef.current = null;
@@ -458,7 +455,6 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
           void handleDisconnectRef.current?.();
         }
       });
-
     } catch (error) {
       void handleDisconnectRef.current?.(error instanceof Error ? error : new Error(String(error)));
     }
@@ -486,9 +482,9 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
           // Track is already cleaned up, ignore
         }
       } catch (err) {
-        logger.error('Track cleanup failed', { 
+        logger.error('Track cleanup failed', {
           action: 'handleDisconnect',
-          metadata: { error: String(err) }
+          metadata: { error: String(err) },
         });
       }
     }
@@ -499,9 +495,9 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
       client.removeAllListeners();
       await client.leave();
     } catch (err) {
-      logger.error('Client cleanup failed', { 
+      logger.error('Client cleanup failed', {
         action: 'handleDisconnect',
-        metadata: { error: String(err) }
+        metadata: { error: String(err) },
       });
     }
 
@@ -515,7 +511,7 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
     if (state.status === 'connected' || (state.status === 'connecting' && error)) {
       const nextAttempt = (state.status === 'connecting' ? state.attempt : 0) + 1;
       const delayMs = VOICE_RETRY_DELAY * Math.pow(2, nextAttempt - 1);
-      
+
       setTimeout(() => {
         setState({ status: 'connecting', attempt: nextAttempt });
         void connectRef.current?.();
@@ -534,32 +530,33 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
     try {
       // Check permissions API first
       if (navigator.permissions && navigator.permissions.query) {
-          const result = await navigator.permissions.query({ name: 'microphone' as PermissionName });
-          if (result.state === 'denied') {
+        const result = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+        if (result.state === 'denied') {
           setState({ status: 'permission_denied' });
-            return false;
+          return false;
         }
       }
 
       // Try to get microphone access
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
-          }
-        });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
 
-        // Clean up test stream
-      stream.getTracks().forEach(track => track.stop());
-      
+      // Clean up test stream
+      stream.getTracks().forEach((track) => track.stop());
+
       setState({ status: 'idle' });
-        return true;
-      } catch (err) {
-        const error = err as Error;
-        const isPermissionDenied = error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError';
-        
-        if (isPermissionDenied) {
+      return true;
+    } catch (err) {
+      const error = err as Error;
+      const isPermissionDenied =
+        error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError';
+
+      if (isPermissionDenied) {
         setState({ status: 'permission_denied' });
         return false;
       }
@@ -575,13 +572,13 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
       try {
         const { track } = state;
         const newMutedState = !isMuted;
-        
+
         // First update local state
         setIsMuted(newMutedState);
-        
+
         // Then update track
         await track.setEnabled(!newMutedState);
-        
+
         // Reset volume and speaking state when muting
         if (newMutedState) {
           lastVolumeRef.current = 0;
@@ -600,23 +597,23 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
             is_active: currentUser.is_active,
             created_at: currentUser.created_at,
             last_seen: currentUser.last_seen,
-            voice_status: newMutedState ? 'muted' as const : 'silent' as const,
+            voice_status: newMutedState ? ('muted' as const) : ('silent' as const),
             muted: newMutedState,
             deafened_users: currentUser.deafened_users,
             agora_uid: currentUser.agora_uid,
-            _lastUpdate: Date.now()
+            _lastUpdate: Date.now(),
           };
-          
+
           await updatePresence(presence);
-          
+
           logger.info('Voice state updated after mute toggle', {
             action: 'toggleMute',
-            metadata: { 
+            metadata: {
               newState: presence.voice_status,
               muted: presence.muted,
               volume: 0,
-              isSpeaking: false
-            }
+              isSpeaking: false,
+            },
           });
         }
       } catch (err) {
@@ -624,7 +621,7 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
         setIsMuted(isMuted);
         logger.error('Failed to toggle mute', {
           action: 'toggleMute',
-          metadata: { error: String(err) }
+          metadata: { error: String(err) },
         });
       }
     }
@@ -659,7 +656,7 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
     requestMicrophonePermission,
     toggleMute,
     connect,
-    disconnect: handleDisconnect
+    disconnect: handleDisconnect,
   };
 }
 
@@ -668,6 +665,6 @@ export default function useVoiceWithDefaults(props: Partial<VoiceHookProps> = {}
   return useVoice({
     currentUser: props.currentUser || null,
     partyState: props.partyState || 'idle',
-    updatePresence: props.updatePresence
+    updatePresence: props.updatePresence,
   });
 }

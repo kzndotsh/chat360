@@ -82,9 +82,7 @@ export function PartyControls({
                 <div className="flex h-3 w-3 items-center justify-center rounded-full bg-[#0c71ba] text-[8px] font-bold text-white sm:h-4 sm:w-4 sm:text-[10px]">
                   X
                 </div>
-                <span className="ml-[-3px] text-white">
-                  {isMuted ? 'Unmute' : 'Mute'}
-                </span>
+                <span className="ml-[-3px] text-white">{isMuted ? 'Unmute' : 'Mute'}</span>
               </button>
             )}
 
