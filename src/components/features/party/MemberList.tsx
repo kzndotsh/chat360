@@ -4,6 +4,7 @@ import { VoiceStatusIcon } from '@/components/features/party/icons/VoiceStatusIc
 import { PartyMember } from '@/lib/types/party';
 import Image from 'next/image';
 import { logger } from '@/lib/utils/logger';
+import { AVATARS } from '@/lib/config/constants';
 
 interface MemberListProps {
   members: PartyMember[];
@@ -24,7 +25,7 @@ export function MemberList({ members, currentUserId, volumeLevels = {}, onToggle
   return (
     <div className="flex h-full flex-col bg-white/5">
       <div className="flex flex-col">
-        {members.map((member, index) => {
+        {members.map((member) => {
           const isCurrentUser = member.id === currentUserId;
           const volumeLevel = volumeLevels[member.id] || 0;
 
@@ -35,35 +36,44 @@ export function MemberList({ members, currentUserId, volumeLevels = {}, onToggle
               member,
               isCurrentUser,
               volumeLevel,
+              voice_status: member.voice_status,
+              muted: member.muted
             },
           });
 
           return (
             <div
               key={member.id}
-              className={`flex h-12 items-center px-4 hover:bg-white/5 transition-colors ${
-                index !== 0 ? 'border-t border-white/20' : ''
-              }`}
+              className="flex h-12 items-center px-4 hover:bg-white/5 transition-colors border-t border-white/20 first:border-t-0"
             >
               {/* Column 1: Username section */}
               <div className="flex w-[440px] items-center gap-1">
                 {/* Voice status */}
                 <div className="-ml-4">
-                  <VoiceStatusIcon 
-                    status={member.voice_status || 'silent'} 
-                    volumeLevel={volumeLevels[member.id] || 0}
-                    className="h-5 w-5"
+                  <VoiceStatusIcon
+                    status={member.voice_status || 'silent'}
+                    className="h-7 w-7"
                   />
                 </div>
 
                 {/* Avatar */}
                 <div className="h-7 w-7 overflow-hidden">
                   <Image
-                    src={member.avatar}
+                    src={member.avatar || AVATARS[0]!}
                     alt={member.name}
                     width={30}
                     height={30}
                     className="object-cover"
+                    priority={true}
+                    loading="eager"
+                    unoptimized={true}
+                    onError={(e) => {
+                      const img = e.target as HTMLImageElement;
+                      const defaultAvatar = AVATARS[0]!;
+                      if (!img.src.includes(defaultAvatar)) {
+                        img.src = defaultAvatar;
+                      }
+                    }}
                   />
                 </div>
 

@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { logger } from '@/lib/utils/logger';
 import type { PartyMember, PresenceMemberState } from '@/lib/types/party';
 import { SHARED_CHANNEL_NAME } from '@/lib/utils/constants';
+import { AVATARS } from '@/lib/config/constants';
 
 const LOG_CONTEXT = { component: 'presence' };
 
@@ -30,17 +31,24 @@ export function convertPresenceStateToMembers(
   Object.values(state)
     .flat()
     .forEach((presence) => {
-      if (!presence.id || !presence.name || !presence.avatar || !presence.game) return;
+      if (!presence.id) return; // Only skip if ID is missing
+
+      // Get existing member if available
+      const existingMember = memberMap.get(presence.id);
 
       memberMap.set(presence.id, {
         id: presence.id,
-        name: presence.name,
-        avatar: presence.avatar,
-        game: presence.game,
+        name: presence.name || existingMember?.name || '',
+        avatar: presence.avatar || existingMember?.avatar || AVATARS[0]!,
+        game: presence.game || existingMember?.game || '',
         is_active: true,
-        created_at: currentTime,
+        created_at: existingMember?.created_at || currentTime,
         last_seen: presence.online_at || currentTime,
-        voice_status: presence.voice_status || 'silent',
+        voice_status: presence.voice_status || existingMember?.voice_status || 'silent',
+        muted: presence.muted ?? existingMember?.muted ?? false,
+        deafened_users: presence.deafened_users || existingMember?.deafened_users || [],
+        agora_uid: presence.agora_uid ? Number(presence.agora_uid) : existingMember?.agora_uid,
+        _lastUpdate: presence._lastUpdate || Date.now(),
       });
     });
 

@@ -239,19 +239,13 @@ export function EditProfileModal({
             name="game"
             control={control}
             render={({ field }) => (
-              <Select
-                {...field}
-                onValueChange={field.onChange}
-              >
+              <Select value={field.value} onValueChange={field.onChange}>
                 <SelectTrigger className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-black transition-colors focus:border-[#616b83] focus:outline-none focus:ring-1 focus:ring-[#616b83]">
-                  <SelectValue placeholder="Select a game" />
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {STATUSES.map((status) => (
-                    <SelectItem
-                      key={status}
-                      value={status}
-                    >
+                    <SelectItem key={status} value={status}>
                       {status}
                     </SelectItem>
                   ))}

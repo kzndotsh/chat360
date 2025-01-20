@@ -14,6 +14,7 @@ export interface PartyMember {
   deafened_users?: string[];
   presence_ref?: string;
   _lastUpdate?: number;
+  _lastVoiceUpdate?: number;
 }
 
 export interface PresenceMemberState {

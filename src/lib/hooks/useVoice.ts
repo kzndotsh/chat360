@@ -11,7 +11,8 @@ const VOLUME_CHECK_INTERVAL = 100; // 100ms for volume updates
 const _VOICE_JOIN_TIMEOUT = 30000; // 30 seconds
 const VOICE_RETRY_DELAY = 2000; // 2 seconds between retries
 const MAX_VOICE_JOIN_RETRIES = 3;
-const VOLUME_SMOOTHING_FACTOR = 0.3; // Lower = smoother, but more latency
+const SPEAKING_THRESHOLD = 0.45;  // Start speaking above 45%
+const SILENCE_THRESHOLD = 0.35;   // Stop speaking below 35%
 
 // Define our possible voice states
 type VoiceState = 
@@ -35,6 +36,8 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
   const [volume, setVolume] = useState(0);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const lastVolumeRef = useRef(0);
+  const isSpeakingRef = useRef(false);
+  const lastPresenceUpdateRef = useRef(0);
   
   // Refs for intervals/cleanup
   const volumeIntervalRef = useRef<number | null>(null);
@@ -138,12 +141,6 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
               throw new Error('No audio track after subscription');
             }
             
-            // Initialize audio context if needed
-            const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-            if (audioContext.state === 'suspended') {
-              await audioContext.resume();
-            }
-            
             // Play the remote audio track
             user.audioTrack.play();
             
@@ -157,8 +154,7 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
                 currentRemoteUsers: Array.from(remoteUsers),
                 totalUsers: remoteUsers.size + 1,
                 hasAudioTrack: !!user.audioTrack,
-                trackState: user.audioTrack?.isPlaying,
-                audioContextState: audioContext.state
+                trackState: user.audioTrack?.isPlaying
               }
             });
           }
@@ -343,68 +339,100 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
             if (volume !== 0 || isSpeaking) {
               setVolume(0);
               setIsSpeaking(false);
+              isSpeakingRef.current = false;
               
-              // Log state reset
-              logger.info('Reset audio state on mute', {
-                action: 'volume-monitor',
-                metadata: {
-                  prevVolume: volume,
-                  wasSpeaking: isSpeaking
-                }
-              });
+              // Update presence with muted state immediately
+              if (currentUser?.id && updatePresence) {
+                void (async () => {
+                  await updatePresence({
+                    ...currentUser,
+                    muted: true,
+                    voice_status: 'muted',
+                    _lastUpdate: Date.now()
+                  });
+                  lastPresenceUpdateRef.current = Date.now();
+                  logger.info('Voice state presence updated', {
+                    action: 'presence-update',
+                    metadata: { 
+                      newState: 'muted',
+                      volume: 0
+                    }
+                  });
+                })();
+              }
             }
             return;
           }
 
-          // If this doesn't throw, the track is still valid
-          const currentLevel = track.getVolumeLevel() * 100;
+          // Get current volume level
+          const currentLevel = track.getVolumeLevel();
           
-          // Smooth the volume changes
-          const smoothedLevel = lastVolumeRef.current + (currentLevel - lastVolumeRef.current) * VOLUME_SMOOTHING_FACTOR;
-          lastVolumeRef.current = smoothedLevel;
+          // Debug log volume levels
+          logger.info('Volume level check', {
+            action: 'volume-check',
+            metadata: {
+              currentLevel,
+              isSpeaking: isSpeakingRef.current,
+              lastUpdate: Date.now() - lastPresenceUpdateRef.current
+            }
+          });
           
-          // Only update volume if it would change significantly
-          if (Math.abs(volume - smoothedLevel) > 1) {
-            setVolume(smoothedLevel);
-          }
-          
-          const isSpeakingNow = smoothedLevel > 30; // Match VoiceStatusIcon threshold
-          
-          // Only update speaking state and presence if it would change
-          if (isSpeaking !== isSpeakingNow) {
-            setIsSpeaking(isSpeakingNow);
-            
-            logger.info('Speaking state changed', {
-              action: 'volume-monitor',
-            metadata: { 
-                volume: smoothedLevel,
-                fromState: isSpeaking ? 'speaking' : 'silent',
-                toState: isSpeakingNow ? 'speaking' : 'silent'
+          // Always update volume state
+          setVolume(currentLevel);
+          lastVolumeRef.current = currentLevel;
+
+          // Simple state machine with hysteresis
+          const shouldBeginSpeaking = !isSpeakingRef.current && currentLevel > SPEAKING_THRESHOLD;
+          const shouldStopSpeaking = isSpeakingRef.current && currentLevel < SILENCE_THRESHOLD;
+
+          // Debug log state changes
+          if (shouldBeginSpeaking || shouldStopSpeaking) {
+            logger.info('Voice state change detected', {
+              action: 'voice-state-change',
+              metadata: {
+                shouldBeginSpeaking,
+                shouldStopSpeaking,
+                currentLevel
               }
             });
+          }
+          
+          // Update state and presence if needed
+          if (shouldBeginSpeaking || shouldStopSpeaking) {
+            const newSpeakingState = shouldBeginSpeaking;
+            setIsSpeaking(newSpeakingState);
+            isSpeakingRef.current = newSpeakingState;
             
-            // Only update presence if we have the required data
+            // Create a complete presence object
+            const presence: PartyMember = {
+              id: currentUser!.id,
+              name: currentUser!.name,
+              avatar: currentUser!.avatar,
+              game: currentUser!.game,
+              is_active: currentUser!.is_active,
+              created_at: currentUser!.created_at,
+              last_seen: currentUser!.last_seen,
+              voice_status: newSpeakingState ? 'speaking' : 'silent',
+              muted: false,
+              deafened_users: currentUser!.deafened_users,
+              agora_uid: currentUser!.agora_uid,
+              _lastUpdate: Date.now(),
+              _lastVoiceUpdate: Date.now()
+            };
+            
+            // Force presence update
             if (currentUser?.id && updatePresence) {
-              // Always send a presence update with the complete voice state
-              const presence = {
-                ...currentUser,
-                muted: isMuted,
-                voice_status: isMuted ? ('muted' as const) : (isSpeakingNow ? ('speaking' as const) : ('silent' as const)),
-                last_voice_update: Date.now()
-              };
-              
-              // Send presence update
-              void updatePresence(presence).catch(err => {
-                logger.error('Failed to update presence with voice state', {
-                  action: 'update-presence',
+              void (async () => {
+                await updatePresence(presence);
+                lastPresenceUpdateRef.current = Date.now();
+                logger.info('Voice state presence updated', {
+                  action: 'presence-update',
                   metadata: { 
-                    error: String(err),
-                    presence,
-                    isSpeaking: isSpeakingNow,
-                    volume: smoothedLevel
+                    newState: presence.voice_status,
+                    volume: currentLevel
                   }
                 });
-              });
+              })();
             }
           }
         } catch (err) {
@@ -418,8 +446,8 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
             clearInterval(volumeIntervalRef.current);
             volumeIntervalRef.current = null;
           }
-            }
-          }, VOLUME_CHECK_INTERVAL);
+        }
+      }, VOLUME_CHECK_INTERVAL);
 
       // Update state
       setState({ status: 'connected', track });
@@ -546,91 +574,61 @@ export function useVoice({ currentUser, partyState, updatePresence }: VoiceHookP
     if (state.status === 'connected') {
       try {
         const { track } = state;
-        try {
-          // If this doesn't throw, the track is still valid
-          track.getVolumeLevel();
-          const newMutedState = !isMuted;
-          
-          // Update state and track first
-          setIsMuted(newMutedState);
-          await track.setEnabled(!newMutedState);
-          
-          // Reset volume and speaking state when muting
-          if (newMutedState) {
-            lastVolumeRef.current = 0;
-            setVolume(0);
-            setIsSpeaking(false);
-          } else {
-            // When unmuting, ensure track is properly initialized
-            try {
-              // Try to recover audio settings
-              track.setVolume(100); // Reset to default volume
-              
-              // Check audio context
-              const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-              if (audioContext.state === 'suspended') {
-                await audioContext.resume();
-              }
-              
-              // Wait a moment for audio to stabilize
-              await new Promise(resolve => setTimeout(resolve, 100));
-              
-              // Get fresh volume reading
-              const currentVolume = track.getVolumeLevel() * 100;
-              lastVolumeRef.current = currentVolume;
-              setVolume(currentVolume);
-            } catch (err) {
-              logger.warn('Failed to initialize audio on unmute', {
-                action: 'toggleMute',
-                metadata: { error: String(err) }
-              });
-            }
-          }
-          
-          // Send immediate presence update with complete state
-          if (currentUser?.id && updatePresence) {
-            const presence = {
-              ...currentUser,
-              muted: newMutedState,
-              voice_status: newMutedState ? ('muted' as const) : (volume > 30 ? ('speaking' as const) : ('silent' as const)),
-              last_voice_update: Date.now()
-            };
-            await updatePresence(presence);
-            
-            logger.info('Voice state updated after mute toggle', {
-              action: 'toggleMute',
-              metadata: { 
-                newState: presence.voice_status,
-                muted: newMutedState,
-                volume,
-                isSpeaking,
-                audioSettings: {
-                  bitrate: 192,
-                  sampleRate: 48000
-                }
-              }
-            });
-          }
+        const newMutedState = !isMuted;
+        
+        // First update local state
+        setIsMuted(newMutedState);
+        
+        // Then update track
+        await track.setEnabled(!newMutedState);
+        
+        // Reset volume and speaking state when muting
+        if (newMutedState) {
+          lastVolumeRef.current = 0;
+          setVolume(0);
+          setIsSpeaking(false);
+        }
 
-        } catch {
-          // Track is invalid, log warning
-          logger.warn('Track is invalid, ignoring mute request', {
+        // Finally update presence with complete state
+        if (currentUser?.id && updatePresence) {
+          // Create a complete presence update that preserves all fields
+          const presence: PartyMember = {
+            id: currentUser.id,
+            name: currentUser.name,
+            avatar: currentUser.avatar,
+            game: currentUser.game,
+            is_active: currentUser.is_active,
+            created_at: currentUser.created_at,
+            last_seen: currentUser.last_seen,
+            voice_status: newMutedState ? 'muted' as const : 'silent' as const,
+            muted: newMutedState,
+            deafened_users: currentUser.deafened_users,
+            agora_uid: currentUser.agora_uid,
+            _lastUpdate: Date.now()
+          };
+          
+          await updatePresence(presence);
+          
+          logger.info('Voice state updated after mute toggle', {
             action: 'toggleMute',
-            metadata: {
-              currentState: state.status,
-              isMuted,
-              volume
+            metadata: { 
+              newState: presence.voice_status,
+              muted: presence.muted,
+              volume: 0,
+              isSpeaking: false
             }
           });
         }
       } catch (err) {
-        logger.error('Mute toggle failed', {
+        // Revert local state on error
+        setIsMuted(isMuted);
+        logger.error('Failed to toggle mute', {
           action: 'toggleMute',
           metadata: { error: String(err) }
         });
       }
     }
-  }, [state, isMuted, currentUser, updatePresence, volume, isSpeaking]);
+  }, [state, isMuted, currentUser, updatePresence]);
 
   // Handle party state changes
   useEffect(() => {
