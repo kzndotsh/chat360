@@ -163,12 +163,20 @@ export class VoiceService {
         if (!this._isMuted && level >= VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
           voice_status = 'speaking';
         } else if (
+          !this._isMuted &&
           currentState?.voice_status === 'speaking' &&
           level >= VOICE_CONSTANTS.SPEAKING_THRESHOLD / 2 &&
           now - (currentState.timestamp || 0) < VOICE_CONSTANTS.UPDATE_DEBOUNCE
         ) {
           // Keep speaking state only if volume is still relatively high and within debounce window
           voice_status = 'speaking';
+        } else if (
+          currentState?.voice_status === 'speaking' &&
+          (level < VOICE_CONSTANTS.SPEAKING_THRESHOLD / 2 ||
+           now - (currentState.timestamp || 0) >= VOICE_CONSTANTS.UPDATE_DEBOUNCE)
+        ) {
+          // Transition back to silent if volume drops too low or debounce window expires
+          voice_status = 'silent';
         }
 
         const voiceState: VoiceMemberState = {
