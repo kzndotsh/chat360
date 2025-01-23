@@ -105,38 +105,42 @@ export class VoiceService {
         const memberId = this.getMemberIdFromAgoraUid(agoraUid);
         updatedMembers.add(memberId);
 
-        const level = Math.min(vol.level / 100, 1);
+        const level = vol.level / 100; // Convert to 0-1 range
         const remoteUser = this.client.remoteUsers.find((u) => u.uid === vol.uid);
         const isMuted = remoteUser ? !remoteUser.hasAudio : false;
 
-        // Get current state to preserve mute status and store as previous state
         const currentState = this.memberVoiceStates.get(memberId);
         const preserveMuted = currentState?.muted ?? isMuted;
-
-        // Apply smoothing to remote user volumes
-        const smoothedLevel = this.smoothVolume(level);
-
-        // Determine voice status based on mute state first
         let voice_status: VoiceStatus = 'silent';
+
         if (preserveMuted) {
           voice_status = 'muted';
-        } else if (smoothedLevel >= VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
-          // Only change to speaking if the previous state was also speaking or the level is significantly above threshold
-          if (currentState?.voice_status === 'speaking' || smoothedLevel >= VOICE_CONSTANTS.SPEAKING_THRESHOLD * 1.5) {
-            voice_status = 'speaking';
-          }
-        }
+        } else {
+          // Only process volume if not muted
+          const effectiveLevel = this.smoothVolume(level);
 
-        this.memberVoiceStates.set(memberId, {
-          id: memberId,
-          level: preserveMuted ? 0 : smoothedLevel,
-          voice_status,
-          muted: preserveMuted,
-          is_deafened: false,
-          agora_uid: agoraUid,
-          timestamp: Date.now(),
-          prev_state: currentState,
-        });
+          if (effectiveLevel > VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
+            // Add debounce for speaking state
+            const now = Date.now();
+            const lastStateChange = currentState?.timestamp ?? 0;
+            const timeSinceLastChange = now - lastStateChange;
+
+            if (currentState?.voice_status === 'speaking' || timeSinceLastChange > VOICE_CONSTANTS.UPDATE_DEBOUNCE) {
+              voice_status = 'speaking';
+            }
+          }
+
+          this.memberVoiceStates.set(memberId, {
+            id: memberId,
+            level: effectiveLevel,
+            voice_status,
+            muted: preserveMuted,
+            is_deafened: false,
+            agora_uid: agoraUid,
+            timestamp: Date.now(),
+            prev_state: currentState,
+          });
+        }
       });
 
       // Handle local user's volume with input validation
@@ -145,30 +149,32 @@ export class VoiceService {
         const memberId = this.getMemberIdFromAgoraUid(agoraUid);
         updatedMembers.add(memberId);
 
-        // Check if audio track is actually getting input
-        const hasValidAudioInput = this.audioTrack.getMediaStreamTrack().enabled &&
-                                 this.audioTrack.getMediaStreamTrack().readyState === 'live';
-
-        const rawLevel = hasValidAudioInput ? Math.min(this.audioTrack.getVolumeLevel(), 1) : 0;
-        const localLevel = this.smoothVolume(rawLevel);
         const currentState = this.memberVoiceStates.get(memberId);
-
-        // Force silent if no valid audio input
-        const effectiveLevel = hasValidAudioInput ? localLevel : 0;
         let voice_status: VoiceStatus = 'silent';
+        let effectiveLevel = 0;
 
         if (this._isMuted) {
           voice_status = 'muted';
-        } else if (hasValidAudioInput && effectiveLevel >= VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
-          // Only change to speaking if the previous state was also speaking or the level is significantly above threshold
-          if (currentState?.voice_status === 'speaking' || effectiveLevel >= VOICE_CONSTANTS.SPEAKING_THRESHOLD * 1.5) {
-            voice_status = 'speaking';
+        } else {
+          // Only check audio levels if not muted
+          const rawLevel = this.audioTrack.getVolumeLevel() / 100; // Convert to 0-1 range
+          effectiveLevel = this.smoothVolume(rawLevel);
+
+          if (effectiveLevel > VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
+            // Add debounce for speaking state
+            const now = Date.now();
+            const lastStateChange = currentState?.timestamp ?? 0;
+            const timeSinceLastChange = now - lastStateChange;
+
+            if (currentState?.voice_status === 'speaking' || timeSinceLastChange > VOICE_CONSTANTS.UPDATE_DEBOUNCE) {
+              voice_status = 'speaking';
+            }
           }
         }
 
         const voiceState: VoiceMemberState = {
           id: memberId,
-          level: this._isMuted ? 0 : effectiveLevel,
+          level: effectiveLevel,
           voice_status,
           muted: this._isMuted,
           is_deafened: false,
@@ -178,19 +184,6 @@ export class VoiceService {
         };
 
         this.memberVoiceStates.set(memberId, voiceState);
-
-        // Log local volume for debugging
-        if (effectiveLevel >= VOICE_CONSTANTS.SPEAKING_THRESHOLD && !this._isMuted) {
-          logger.debug('Local user speaking', {
-            metadata: {
-              rawLevel,
-              smoothedLevel: effectiveLevel,
-              memberId,
-              voice_status: voiceState.voice_status,
-              hasValidInput: hasValidAudioInput
-            },
-          });
-        }
 
         // Broadcast the voice state
         void this.broadcastVoiceUpdate(voiceState);
