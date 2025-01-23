@@ -266,7 +266,7 @@ export class PresenceService {
     const delay = Math.min(baseDelay * Math.pow(2, retryCount), 10000); // Max 10 second delay
 
     try {
-      await new Promise(resolve => setTimeout(resolve, delay));
+      await new Promise((resolve) => setTimeout(resolve, delay));
       await this.initializeChannel();
       logger.debug('Reconnection successful', {
         ...LOG_CONTEXT,

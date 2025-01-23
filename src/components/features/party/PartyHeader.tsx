@@ -39,10 +39,16 @@ const HeaderButton = ({
   );
 
   return url ? (
-    <a href={url} rel="noopener noreferrer" target="_blank">
+    <a
+      href={url}
+      rel="noopener noreferrer"
+      target="_blank"
+    >
       {ButtonContent}
     </a>
-  ) : ButtonContent;
+  ) : (
+    ButtonContent
+  );
 };
 
 export function PartyHeader({ membersCount }: PartyHeaderProps) {
@@ -119,7 +125,7 @@ export function PartyHeader({ membersCount }: PartyHeaderProps) {
       <div className="flex w-full flex-col sm:flex-row">
         <div className="order-2 flex h-[50px] flex-1 items-center justify-between bg-[#f7ffff] sm:order-1">
           <div className="flex items-center gap-2 pl-[30px]">
-            <Chat360Icon className="w-14 h-14 text-[#282b2f] opacity-90" />
+            <Chat360Icon className="h-14 w-14 text-[#282b2f] opacity-90" />
             <span className="text-2xl font-semibold text-[#282b2f]">Chat360 Party</span>
           </div>
         </div>
@@ -129,7 +135,7 @@ export function PartyHeader({ membersCount }: PartyHeaderProps) {
             icon={UserIcon}
             iconSize="w-7 h-6"
           >
-            <span className="font-bold ml-2 truncate text-sm text-white opacity-90">
+            <span className="ml-2 truncate text-sm font-bold text-white opacity-90">
               {membersCount}
             </span>
           </HeaderButton>

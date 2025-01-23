@@ -30,7 +30,7 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
     if (!members.length) {
       return (
         <div className="flex h-full items-center justify-center">
-          <span className="text-base text-[#282b2f] p-10">No members in party</span>
+          <span className="p-10 text-base text-[#282b2f]">No members in party</span>
         </div>
       );
     }
@@ -46,7 +46,10 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
       let voice_status: VoiceStatus = 'silent';
       if (isMuted) {
         voice_status = 'muted';
-      } else if (volumeState?.voice_status === 'speaking' || (volumeState?.level != null && volumeState.level >= VOICE_CONSTANTS.SPEAKING_THRESHOLD)) {
+      } else if (
+        volumeState?.voice_status === 'speaking' ||
+        (volumeState?.level != null && volumeState.level >= VOICE_CONSTANTS.SPEAKING_THRESHOLD)
+      ) {
         voice_status = 'speaking';
       }
 
@@ -61,7 +64,7 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
           volumeLevel: volumeState?.level ?? 0,
           voice_status,
           muted: isMuted,
-          volumeState: volumeState ? JSON.stringify(volumeState) : 'none'
+          volumeState: volumeState ? JSON.stringify(volumeState) : 'none',
         },
       });
 
@@ -121,9 +124,7 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex flex-1 flex-col overflow-y-auto">
-        {renderedMembers}
-      </div>
+      <div className="flex flex-1 flex-col overflow-y-auto">{renderedMembers}</div>
     </div>
   );
 }

@@ -25,7 +25,9 @@ const TopBar = () => {
   return (
     <div className="relative mb-3 flex h-[65px] w-full items-end justify-between px-8">
       <div className="flex items-center">
-        <span className="text-2xl font-medium leading-none text-white [text-shadow:_0_1px_1px_rgba(0,0,0,0.15)_inset]">$360</span>
+        <span className="text-2xl font-medium leading-none text-white [text-shadow:_0_1px_1px_rgba(0,0,0,0.15)_inset]">
+          $360
+        </span>
       </div>
       <div className="absolute left-1/2 top-0 -translate-x-1/2">
         <Image

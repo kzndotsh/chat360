@@ -121,11 +121,34 @@ export class VoiceService {
 
         // Determine voice status based on volume level and previous state
         let voice_status: VoiceStatus = isMuted ? 'muted' : 'silent';
-        if (!isMuted && vol.level >= VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
-          voice_status = 'speaking';
-        } else if (currentState?.voice_status === 'speaking' &&
-                  now - (currentState.timestamp || 0) < VOICE_CONSTANTS.UPDATE_DEBOUNCE) {
-          voice_status = 'speaking';
+
+        if (!isMuted) {
+          // Log raw and normalized levels for debugging
+          logger.debug('Volume levels', {
+            component: 'VoiceService',
+            action: 'volume-indicator',
+            metadata: {
+              rawLevel,
+              normalizedLevel: level,
+              threshold: VOICE_CONSTANTS.SPEAKING_THRESHOLD,
+              holdThreshold: VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD
+            }
+          });
+
+          if (level >= VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
+            // Volume above main threshold - enter speaking state
+            voice_status = 'speaking';
+          } else if (
+            currentState?.voice_status === 'speaking' &&
+            level >= VOICE_CONSTANTS.SPEAKING_THRESHOLD / 2 &&
+            now - (currentState.timestamp || 0) < VOICE_CONSTANTS.SPEAKING_TIMEOUT
+          ) {
+            // Keep speaking state if:
+            // 1. Currently speaking
+            // 2. Volume above half threshold (to prevent flickering)
+            // 3. Within timeout window
+            voice_status = 'speaking';
+          }
         }
 
         const voiceState: VoiceMemberState = {
@@ -138,8 +161,16 @@ export class VoiceService {
           timestamp: now
         };
 
-        this.memberVoiceStates.set(memberId, voiceState);
-        void this.broadcastVoiceUpdate(voiceState);
+        // Only update state if there's a meaningful change
+        const shouldUpdate = !currentState ||
+          currentState.voice_status !== voice_status ||
+          currentState.muted !== isMuted ||
+          Math.abs(currentState.level - level) > (voice_status === 'speaking' ? 0.05 : VOICE_CONSTANTS.SPEAKING_THRESHOLD / 2);
+
+        if (shouldUpdate) {
+          this.memberVoiceStates.set(memberId, voiceState);
+          void this.broadcastVoiceUpdate(voiceState);
+        }
       });
 
       // Handle local user's volume if we have an audio track
@@ -150,33 +181,41 @@ export class VoiceService {
 
         updatedMembers.add(memberId);
         const currentState = this.memberVoiceStates.get(memberId);
-        const now = Date.now();
 
         // Get raw volume level (0-100) and normalize to 0-1
         const rawLevel = this.audioTrack.getVolumeLevel();
         const level = this.smoothVolume(rawLevel / 100);
 
+        // Log volume levels for debugging
+        logger.debug('Volume levels', {
+          component: 'VoiceService',
+          action: 'volume-indicator',
+          metadata: {
+            rawLevel,
+            normalizedLevel: level,
+            threshold: VOICE_CONSTANTS.SPEAKING_THRESHOLD,
+            holdThreshold: VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD
+          }
+        });
+
         // Determine voice status based on volume level and previous state
         let voice_status: VoiceStatus = this._isMuted ? 'muted' : 'silent';
 
-        // Only update to speaking if volume is above threshold
-        if (!this._isMuted && level >= VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
-          voice_status = 'speaking';
-        } else if (
-          !this._isMuted &&
-          currentState?.voice_status === 'speaking' &&
-          level >= VOICE_CONSTANTS.SPEAKING_THRESHOLD / 2 &&
-          now - (currentState.timestamp || 0) < VOICE_CONSTANTS.UPDATE_DEBOUNCE
-        ) {
-          // Keep speaking state only if volume is still relatively high and within debounce window
-          voice_status = 'speaking';
-        } else if (
-          currentState?.voice_status === 'speaking' &&
-          (level < VOICE_CONSTANTS.SPEAKING_THRESHOLD / 2 ||
-           now - (currentState.timestamp || 0) >= VOICE_CONSTANTS.UPDATE_DEBOUNCE)
-        ) {
-          // Transition back to silent if volume drops too low or debounce window expires
-          voice_status = 'silent';
+        if (!this._isMuted) {
+          if (level >= VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
+            // Volume above main threshold - enter speaking state
+            voice_status = 'speaking';
+          } else if (
+            currentState?.voice_status === 'speaking' &&
+            level >= VOICE_CONSTANTS.SPEAKING_THRESHOLD / 2 &&
+            now - (currentState.timestamp || 0) < VOICE_CONSTANTS.SPEAKING_TIMEOUT
+          ) {
+            // Keep speaking state if:
+            // 1. Currently speaking
+            // 2. Volume above half threshold (to prevent flickering)
+            // 3. Within timeout window
+            voice_status = 'speaking';
+          }
         }
 
         const voiceState: VoiceMemberState = {
@@ -189,15 +228,23 @@ export class VoiceService {
           timestamp: now
         };
 
-        this.memberVoiceStates.set(memberId, voiceState);
-        void this.broadcastVoiceUpdate(voiceState);
+        // Only update state if there's a meaningful change
+        const shouldUpdate = !currentState ||
+          currentState.voice_status !== voice_status ||
+          currentState.muted !== this._isMuted ||
+          Math.abs(currentState.level - level) > (voice_status === 'speaking' ? 0.05 : VOICE_CONSTANTS.SPEAKING_THRESHOLD / 2);
+
+        if (shouldUpdate) {
+          this.memberVoiceStates.set(memberId, voiceState);
+          void this.broadcastVoiceUpdate(voiceState);
+        }
       }
 
       // Set silent state for members we haven't heard from
       Array.from(this.memberVoiceStates.entries()).forEach(([memberId, state]) => {
         if (!updatedMembers.has(memberId) &&
             state.voice_status === 'speaking' &&
-            now - (state.timestamp || 0) >= VOICE_CONSTANTS.UPDATE_DEBOUNCE) {
+            now - (state.timestamp || 0) >= VOICE_CONSTANTS.SPEAKING_TIMEOUT) {
           const voiceState: VoiceMemberState = {
             ...state,
             level: 0,
@@ -656,56 +703,35 @@ export class VoiceService {
     if (!this.audioTrack) return this._isMuted;
 
     try {
-      // Update state first for immediate UI feedback
-      this._isMuted = !this._isMuted;
-      const now = Date.now();
+        // Update audio track first to ensure hardware state change
+        await this.audioTrack.setEnabled(!this._isMuted);
 
-      // Create and broadcast state immediately
-      const voiceState: VoiceMemberState = {
-        id: this.currentMemberId!,
-        level: 0,
-        voice_status: this._isMuted ? 'muted' : 'silent',
-        muted: this._isMuted,
-        is_deafened: false,
-        agora_uid: this.client.uid?.toString(),
-        timestamp: now
-      };
-
-      // Update local state and notify subscribers immediately
-      this.memberVoiceStates.set(this.currentMemberId!, voiceState);
-      if (this.volumeCallback) {
-        this.volumeCallback(Array.from(this.memberVoiceStates.values()));
-      }
-
-      // Broadcast state change immediately
-      void this.broadcastVoiceUpdate(voiceState);
-
-      // Update the audio track asynchronously
-      this.audioTrack.setEnabled(!this._isMuted).catch((error) => {
-        // Revert state if audio track update fails
+        // Only update state after successful hardware change
         this._isMuted = !this._isMuted;
-        logger.error('Toggle mute error', { metadata: { error } });
+        const now = Date.now();
 
-        // Broadcast revert state
-        const revertState: VoiceMemberState = {
-          ...voiceState,
-          muted: this._isMuted,
-          voice_status: this._isMuted ? 'muted' : 'silent' as VoiceStatus,
-          timestamp: Date.now()
+        const voiceState: VoiceMemberState = {
+            id: this.currentMemberId!,
+            level: 0,
+            voice_status: this._isMuted ? 'muted' : 'silent',
+            muted: this._isMuted,
+            is_deafened: false,
+            agora_uid: this.client.uid?.toString(),
+            timestamp: now
         };
-        this.memberVoiceStates.set(this.currentMemberId!, revertState);
-        if (this.volumeCallback) {
-          this.volumeCallback(Array.from(this.memberVoiceStates.values()));
-        }
-        void this.broadcastVoiceUpdate(revertState);
-      });
 
-      return this._isMuted;
+        // Batch state updates
+        this.memberVoiceStates.set(this.currentMemberId!, voiceState);
+        void this.broadcastVoiceUpdate(voiceState);
+
+        if (this.volumeCallback) {
+            this.volumeCallback(Array.from(this.memberVoiceStates.values()));
+        }
+
+        return this._isMuted;
     } catch (error) {
-      // Revert state if anything fails
-      this._isMuted = !this._isMuted;
-      logger.error('Toggle mute error', { metadata: { error } });
-      return this._isMuted;
+        logger.error('Toggle mute error', { metadata: { error } });
+        return this._isMuted;
     }
   }
 
@@ -747,9 +773,46 @@ export class VoiceService {
     // Skip processing if muted
     if (this._isMuted) return 0;
 
+    // Constants for noise handling
+    const NOISE_FLOOR = 0.05;       // Absolute silence threshold
+    const BACKGROUND_LEVEL = 0.45;  // Typical background level
+    const NOISE_MARGIN = 0.10;      // Required increase above background
+    const MAX_BOOST = 2.0;          // Conservative boost to avoid over-amplification
+    const ATTACK_SPEED = 1.5;       // Moderate attack for voice onset
+    const DECAY_SPEED = 0.3;        // Quick decay to drop out of speaking
+
+    // If volume is at or below absolute noise floor, treat as silence
+    if (currentVolume <= NOISE_FLOOR) {
+      this.lastVolume = 0;
+      return 0;
+    }
+
+    // If volume is around background level, treat as silence
+    if (currentVolume <= BACKGROUND_LEVEL) {
+      const smoothed = this.lastVolume * (1 - VOICE_CONSTANTS.VOLUME_SMOOTHING * DECAY_SPEED);
+      this.lastVolume = smoothed;
+      return smoothed;
+    }
+
+    const volumeAboveBackground = currentVolume - BACKGROUND_LEVEL;
+
+    // Only boost if we're sufficiently above background
+    let normalizedVolume = 0;
+    if (volumeAboveBackground > NOISE_MARGIN) {
+      // Apply boost with power curve for more natural sound
+      const boostedVolume = Math.pow(volumeAboveBackground / (1 - BACKGROUND_LEVEL), 0.7) * MAX_BOOST;
+      normalizedVolume = Math.min(boostedVolume, 1.0);
+    }
+
+    // Fast attack, normal decay smoothing
+    const smoothingFactor = normalizedVolume > this.lastVolume
+      ? VOICE_CONSTANTS.VOLUME_SMOOTHING * ATTACK_SPEED  // Faster attack
+      : VOICE_CONSTANTS.VOLUME_SMOOTHING * DECAY_SPEED;  // Quick decay
+
     const smoothed =
-      this.lastVolume * (1 - VOICE_CONSTANTS.VOLUME_SMOOTHING) +
-      currentVolume * VOICE_CONSTANTS.VOLUME_SMOOTHING;
+      this.lastVolume * (1 - smoothingFactor) +
+      normalizedVolume * smoothingFactor;
+
     this.lastVolume = smoothed;
     return smoothed;
   }

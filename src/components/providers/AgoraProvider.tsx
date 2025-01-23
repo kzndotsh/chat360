@@ -51,16 +51,34 @@ async function loadAgoraSDK(): Promise<void> {
     AgoraRTC.disableLogUpload();
     AgoraRTC.setLogLevel(0); // Set to INFO level
     // Disable stats collection and reporting
-    (AgoraRTC as unknown as { setParameter(key: string, value: boolean | number | string): void }).setParameter('DISABLE_STATS_COLLECTOR', true);
-    (AgoraRTC as unknown as { setParameter(key: string, value: boolean | number | string): void }).setParameter('DISABLE_NETWORK_QUALITY', true);
-    (AgoraRTC as unknown as { setParameter(key: string, value: boolean | number | string): void }).setParameter('DISABLE_QUALITY_MONITOR', true);
-    (AgoraRTC as unknown as { setParameter(key: string, value: boolean | number | string): void }).setParameter('REPORT_STATS', false);
-    (AgoraRTC as unknown as { setParameter(key: string, value: boolean | number | string): void }).setParameter('UPLOAD_LOG', false);
-    (AgoraRTC as unknown as { setParameter(key: string, value: boolean | number | string): void }).setParameter('ENABLE_STATS_FILTER', true);
-    (AgoraRTC as unknown as { setParameter(key: string, value: boolean | number | string): void }).setParameter('STATS_FILTER', '*');
+    (
+      AgoraRTC as unknown as { setParameter(key: string, value: boolean | number | string): void }
+    ).setParameter('DISABLE_STATS_COLLECTOR', true);
+    (
+      AgoraRTC as unknown as { setParameter(key: string, value: boolean | number | string): void }
+    ).setParameter('DISABLE_NETWORK_QUALITY', true);
+    (
+      AgoraRTC as unknown as { setParameter(key: string, value: boolean | number | string): void }
+    ).setParameter('DISABLE_QUALITY_MONITOR', true);
+    (
+      AgoraRTC as unknown as { setParameter(key: string, value: boolean | number | string): void }
+    ).setParameter('REPORT_STATS', false);
+    (
+      AgoraRTC as unknown as { setParameter(key: string, value: boolean | number | string): void }
+    ).setParameter('UPLOAD_LOG', false);
+    (
+      AgoraRTC as unknown as { setParameter(key: string, value: boolean | number | string): void }
+    ).setParameter('ENABLE_STATS_FILTER', true);
+    (
+      AgoraRTC as unknown as { setParameter(key: string, value: boolean | number | string): void }
+    ).setParameter('STATS_FILTER', '*');
     // Disable audio quality warnings
-    (AgoraRTC as unknown as { setParameter(key: string, value: boolean | number | string): void }).setParameter('AUDIO_VOLUME_INDICATION_INTERVAL', 0);
-    (AgoraRTC as unknown as { setParameter(key: string, value: boolean | number | string): void }).setParameter('DISABLE_AUTO_FALLBACK', true);
+    (
+      AgoraRTC as unknown as { setParameter(key: string, value: boolean | number | string): void }
+    ).setParameter('AUDIO_VOLUME_INDICATION_INTERVAL', 0);
+    (
+      AgoraRTC as unknown as { setParameter(key: string, value: boolean | number | string): void }
+    ).setParameter('DISABLE_AUTO_FALLBACK', true);
   }
 }
 

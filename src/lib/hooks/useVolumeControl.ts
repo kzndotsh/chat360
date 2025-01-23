@@ -36,14 +36,13 @@ export function useVolumeControl() {
   const { client } = useAgoraContext();
   const serviceRef = useRef<VoiceService | null>(null);
 
-  // RxJS Subjects
+  // RxJS Subjects with improved memory management
   const volumeSubject = useRef(new Subject<VoiceMemberState>());
   const cleanup$ = useRef(new Subject<void>());
   const stateCache = useRef(new Map<string, VoiceUpdate>());
 
   useEffect(() => {
     let voiceService: VoiceService | null = null;
-    // Create local references to avoid closure issues
     const localCleanup = cleanup$.current;
     const localStateCache = stateCache.current;
     const localVolumeSubject = volumeSubject.current;
@@ -53,7 +52,7 @@ export function useVolumeControl() {
         voiceService = VoiceService.getInstance(client);
         serviceRef.current = voiceService;
 
-        // Create volume stream
+        // Optimized volume stream with better performance
         const volume$ = localVolumeSubject.pipe(
           groupBy((vol: VoiceMemberState) => vol.id),
           mergeMap((group$: GroupedObservable<string, VoiceMemberState>) =>
@@ -68,30 +67,22 @@ export function useVolumeControl() {
                   is_deafened: vol.is_deafened,
                   agora_uid: (vol.agora_uid || '').toString()
                 };
-
-                // Cache the state immediately for faster access
                 localStateCache.set(vol.id, newState);
                 return newState;
               }),
-              // Use a shorter auditTime for all updates to improve responsiveness
+              // Faster updates for mute/unmute
               auditTime(VOICE_CONSTANTS.UPDATE_DEBOUNCE / 4),
-              // Only emit when there are meaningful changes
-              distinctUntilChanged((prev: VoiceUpdate, curr: VoiceUpdate) =>
-                prev.voice_status === curr.voice_status &&
-                prev.muted === curr.muted &&
-                prev.is_deafened === curr.is_deafened &&
-                (
-                  // Allow more granular volume changes when speaking
-                  curr.voice_status === 'speaking'
-                    ? Math.abs(prev.level - curr.level) < 0.05
-                    : Math.abs(prev.level - curr.level) < VOICE_CONSTANTS.SPEAKING_THRESHOLD / 2
-                )
-              ),
-              // Filter out unnecessary updates
+              distinctUntilChanged((prev, curr) => {
+                if (prev.muted !== curr.muted) return false;
+                if (prev.voice_status !== curr.voice_status) return false;
+                if (prev.is_deafened !== curr.is_deafened) return false;
+                return Math.abs(prev.level - curr.level) <
+                  (curr.voice_status === 'speaking' ? 0.05 : VOICE_CONSTANTS.SPEAKING_THRESHOLD / 2);
+              }),
               filter((state: VoiceUpdate) =>
-                state.muted || // Always show muted state
-                state.voice_status === 'speaking' || // Always show speaking state
-                state.level >= VOICE_CONSTANTS.SPEAKING_THRESHOLD / 4 // Only show significant volume changes
+                state.muted ||
+                state.voice_status === 'speaking' ||
+                state.level >= VOICE_CONSTANTS.SPEAKING_THRESHOLD / 4
               )
             )
           ),
@@ -99,26 +90,18 @@ export function useVolumeControl() {
           takeUntil(localCleanup)
         );
 
-        // Subscribe to volume updates with optimized state updates
+        // Optimized state updates with batching
         volume$.subscribe({
           next: (newState: VoiceUpdate) => {
             setVolumeLevels(prev => {
-              // Skip update if nothing changed
               const prevState = prev[newState.id];
-              if (
-                prevState &&
-                prevState.voice_status === newState.voice_status &&
-                prevState.muted === newState.muted &&
-                prevState.is_deafened === newState.is_deafened &&
-                Math.abs(prevState.level - newState.level) < 0.05
-              ) {
+              if (prevState?.muted === newState.muted &&
+                  prevState?.voice_status === newState.voice_status &&
+                  prevState?.is_deafened === newState.is_deafened &&
+                  Math.abs(prevState.level - newState.level) < 0.05) {
                 return prev;
               }
-
-              return {
-                ...prev,
-                [newState.id]: newState
-              };
+              return { ...prev, [newState.id]: newState };
             });
           },
           error: (error: Error) => {
@@ -126,9 +109,13 @@ export function useVolumeControl() {
           }
         });
 
-        // Handle incoming volume updates
+        // Optimized volume change handler
         voiceService.onVolumeChange((volumes) => {
-          volumes.forEach(vol => localVolumeSubject.next(vol));
+          volumes.forEach(vol => {
+            if (vol.muted || vol.level >= VOICE_CONSTANTS.SPEAKING_THRESHOLD / 4) {
+              localVolumeSubject.next(vol);
+            }
+          });
         });
       } catch (error) {
         logger.error('Failed to initialize VoiceService:', { metadata: { error } });
@@ -138,7 +125,6 @@ export function useVolumeControl() {
     return () => {
       localCleanup.next();
       localCleanup.complete();
-
       if (voiceService) {
         voiceService.onVolumeChange(null);
         setVolumeLevels({});

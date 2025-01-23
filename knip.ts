@@ -8,13 +8,13 @@ const config: KnipConfig = {
     'src/app/page.tsx',
     'src/app/**/page.tsx',
     'src/app/**/layout.tsx',
-    'src/app/api/**/route.ts'
+    'src/app/api/**/route.ts',
   ],
   // Project files define the scope of what can be considered "unused"
   project: [
     'src/**/*.{ts,tsx}!', // Production files with ! suffix
     '!src/**/*.{test,spec}.{ts,tsx}', // Exclude test files
-    '!src/**/__tests__/**'
+    '!src/**/__tests__/**',
   ],
   // Dependencies to ignore from unused checks
   ignoreDependencies: [
@@ -23,13 +23,13 @@ const config: KnipConfig = {
     // Common Next.js dependencies that may appear unused
     'next',
     'react',
-    'react-dom'
+    'react-dom',
   ],
   // Files to ignore from issue reporting
   ignore: [
     '**/*.d.ts',
     '**/generated/**', // Generated files
-    'src/lib/types/**' // Type definition files
+    'src/lib/types/**', // Type definition files
   ],
   ignoreExportsUsedInFile: true,
   // Workspace configuration for monorepo support
@@ -41,9 +41,9 @@ const config: KnipConfig = {
         'src/app/page.tsx',
         'src/app/**/page.tsx',
         'src/app/**/layout.tsx',
-        'src/app/api/**/route.ts'
-      ]
-    }
+        'src/app/api/**/route.ts',
+      ],
+    },
   },
   rules: {
     classMembers: 'warn',
@@ -54,8 +54,8 @@ const config: KnipConfig = {
     // Additional rules for better coverage
     unlisted: 'error', // Report unlisted dependencies
     duplicates: 'warn', // Warn about duplicate dependencies
-    nsExports: 'error' // Check namespace exports
-  }
+    nsExports: 'error', // Check namespace exports
+  },
 } as const;
 
 export default config;
