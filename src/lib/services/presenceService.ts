@@ -90,7 +90,7 @@ export class PresenceService {
         // Skip if this member has explicitly left
         if (presence.status === 'left') return;
 
-        // For current member, ensure we preserve only essential state
+        // For current member, ensure we preserve all state including voice state
         if (this.currentMember && presence.id === this.currentMember.id) {
           const updatedMember = {
             ...this.currentMember,
@@ -100,24 +100,29 @@ export class PresenceService {
           return;
         }
 
+        // Get existing member to preserve voice state
+        const existingMember = this.members.get(presence.id);
+
         // Create or update member data
         const newMember = createPartyMember({
           id: presence.id,
           name: String(presence.name || 'Unknown'),
           avatar: String(presence.avatar || AVATARS[0]),
           game: String(presence.game || 'Unknown'),
+          agora_uid: presence.agora_uid || existingMember?.agora_uid,
         });
 
-        // Add optional fields
-        if (presence.agora_uid) newMember.agora_uid = presence.agora_uid;
-        if (presence.status) {
-          updatedMembers.set(presence.id, {
-            ...newMember,
-            status: presence.status,
-          });
-        } else {
-          updatedMembers.set(presence.id, newMember);
-        }
+        // Preserve voice state from existing member if available
+        const memberWithVoiceState: PresenceMemberState = {
+          ...newMember,
+          status: presence.status || existingMember?.status || 'active',
+          voice_status: presence.voice_status || existingMember?.voice_status || 'silent',
+          muted: presence.muted ?? existingMember?.muted ?? false,
+          is_deafened: presence.is_deafened ?? existingMember?.is_deafened ?? false,
+          level: presence.level ?? existingMember?.level ?? 0,
+        };
+
+        updatedMembers.set(presence.id, memberWithVoiceState);
       });
     });
 
@@ -682,21 +687,26 @@ export class PresenceService {
       metadata: { member },
     });
 
+    // Get existing member to preserve voice state
+    const existingMember = this.members.get(member.id);
+
     // Create fresh member state
     const trackedMember = createPartyMember({
       id: member.id,
       name: String(member.name || 'Unknown'),
       avatar: String(member.avatar || AVATARS[0]),
       game: String(member.game || 'Unknown'),
+      agora_uid: member.agora_uid || existingMember?.agora_uid,
     });
 
-    // Add optional fields
-    if (member.agora_uid) trackedMember.agora_uid = member.agora_uid;
-
-    // Update members map with base member data
+    // Preserve voice state from existing member if available
     const updatedMember: PresenceMemberState = {
       ...trackedMember,
-      status: member.status || 'active',
+      status: member.status || existingMember?.status || 'active',
+      voice_status: member.voice_status || existingMember?.voice_status || 'silent',
+      muted: member.muted ?? existingMember?.muted ?? false,
+      is_deafened: member.is_deafened ?? existingMember?.is_deafened ?? false,
+      level: member.level ?? existingMember?.level ?? 0,
     };
 
     this.members.set(member.id, updatedMember);
