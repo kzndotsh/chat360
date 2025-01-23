@@ -1,10 +1,14 @@
-import type { PartyMember, VoiceStatus } from '../party/member';
+import type { PartyMember, VoiceStatus, VoiceMemberState } from '../party/member';
 import type { PartyStatus } from '../party/state';
 import type { ComponentProps } from 'react';
 
 export interface VolumeState {
+  id: string;
+  is_deafened: boolean;
   level: number;
+  muted: boolean;
   voice_status: VoiceStatus;
+  agora_uid?: string;
 }
 
 // Common component props
@@ -26,9 +30,9 @@ export interface PartyControlsProps {
 
 // Member list props
 export interface MemberListProps {
-  members: PartyMember[];
+  members: (PartyMember & Partial<VoiceMemberState>)[];
   currentUserId?: string;
-  volumeLevels?: Record<string, VolumeState>;
+  volumeLevels?: Record<string, VoiceMemberState>;
 }
 
 // Voice status icon props

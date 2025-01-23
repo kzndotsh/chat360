@@ -57,7 +57,7 @@ export const ensureRealtimeConnection = async () => {
         clearTimeout(timeout);
         logger.debug('Connected to realtime service', {
           component: 'SupabaseClient',
-          metadata: { connectionState: 'connected' }
+          metadata: { connectionState: 'connected' },
         });
         resolve();
       } else {

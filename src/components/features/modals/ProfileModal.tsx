@@ -90,9 +90,7 @@ export function ProfileModal({ onSubmitAction, onCloseAction, initialData }: Pro
   };
 
   return (
-    <BaseModal
-      onCloseAction={onCloseAction}
-    >
+    <BaseModal onCloseAction={onCloseAction}>
       <div className="min-h-[520px] w-[480px] rounded-lg bg-white p-6 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-xl font-bold text-[#161718]">

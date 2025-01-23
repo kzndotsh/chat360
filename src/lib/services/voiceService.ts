@@ -1,41 +1,53 @@
-import type { VoiceStatus } from '../types/party/member';
+import type { VoiceMemberState, VoiceStatus } from '@/lib/types/party/member';
+import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 
 import AgoraRTC, { IMicrophoneAudioTrack, IAgoraRTCClient } from 'agora-rtc-sdk-ng';
 
+import { VOICE_CONSTANTS } from '@/lib/constants/voice';
 import { logger } from '@/lib/logger';
 import { PresenceService } from '@/lib/services/presenceService';
+import { supabase } from '@/lib/supabase';
 
 import { PartyMember } from '../types/party/member';
 
-interface VolumeData {
-  level: number; // Volume between 0-1
-  uid: string;
+interface VoiceUpdate {
+  id: string;
+  is_deafened: boolean;
+  level: number;
+  muted: boolean;
+  timestamp: number;
   voice_status: VoiceStatus;
+  agora_uid?: string;
 }
 
-type VolumeCallback = (volumes: VolumeData[]) => void;
+type VoiceCallback = (volumes: VoiceMemberState[]) => void;
 
 export class VoiceService {
-  private static instance: VoiceService;
+  private static instance: VoiceService | null = null;
   private client: IAgoraRTCClient;
   private audioTrack: IMicrophoneAudioTrack | null = null;
   private _isMuted = false;
-  private volumeCallback: VolumeCallback | null = null;
-  private memberVolumes: VolumeData[] = [];
-  private readonly SPEAKING_THRESHOLD = 0.02; // 2% volume threshold for speaking
+  private volumeCallback: VoiceCallback | null = null;
+  private memberVoiceStates: Map<string, VoiceMemberState> = new Map();
   private _isJoined: boolean = false;
   private audioQualityMonitorInterval: NodeJS.Timeout | null = null;
   private lowAudioCount = 0;
-  private readonly MAX_LOW_AUDIO_COUNT = 5;
+  private lastVolume = 0; // Track last volume for smoothing
+  private broadcastChannel: RealtimeChannel | null = null;
+  private supabase: SupabaseClient;
+  private memberIdToAgoraUid: Map<string, string> = new Map();
+  private agoraUidToMemberId: Map<string, string> = new Map();
 
-  private constructor(client: IAgoraRTCClient) {
+  constructor(client: IAgoraRTCClient, supabase: SupabaseClient) {
     this.client = client;
+    this.supabase = supabase;
     this.setupEventHandlers();
+    this.setupBroadcastChannel();
   }
 
   public static getInstance(client?: IAgoraRTCClient): VoiceService {
     if (!VoiceService.instance && client) {
-      VoiceService.instance = new VoiceService(client);
+      VoiceService.instance = new VoiceService(client, supabase);
     } else if (!VoiceService.instance) {
       throw new Error('VoiceService not initialized with client');
     }
@@ -55,98 +67,108 @@ export class VoiceService {
 
     // Volume indicator events will be enabled when joining
     this.client.on('volume-indicator', (volumes) => {
-      // Only process volumes if we're still joined
-      if (!this._isJoined) {
-        return;
-      }
+      if (!this._isJoined) return;
 
-      // Convert volumes to our internal format with voice status
-      this.memberVolumes = volumes.map((vol) => {
-        const level = Math.min(vol.level / 100, 1); // Normalize to 0-1 and cap at 1
-        const uid = vol.uid.toString();
-        let voice_status: VoiceStatus = 'silent';
+      const updatedMembers = new Set<string>();
 
-        // Check if this is a remote user that is muted
+      volumes.forEach((vol) => {
+        const agoraUid = vol.uid.toString();
+        const memberId = this.getMemberIdFromAgoraUid(agoraUid);
+        updatedMembers.add(memberId);
+
+        const level = Math.min(vol.level / 100, 1);
         const remoteUser = this.client.remoteUsers.find((u) => u.uid === vol.uid);
         const isMuted = remoteUser ? !remoteUser.hasAudio : false;
 
-        if (isMuted) {
+        // Get current state to preserve mute status and store as previous state
+        const currentState = this.memberVoiceStates.get(memberId);
+        const preserveMuted = currentState?.muted ?? isMuted;
+
+        // Determine voice status based on mute state first
+        let voice_status: VoiceStatus = 'silent';
+        if (preserveMuted) {
           voice_status = 'muted';
-        } else if (level >= this.SPEAKING_THRESHOLD) {
+        } else if (level >= VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
           voice_status = 'speaking';
         }
 
-        return {
-          uid,
-          level,
+        this.memberVoiceStates.set(memberId, {
+          id: memberId,
+          level: preserveMuted ? 0 : level,
           voice_status,
-        };
+          muted: preserveMuted,
+          is_deafened: false,
+          agora_uid: agoraUid,
+          timestamp: Date.now(),
+          prev_state: currentState,
+        });
       });
 
-      // Add local user's volume if we have an audio track
+      // Handle local user's volume
       if (this.audioTrack && this.client.uid) {
-        const localLevel = Math.min(this.audioTrack.getVolumeLevel(), 1); // Cap at 1
+        const agoraUid = this.client.uid.toString();
+        const memberId = this.getMemberIdFromAgoraUid(agoraUid);
+        updatedMembers.add(memberId);
 
-        // Remove any existing local volume entry
-        this.memberVolumes = this.memberVolumes.filter(
-          (v) => v.uid !== this.client.uid?.toString()
-        );
+        const rawLevel = Math.min(this.audioTrack.getVolumeLevel(), 1);
+        const localLevel = this.smoothVolume(rawLevel);
+        const currentState = this.memberVoiceStates.get(memberId);
 
-        // Add current local volume
-        this.memberVolumes.push({
-          uid: this.client.uid.toString(),
-          level: this._isMuted ? 0 : localLevel, // Force 0 if muted
-          voice_status: this._isMuted ? 'muted' : (localLevel >= this.SPEAKING_THRESHOLD ? 'speaking' : 'silent'),
-        });
+        const voiceState: VoiceMemberState = {
+          id: memberId,
+          level: this._isMuted ? 0 : localLevel,
+          voice_status: this._isMuted ? 'muted' : (localLevel >= VOICE_CONSTANTS.SPEAKING_THRESHOLD ? 'speaking' : 'silent'),
+          muted: this._isMuted,
+          is_deafened: false,
+          agora_uid: agoraUid,
+          timestamp: Date.now(),
+          prev_state: currentState,
+        };
+
+        this.memberVoiceStates.set(memberId, voiceState);
 
         // Log local volume for debugging
-        if (localLevel >= this.SPEAKING_THRESHOLD && !this._isMuted) {
+        if (localLevel >= VOICE_CONSTANTS.SPEAKING_THRESHOLD && !this._isMuted) {
           logger.debug('Local user speaking', {
             metadata: {
-              level: localLevel,
-              uid: this.client.uid.toString(),
+              rawLevel,
+              smoothedLevel: localLevel,
+              memberId,
+              voice_status: voiceState.voice_status,
             },
           });
         }
+
+        // Broadcast the voice state
+        void this.broadcastVoiceUpdate(voiceState);
       }
 
-      // Notify subscribers immediately with current volumes
-      if (this.volumeCallback) {
-        // Only update presence if we're still joined
-        if (this._isJoined && this.client.uid) {
-          try {
-            const presenceService = PresenceService.getInstance();
-            // Check if presence service has an active channel before updating
-            const uid = this.client.uid.toString();
-            const localVolume = this.memberVolumes.find(v => v.uid === uid);
-            if (localVolume && presenceService.hasActiveChannel()) {
-              presenceService.updatePresence({
-                voice_status: localVolume.voice_status,
-                volumeLevel: localVolume.level
-              }).catch(error => {
-                // Only log error if we're still joined
-                if (this._isJoined) {
-                  logger.error('Failed to update presence with voice status', { metadata: { error } });
-                }
-              });
-            }
-          } catch (error) {
-            // Log presence service errors
-            if (this._isJoined) {
-              logger.debug('Failed to update presence', { metadata: { error } });
-            }
-          }
+      // Set silent state for members we haven't heard from
+      Array.from(this.memberVoiceStates.entries()).forEach(([memberId, state]) => {
+        if (!updatedMembers.has(memberId)) {
+          this.memberVoiceStates.set(memberId, {
+            ...state,
+            level: 0,
+            voice_status: state.muted ? 'muted' : 'silent',
+            timestamp: Date.now(),
+          });
         }
-        this.volumeCallback(this.memberVolumes);
+      });
+
+      // Notify subscribers with all current volumes
+      if (this.volumeCallback) {
+        this.volumeCallback(Array.from(this.memberVoiceStates.values()));
       }
 
       // Log speaking users for debugging
-      const speakingUsers = this.memberVolumes.filter((v) => v.voice_status === 'speaking');
+      const speakingUsers = Array.from(this.memberVoiceStates.values()).filter(
+        (v) => v.voice_status === 'speaking'
+      );
       if (speakingUsers.length > 0) {
         logger.debug('Speaking users detected', {
           metadata: {
             users: speakingUsers.map((u) => ({
-              uid: u.uid,
+              memberId: u.id,
               level: u.level,
               voice_status: u.voice_status,
             })),
@@ -167,41 +189,245 @@ export class VoiceService {
             metadata: {
               code: event.code,
               message: event.msg,
-              count: this.lowAudioCount
-            }
+              count: this.lowAudioCount,
+            },
           });
 
-          if (this.lowAudioCount >= this.MAX_LOW_AUDIO_COUNT) {
+          if (this.lowAudioCount >= VOICE_CONSTANTS.MAX_LOW_AUDIO_COUNT) {
             logger.info('Attempting to recover from persistent audio issues');
             await this.recoverAudioTrack();
           }
           break;
         default:
           logger.debug('Agora exception', {
-            metadata: { code: event.code, message: event.msg }
+            metadata: { code: event.code, message: event.msg },
           });
       }
     });
   }
 
+  private async setupBroadcastChannel() {
+    try {
+      // Clean up existing channel
+      if (this.broadcastChannel) {
+        try {
+          await this.broadcastChannel.unsubscribe();
+        } catch (error) {
+          logger.warn('Error unsubscribing from existing channel', {
+            component: 'VoiceService',
+            action: 'setupBroadcastChannel',
+            metadata: { error }
+          });
+        }
+        this.broadcastChannel = null;
+      }
+
+      // Create new broadcast channel with enhanced config
+      this.broadcastChannel = this.supabase.channel('voice_updates', {
+        config: {
+          broadcast: {
+            self: true,
+            ack: true,
+          },
+          presence: {
+            key: this.client.uid?.toString(),
+          },
+        },
+      });
+
+      // Set up event handler before subscribing
+      this.broadcastChannel.on('broadcast', { event: 'voice_update' }, ({ payload }) => {
+        const update = payload as VoiceUpdate;
+        if (update && update.id) {
+          this.handleVoiceUpdate(update);
+        }
+      });
+
+      // Subscribe and handle status
+      await this.broadcastChannel.subscribe(async (status) => {
+        logger.debug('Voice broadcast channel status:', {
+          component: 'VoiceService',
+          action: 'setupBroadcastChannel',
+          metadata: { status }
+        });
+
+        if (status === 'CHANNEL_ERROR') {
+          // Wait a bit before retrying to avoid rapid retries
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          await this.retryBroadcastSetup();
+        }
+      });
+    } catch (error) {
+      logger.error('Failed to setup broadcast channel', {
+        component: 'VoiceService',
+        action: 'setupBroadcastChannel',
+        metadata: { error }
+      });
+      await this.retryBroadcastSetup();
+    }
+  }
+
+  private async retryBroadcastSetup(retryCount = 0) {
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY = Math.min(1000 * Math.pow(2, retryCount), 5000); // Cap at 5 seconds
+
+    if (retryCount >= MAX_RETRIES) {
+      logger.error('Max retry attempts reached for broadcast setup', {
+        component: 'VoiceService',
+        action: 'retryBroadcastSetup'
+      });
+      return;
+    }
+
+    logger.info('Retrying broadcast setup', {
+      component: 'VoiceService',
+      action: 'retryBroadcastSetup',
+      metadata: { retryCount, delay: RETRY_DELAY }
+    });
+
+    await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+
+    try {
+      await this.setupBroadcastChannel();
+    } catch (error) {
+      logger.error('Retry attempt failed', {
+        component: 'VoiceService',
+        action: 'retryBroadcastSetup',
+        metadata: { error, retryCount }
+      });
+      await this.retryBroadcastSetup(retryCount + 1);
+    }
+  }
+
+  private handleVoiceUpdate(update: VoiceUpdate) {
+    // Validate update
+    if (!update || !update.id) {
+      logger.warn('Received invalid voice update', {
+        component: 'VoiceService',
+        action: 'handleVoiceUpdate',
+        metadata: { update },
+      });
+      return;
+    }
+
+    // Update member voice states with broadcast data
+    const voiceState: VoiceMemberState = {
+      id: update.id,
+      level: update.level,
+      voice_status: update.voice_status,
+      muted: update.muted,
+      is_deafened: update.is_deafened,
+      agora_uid: update.agora_uid,
+      timestamp: update.timestamp,
+    };
+
+    // Only update if the timestamp is newer than our last update
+    const currentState = this.memberVoiceStates.get(update.id);
+    if (!currentState || !currentState.timestamp || update.timestamp > currentState.timestamp) {
+      this.memberVoiceStates.set(update.id, voiceState);
+
+      logger.debug('Voice state updated', {
+        component: 'VoiceService',
+        action: 'handleVoiceUpdate',
+        metadata: {
+          memberId: update.id,
+          oldState: currentState,
+          newState: voiceState,
+          volumeCallback: !!this.volumeCallback
+        },
+      });
+
+      // Notify subscribers immediately with current volumes
+      if (this.volumeCallback) {
+        this.volumeCallback(Array.from(this.memberVoiceStates.values()));
+      }
+    }
+  }
+
+  private async broadcastVoiceUpdate(update: Partial<VoiceUpdate>) {
+    if (!this.broadcastChannel) return;
+
+    try {
+      const broadcast: VoiceUpdate = {
+        id: update.id!,
+        timestamp: Date.now(),
+        level: update.level ?? 0,
+        voice_status: update.voice_status ?? 'silent',
+        muted: update.muted ?? false,
+        is_deafened: update.is_deafened ?? false,
+        agora_uid: update.agora_uid,
+      };
+
+      const response = await this.broadcastChannel.send({
+        type: 'broadcast',
+        event: 'voice_update',
+        payload: broadcast,
+      });
+
+      if (!response) {
+        throw new Error('Failed to broadcast voice update');
+      }
+
+      logger.debug('Voice update broadcast sent', {
+        component: 'VoiceService',
+        action: 'broadcastVoiceUpdate',
+        metadata: { update: broadcast },
+      });
+    } catch (error) {
+      logger.error('Failed to broadcast voice update', {
+        component: 'VoiceService',
+        action: 'broadcastVoiceUpdate',
+        metadata: { error, update },
+      });
+    }
+  }
+
   private async recoverAudioTrack(): Promise<void> {
     try {
-      // Reset counter
       this.lowAudioCount = 0;
-
       if (!this.audioTrack) return;
 
-      // Store current mute state
       const wasMuted = this._isMuted;
+      const currentVolume = this.audioTrack.getVolumeLevel();
 
-      // Close existing track
+      logger.info('Starting audio track recovery', {
+        metadata: {
+          wasMuted,
+          currentVolume,
+          hasTrack: !!this.audioTrack,
+        },
+      });
+
       this.audioTrack.close();
+      this.audioTrack = null;
 
-      // Create new track
-      this.audioTrack = await AgoraRTC.createMicrophoneAudioTrack();
+      // Small delay to ensure cleanup
+      await new Promise((resolve) => setTimeout(resolve, VOICE_CONSTANTS.RECOVERY_DELAY));
 
-      // Restore volume
-      this.audioTrack.setVolume(100);
+      // Create new track with enhanced settings
+      this.audioTrack = await AgoraRTC.createMicrophoneAudioTrack({
+        encoderConfig: {
+          sampleRate: 48000,
+          stereo: false,
+          bitrate: 128,
+        },
+        AEC: true,
+        AGC: true,
+        ANS: true,
+      });
+
+      // Restore volume and check if it was set successfully
+      await this.audioTrack.setVolume(Math.round(currentVolume * VOICE_CONSTANTS.MAX_VOLUME));
+      const newVolume = this.audioTrack.getVolumeLevel();
+
+      if (Math.abs(newVolume - currentVolume) > VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
+        logger.warn('Volume restoration may not be accurate', {
+          metadata: {
+            expectedVolume: currentVolume,
+            actualVolume: newVolume,
+          },
+        });
+      }
 
       // Restore mute state
       if (wasMuted) {
@@ -212,28 +438,71 @@ export class VoiceService {
       if (this._isJoined) {
         await this.client.unpublish();
         await this.client.publish(this.audioTrack);
+
+        // Verify publishing succeeded
+        const localTrack = this.client.localTracks[0];
+        const isPublished = localTrack && localTrack === this.audioTrack;
+        if (!isPublished) {
+          throw new Error('Failed to republish audio track');
+        }
       }
 
-      logger.info('Audio track recovered successfully');
+      logger.info('Audio track recovered successfully', {
+        metadata: {
+          volume: newVolume,
+          muted: wasMuted,
+        },
+      });
     } catch (error) {
-      logger.error('Failed to recover audio track', { metadata: { error }});
-      // Don't rethrow - we want to continue even if recovery fails
+      logger.error('Failed to recover audio track', { metadata: { error } });
+      // Attempt one more recovery with default settings if this fails
+      try {
+        if (!this.audioTrack) {
+          this.audioTrack = await AgoraRTC.createMicrophoneAudioTrack();
+          if (this._isJoined) {
+            await this.client.publish(this.audioTrack);
+          }
+        }
+      } catch (fallbackError) {
+        logger.error('Fallback audio recovery also failed', { metadata: { fallbackError } });
+      }
     }
   }
 
-  public async join(channelName: string, uid: string): Promise<void> {
+  public async join(channelName: string, memberId: string): Promise<void> {
     try {
       // Create audio track if not exists
       if (!this.audioTrack) {
-        this.audioTrack = await AgoraRTC.createMicrophoneAudioTrack();
-        this.audioTrack.setVolume(100);
+        this.audioTrack = await AgoraRTC.createMicrophoneAudioTrack({
+          encoderConfig: {
+            sampleRate: 48000,
+            stereo: false,
+            bitrate: 128,
+          },
+          AEC: true,
+          AGC: true,
+          ANS: true,
+        });
+        await this.audioTrack.setVolume(100);
       }
 
       // Get token for channel
-      const token = await this.fetchToken(channelName, uid);
+      const token = await this.fetchToken(channelName, memberId);
+
+      // Convert member ID to numeric UID for Agora
+      const numericUid = parseInt(memberId.replace(/-/g, '').slice(0, 8), 16);
+
+      // Store the ID mapping
+      this.memberIdToAgoraUid.set(memberId, numericUid.toString());
+      this.agoraUidToMemberId.set(numericUid.toString(), memberId);
 
       // Join channel
-      await this.client.join(process.env.NEXT_PUBLIC_AGORA_APP_ID!, channelName, token, parseInt(uid.replace(/-/g, '').slice(0, 8), 16));
+      await this.client.join(
+        process.env.NEXT_PUBLIC_AGORA_APP_ID!,
+        channelName,
+        token,
+        numericUid
+      );
 
       // Disable dual stream mode
       await this.client.disableDualStream();
@@ -251,7 +520,7 @@ export class VoiceService {
       this.lowAudioCount = 0;
 
       logger.info('Join channel success', {
-        metadata: { channelName, uid },
+        metadata: { channelName, memberId },
       });
     } catch (error) {
       logger.error('Join error', { metadata: { error } });
@@ -260,90 +529,102 @@ export class VoiceService {
   }
 
   public async leave(): Promise<void> {
-    try {
-      // Set joined state to false first to prevent any further presence updates
-      this._isJoined = false;
+    logger.info('Leaving voice service');
 
-      // Reset audio quality monitoring
-      this.lowAudioCount = 0;
+    this._isJoined = false;
 
-      // Clear volume callback and member volumes to prevent further updates
-      this.volumeCallback = null;
-      this.memberVolumes = [];
-
-      // Remove all volume indicator event handlers
-      this.client.removeAllListeners('volume-indicator');
-
-      // Update presence to indicate leaving before closing audio track
-      try {
-        const presenceService = PresenceService.getInstance();
-        if (presenceService.hasActiveChannel()) {
-          await presenceService.updatePresence({
-            voice_status: 'disconnected',
-            muted: false,
-            volumeLevel: 0
-          });
-        }
-      } catch (error) {
-        logger.warn('Failed to update presence before leave', { metadata: { error } });
-      }
-
-      if (this.audioTrack) {
-        // Ensure track is muted before unpublishing to prevent any last-minute volume events
-        await this.audioTrack.setEnabled(false);
-        await this.client.unpublish(this.audioTrack);
-        this.audioTrack.close();
-        this.audioTrack = null;
-      }
-
-      await this.client.leave();
-      logger.info('Leave channel success');
-    } catch (error) {
-      logger.error('Leave channel error', { metadata: { error } });
-      throw error;
+    // Clean up audio track
+    if (this.audioTrack) {
+      this.audioTrack.close();
+      this.audioTrack = null;
     }
+
+    // Clean up broadcast channel
+    if (this.broadcastChannel) {
+      try {
+        await this.broadcastChannel.unsubscribe();
+        this.broadcastChannel = null;
+      } catch (error) {
+        logger.error('Failed to unsubscribe from broadcast channel', {
+          component: 'VoiceService',
+          action: 'leave',
+          metadata: { error },
+        });
+      }
+    }
+
+    // Clear volume data
+    this.memberVoiceStates.clear();
+    if (this.volumeCallback) {
+      this.volumeCallback(Array.from(this.memberVoiceStates.values()));
+    }
+
+    // Clean up client
+    try {
+      await this.client.leave();
+    } catch (error) {
+      logger.error('Failed to leave voice client', {
+        component: 'VoiceService',
+        action: 'leave',
+        metadata: { error },
+      });
+    }
+
+    logger.info('Left voice service successfully');
   }
 
   public async toggleMute(): Promise<boolean> {
-    if (!this.audioTrack) return false;
+    if (!this.audioTrack) return this._isMuted;
 
     try {
       this._isMuted = !this._isMuted;
-
       await this.audioTrack.setEnabled(!this._isMuted);
 
-      // Update presence service with mute state
-      const presenceService = PresenceService.getInstance();
-      await presenceService.updatePresence({
-        muted: this._isMuted,
-        voice_status: this._isMuted ? 'muted' : 'silent'
-      });
+      // Get current volume level
+      const memberId = this.getMemberIdFromAgoraUid(this.client.uid?.toString() || '');
+      if (memberId) {
+        const currentState = this.memberVoiceStates.get(memberId);
 
-      // Force an immediate volume update to reflect mute state
-      const uid = this.client.uid;
-      if (this.volumeCallback && uid) {
-        const currentVolumes = [...this.memberVolumes];
-        // Update or add local user volume
-        const localVolumeIndex = currentVolumes.findIndex((v) => v.uid === uid.toString());
-        const localVolume: VolumeData = {
-          uid: uid.toString(),
-          level: 0,
-          voice_status: this._isMuted ? 'muted' : 'silent',
+        const voiceState: VoiceMemberState = {
+          id: memberId,
+          level: 0, // Always 0 when muted
+          voice_status: this._isMuted ? 'muted' : 'silent', // Start with silent when unmuting
+          muted: this._isMuted,
+          is_deafened: false,
+          agora_uid: this.client.uid?.toString(),
+          timestamp: Date.now(),
+          prev_state: currentState,
         };
 
-        if (localVolumeIndex >= 0) {
-          currentVolumes[localVolumeIndex] = localVolume;
-        } else {
-          currentVolumes.push(localVolume);
+        // Update local state
+        this.memberVoiceStates.set(memberId, voiceState);
+
+        // Notify subscribers immediately
+        if (this.volumeCallback) {
+          this.volumeCallback(Array.from(this.memberVoiceStates.values()));
         }
 
-        this.memberVolumes = currentVolumes;
-        this.volumeCallback(this.memberVolumes);
+        // Broadcast the updated state
+        void this.broadcastVoiceUpdate(voiceState);
+
+        logger.debug('Mute state updated', {
+          component: 'VoiceService',
+          action: 'toggleMute',
+          metadata: {
+            memberId,
+            muted: this._isMuted,
+            voiceState
+          }
+        });
       }
 
       return this._isMuted;
     } catch (error) {
-      logger.error('Toggle mute error', { metadata: { error } });
+      logger.error('Failed to toggle mute', {
+        component: 'VoiceService',
+        action: 'toggleMute',
+        metadata: { error },
+      });
       throw error;
     }
   }
@@ -358,7 +639,7 @@ export class VoiceService {
     try {
       // Convert 0-1 to 0-100 for Agora
       const agoraVolume = Math.round(volume * 100);
-      this.audioTrack.setVolume(agoraVolume);
+      await this.audioTrack.setVolume(agoraVolume);
     } catch (error) {
       logger.error('Set volume error', { metadata: { error } });
       throw error;
@@ -369,8 +650,8 @@ export class VoiceService {
     return this.audioTrack?.getVolumeLevel() || 0;
   }
 
-  public getVolumes(): VolumeData[] {
-    return this.memberVolumes;
+  public getVolumes(): VoiceMemberState[] {
+    return Array.from(this.memberVoiceStates.values());
   }
 
   public getMembers(): PartyMember[] {
@@ -378,14 +659,14 @@ export class VoiceService {
     return presenceService.getMembers();
   }
 
-  public onVolumeChange(callback: VolumeCallback | null): void {
+  public onVolumeChange(callback: VoiceCallback | null): void {
     this.volumeCallback = callback;
   }
 
-  private async fetchToken(channelName: string, uid: string): Promise<string> {
+  private async fetchToken(channelName: string, memberId: string): Promise<string> {
     try {
-      // Convert UUID to numeric UID for Agora
-      const numericUid = parseInt(uid.replace(/-/g, '').slice(0, 8), 16);
+      // Convert member ID to numeric UID for Agora
+      const numericUid = parseInt(memberId.replace(/-/g, '').slice(0, 8), 16);
 
       const response = await fetch('/api/agora/token', {
         method: 'POST',
@@ -405,5 +686,22 @@ export class VoiceService {
       logger.error('Token fetch error', { metadata: { error } });
       throw error;
     }
+  }
+
+  private smoothVolume(currentVolume: number): number {
+    const smoothed =
+      this.lastVolume * (1 - VOICE_CONSTANTS.VOLUME_SMOOTHING) +
+      currentVolume * VOICE_CONSTANTS.VOLUME_SMOOTHING;
+    this.lastVolume = smoothed;
+    return smoothed;
+  }
+
+  private getMemberIdFromAgoraUid(agoraUid: number | string): string {
+    const uid = agoraUid.toString();
+    return this.agoraUidToMemberId.get(uid) || uid;
+  }
+
+  private getAgoraUidFromMemberId(memberId: string): string | undefined {
+    return this.memberIdToAgoraUid.get(memberId);
   }
 }

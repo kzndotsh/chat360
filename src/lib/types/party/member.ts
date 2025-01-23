@@ -8,45 +8,41 @@ export type VoiceStatus =
   | 'speaking';
 
 // Member status types
-export type MemberStatus = 'active' | 'left';
+export type MemberStatus = 'active' | 'idle' | 'left';
 
-// Core member type with essential properties
+// Base member data
 export interface PartyMember {
   avatar: string;
   created_at: string;
   game: string;
-  // Core identity (required)
   id: string;
   is_active: boolean;
-  is_deafened: boolean; // Default: false
   last_seen: string;
-  muted: boolean; // Default: false
   name: string;
-  // Voice state (required with defaults)
-  voice_status: VoiceStatus; // Default: 'silent'
-  volumeLevel: number; // Default: 0
-  _lastUpdate?: number; // Internal state tracking
-  _lastVoiceUpdate?: number; // Internal voice state tracking
-  // Optional system properties
-  agora_uid?: number; // Voice connection ID
-  presence_ref?: string; // Supabase presence tracking
-  status?: MemberStatus; // Member presence status
+  agora_uid?: string;
 }
 
-// Helper to create a new party member with defaults
-export const createPartyMember = (init: {
+// Voice-specific member state
+export interface VoiceMemberState {
   id: string;
-  name: string;
-  avatar: string;
-  game: string;
-}): PartyMember => ({
-  ...init,
-  created_at: new Date().toISOString(),
-  last_seen: new Date().toISOString(),
-  is_active: true,
-  voice_status: 'silent',
-  muted: false,
-  volumeLevel: 0,
-  is_deafened: false,
-  status: 'active',
-});
+  is_deafened: boolean;
+  level: number;
+  muted: boolean;
+  voice_status: VoiceStatus;
+  agora_uid?: string;
+  prev_state?: VoiceMemberState; // Previous state for hysteresis
+  timestamp?: number; // Optional timestamp for tracking update order
+}
+
+export function createPartyMember(data: Partial<PartyMember>): PartyMember {
+  return {
+    id: data.id || '',
+    name: data.name || 'Unknown',
+    avatar: data.avatar || '',
+    game: data.game || 'Unknown',
+    created_at: data.created_at || new Date().toISOString(),
+    last_seen: data.last_seen || new Date().toISOString(),
+    is_active: data.is_active ?? true,
+    agora_uid: data.agora_uid,
+  };
+}

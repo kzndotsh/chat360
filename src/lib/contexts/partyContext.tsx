@@ -51,11 +51,7 @@ const CHANNEL_NAME = 'party';
 export function PartyProvider({ children }: { children: React.ReactNode }) {
   const volumeLevels = useVolumeControl();
   const { getClient } = useAgoraContext();
-  const {
-    initializePresence,
-    cleanupPresence,
-    updatePresence,
-  } = usePartyStore();
+  const { initializePresence, cleanupPresence, updatePresence } = usePartyStore();
 
   const {
     presence: { currentMember, members, error: presenceError },
@@ -64,48 +60,62 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
     setMuted,
   } = usePartyStore();
 
-  const join = async (member: PartyMember) => {
-    try {
-      // Initialize presence first
-      await initializePresence(member);
+  const join = useCallback(
+    async (member: PartyMember) => {
+      try {
+        // Initialize presence first
+        await initializePresence(member);
 
-      // Initialize voice client
-      const voiceClient = await getClient();
-      if (!voiceClient) {
-        throw new Error('Voice client not initialized');
+        // Initialize voice client
+        const voiceClient = await getClient();
+        if (!voiceClient) {
+          throw new Error('Voice client not initialized');
+        }
+
+        // Create voice service instance
+        const voiceService = VoiceService.getInstance(voiceClient);
+        if (!voiceService) {
+          throw new Error('Voice service not initialized');
+        }
+
+        // Join voice channel
+        await voiceService.join(CHANNEL_NAME, member.id);
+
+        logger.debug('[PartyChat][handleJoinParty] Join completed');
+      } catch (error) {
+        logger.error('Join error', { metadata: { error } });
+        throw error;
       }
-
-      // Create voice service instance
-      const voiceService = VoiceService.getInstance(voiceClient);
-      if (!voiceService) {
-        throw new Error('Voice service not initialized');
-      }
-
-      // Join voice channel
-      await voiceService.join(CHANNEL_NAME, member.id);
-
-      logger.debug('[PartyChat][handleJoinParty] Join completed');
-    } catch (error) {
-      logger.error('Join error', { metadata: { error } });
-      throw error;
-    }
-  };
+    },
+    [initializePresence, getClient]
+  );
 
   const leave = useCallback(async () => {
     try {
+      // Get voice client and cleanup voice connection first
+      const client = await getClient();
+      if (client) {
+        const voiceService = VoiceService.getInstance(client);
+        await voiceService.leave();
+      }
+
+      // Then cleanup presence
       await cleanupPresence();
     } catch (error) {
       throw error;
     }
-  }, [cleanupPresence]);
+  }, [cleanupPresence, getClient]);
 
-  const updateProfile = useCallback(async (profile: Partial<PartyMember>) => {
-    try {
-      await updatePresence(profile);
-    } catch (error) {
-      throw error;
-    }
-  }, [updatePresence]);
+  const updateProfile = useCallback(
+    async (profile: Partial<PartyMember>) => {
+      try {
+        await updatePresence(profile);
+      } catch (error) {
+        throw error;
+      }
+    },
+    [updatePresence]
+  );
 
   const toggleMute = useCallback(async () => {
     try {

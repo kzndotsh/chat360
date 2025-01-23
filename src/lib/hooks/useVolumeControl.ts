@@ -1,4 +1,5 @@
 import type { VolumeState } from '@/lib/types/components/props';
+import type { VoiceMemberState } from '@/lib/types/party/member';
 
 import { useState, useEffect } from 'react';
 
@@ -15,14 +16,17 @@ export function useVolumeControl() {
 
     try {
       const service = VoiceService.getInstance(client);
-      service.onVolumeChange((volumes) => {
+      service.onVolumeChange((volumes: VoiceMemberState[]) => {
         setVolumeLevels((prevVolumes) => {
           const newVolumes = { ...prevVolumes };
           volumes.forEach((vol) => {
-            // Transform VolumeData to VolumeState
-            newVolumes[vol.uid] = {
+            newVolumes[vol.id] = {
+              id: vol.id,
               level: vol.level,
               voice_status: vol.voice_status,
+              muted: vol.muted,
+              is_deafened: vol.is_deafened,
+              agora_uid: vol.agora_uid,
             };
           });
           return newVolumes;

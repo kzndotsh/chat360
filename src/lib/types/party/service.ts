@@ -1,52 +1,24 @@
-import type { PartyMember, VoiceStatus } from './member';
-import type { PresenceStatus } from './state';
+import type { PartyMember, VoiceMemberState } from './member';
 
 // Service state interfaces
 export interface PresenceServiceState {
-  status: PresenceStatus;
+  status: 'connected' | 'connecting' | 'error' | 'idle';
   error?: Error;
 }
 
-export interface VoiceServiceState {
-  isConnecting: boolean;
-  lastVolumeUpdate: number;
-  reconnectAttempts: number;
-  volumeLevel: number;
-}
-
-// Voice service state
-export interface VoiceServiceInternalState {
-  isConnecting: boolean;
-  lastVolumeUpdate: number;
-  reconnectAttempts: number;
-  volumeLevel: number;
+// Presence member state for tracking
+export interface PresenceMemberState extends PartyMember {
+  is_deafened?: boolean;
+  level?: number;
+  // Voice-related properties
+  muted?: boolean;
+  status?: 'active' | 'idle' | 'left';
+  voice_status?: VoiceMemberState['voice_status'];
 }
 
 // Presence service types
-export interface PresenceMemberState {
-  id: string;
-  agora_uid?: number;
-  avatar?: string;
-  created_at?: string;
-  game?: string;
-  is_deafened?: boolean;
-  last_seen?: string;
-  muted?: boolean;
-  name?: string;
-  status?: string;
-  voice_status?: VoiceStatus;
-  volumeLevel?: number;
-}
-
 export interface PresenceListener {
   (members: PartyMember[]): void;
-}
-
-export interface TrackResult {
-  trackResult: 'error' | 'ok';
-  error?: Error;
-  memberCount?: number;
-  trackedMemberId?: string;
 }
 
 export interface StateUpdate {
@@ -57,4 +29,11 @@ export interface StateUpdate {
 export interface QueuedStateUpdate extends StateUpdate {
   reject: (error: Error) => void;
   resolve: (value: void) => void;
+}
+
+export interface TrackResult {
+  trackResult: 'error' | 'ok';
+  error?: Error;
+  memberCount?: number;
+  trackedMemberId?: string;
 }

@@ -7,7 +7,7 @@ import { logger } from '@/lib/logger';
 // For server-side code, we use the non-public env vars
 const appId = process.env.NEXT_PUBLIC_AGORA_APP_ID;
 const appCertificate = process.env.AGORA_APP_CERTIFICATE;
-const _tokenExpirationInSeconds = 3600; // 1 hour
+// const tokenExpirationInSeconds = 3600; // 1 hour
 
 // Role values from agora-token package
 const ROLE = {

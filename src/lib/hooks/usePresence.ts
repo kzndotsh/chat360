@@ -1,16 +1,30 @@
 'use client';
 
-import type { PartyMember } from '../types/party/member';
+import type { PartyMember, VoiceMemberState } from '@/lib/types/party/member';
+import type { PresenceServiceState } from '@/lib/types/party/service';
 
 import { useCallback, useEffect, useState } from 'react';
 
-import { PresenceService } from '../services/presenceService';
+import { PresenceService } from '@/lib/services/presenceService';
 
-export function usePresence() {
-  const [members, setMembers] = useState<PartyMember[]>([]);
-  const [currentMember, setCurrentMember] = useState<PartyMember | null>(null);
-  const [status, setStatus] = useState<string>('idle');
+type PresenceHookState = {
+  currentMember: (PartyMember & Partial<VoiceMemberState>) | null;
+  error: Error | null;
+  members: (PartyMember & Partial<VoiceMemberState>)[];
+  status: PresenceServiceState['status'];
+};
+
+export function usePresence(): PresenceHookState & {
+  initialize: (member: PartyMember & Partial<VoiceMemberState>) => Promise<void>;
+  updatePresence: (updates: Partial<PartyMember & VoiceMemberState>) => Promise<void>;
+  cleanup: () => void;
+} {
+  const [status, setStatus] = useState<PresenceServiceState['status']>('idle');
   const [error, setError] = useState<Error | null>(null);
+  const [members, setMembers] = useState<(PartyMember & Partial<VoiceMemberState>)[]>([]);
+  const [currentMember, setCurrentMember] = useState<
+    (PartyMember & Partial<VoiceMemberState>) | null
+  >(null);
 
   useEffect(() => {
     const presenceService = PresenceService.getInstance();
@@ -34,36 +48,21 @@ export function usePresence() {
     };
   }, []);
 
-  const initialize = useCallback(async (member: PartyMember) => {
+  const initialize = useCallback(async (member: PartyMember & Partial<VoiceMemberState>) => {
     const presenceService = PresenceService.getInstance();
     try {
-      // Add required fields for the service's PartyMember type
-      const fullMember: PartyMember = {
-        id: member.id,
-        name: member.name,
-        avatar: member.avatar,
-        game: member.game,
-        created_at: member.created_at,
-        last_seen: new Date().toISOString(),
-        is_active: true,
-        voice_status: member.voice_status || 'silent',
-        muted: member.muted || false,
-        is_deafened: false,
-        agora_uid: member.agora_uid,
-        volumeLevel: 0,
-      };
-
-      await presenceService.initialize(fullMember);
-      // Update state after initialization
+      setStatus('connecting');
+      await presenceService.initialize(member);
+      setStatus('connected');
       setMembers(presenceService.getMembers());
       setCurrentMember(presenceService.getCurrentMember());
-      setStatus(presenceService.getState().status);
     } catch (err) {
       setError(err instanceof Error ? err : new Error(String(err)));
+      setStatus('error');
     }
   }, []);
 
-  const updatePresence = useCallback(async (updates: Partial<PartyMember>) => {
+  const updatePresence = useCallback(async (updates: Partial<PartyMember & VoiceMemberState>) => {
     const presenceService = PresenceService.getInstance();
     try {
       await presenceService.updatePresence(updates);
@@ -94,10 +93,10 @@ export function usePresence() {
   }, []);
 
   return {
-    status,
-    members,
     currentMember,
     error,
+    members,
+    status,
     initialize,
     cleanup,
     updatePresence,
