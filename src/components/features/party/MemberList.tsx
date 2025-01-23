@@ -38,46 +38,32 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
     return members.map((member) => {
       const isCurrentUser = member.id === currentUserId;
       const volumeState = debouncedVolumeLevels[member.id];
-      const prevVolumeState = volumeState?.prev_state;
 
-      // Check mute state from volumeState first, then fallback to member.muted
-      const isMuted = volumeState?.muted ?? member.muted;
+      // Get mute state from volumeState
+      const isMuted = volumeState?.muted ?? false;
 
-      // Determine voice status with proper precedence and hysteresis
+      // Determine voice status with proper precedence
       let voice_status: VoiceStatus = 'silent';
       if (isMuted) {
         voice_status = 'muted';
-      } else if (volumeState?.voice_status === 'speaking') {
+      } else if (volumeState?.voice_status === 'speaking' || (volumeState?.level != null && volumeState.level >= VOICE_CONSTANTS.SPEAKING_THRESHOLD)) {
         voice_status = 'speaking';
-      } else if (volumeState?.level != null) {
-        // Add hysteresis to prevent rapid switching
-        const threshold = prevVolumeState?.voice_status === 'speaking'
-          ? VOICE_CONSTANTS.SPEAKING_THRESHOLD * 0.8  // Lower threshold to maintain speaking
-          : VOICE_CONSTANTS.SPEAKING_THRESHOLD;       // Normal threshold to start speaking
-
-        if (volumeState.level >= threshold) {
-          voice_status = 'speaking';
-        }
       }
 
-      const volumeLevel = isMuted ? 0 : (volumeState?.level ?? member.level ?? 0);
-
-      // Only log significant state changes
-      if ((voice_status !== 'silent' && voice_status !== prevVolumeState?.voice_status) || isMuted !== prevVolumeState?.muted) {
-        logger.debug('Rendering member', {
-          component: 'MemberList',
-          action: 'renderMember',
-          metadata: {
-            memberId: member.id,
-            name: member.name,
-            isCurrentUser,
-            volumeLevel,
-            voice_status,
-            muted: isMuted,
-            volumeState: volumeState ? JSON.stringify(volumeState) : 'none',
-          },
-        });
-      }
+      // Log state changes for debugging
+      logger.debug('Rendering member', {
+        component: 'MemberList',
+        action: 'renderMember',
+        metadata: {
+          memberId: member.id,
+          name: member.name,
+          isCurrentUser,
+          volumeLevel: volumeState?.level ?? 0,
+          voice_status,
+          muted: isMuted,
+          volumeState: volumeState ? JSON.stringify(volumeState) : 'none'
+        },
+      });
 
       return (
         <div

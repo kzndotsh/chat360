@@ -167,73 +167,138 @@ export class PresenceService {
       },
     });
 
-    // Subscribe to channel
-    channel.subscribe(async (status) => {
-      if (status === 'SUBSCRIBED') {
-        logger.debug('Channel subscribed', {
-          ...LOG_CONTEXT,
-          metadata: { channelName: CHANNEL_NAME },
-        });
+    // Subscribe to channel with proper error handling
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('Channel subscription timeout'));
+      }, 5000);
 
-        // Set up presence handlers
-        channel.on('presence', { event: 'sync' }, () => {
-          const state = channel.presenceState<PresenceMemberState>();
-          void this.syncMembersFromState(state);
-        });
+      channel.subscribe(async (status) => {
+        clearTimeout(timeout);
 
-        channel.on('presence', { event: 'join' }, ({ key, newPresences }) => {
-          logger.debug('Member joined', {
+        if (status === 'SUBSCRIBED') {
+          logger.debug('Channel subscribed', {
             ...LOG_CONTEXT,
-            metadata: { key, newPresences },
+            metadata: { channelName: CHANNEL_NAME },
           });
-          void this.syncMembersFromState(channel.presenceState<PresenceMemberState>());
-        });
 
-        channel.on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
-          logger.debug('Member left', {
+          // Set up presence handlers
+          channel.on('presence', { event: 'sync' }, () => {
+            const state = channel.presenceState<PresenceMemberState>();
+            void this.syncMembersFromState(state);
+          });
+
+          channel.on('presence', { event: 'join' }, ({ key, newPresences }) => {
+            logger.debug('Member joined', {
+              ...LOG_CONTEXT,
+              metadata: { key, newPresences },
+            });
+            void this.syncMembersFromState(channel.presenceState<PresenceMemberState>());
+          });
+
+          channel.on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
+            logger.debug('Member left', {
+              ...LOG_CONTEXT,
+              metadata: { key, leftPresences },
+            });
+            // Convert presence data to our expected format
+            const presenceData = (leftPresences as RawPresenceData[]).map((presence) => ({
+              id: presence.id || '',
+              status: presence.status as 'active' | 'idle' | 'left' | undefined,
+            }));
+            void this.handleMemberLeave(presenceData);
+          });
+
+          // Track current member immediately after subscription
+          if (this.currentMember) {
+            try {
+              await channel.track({
+                id: this.currentMember.id,
+                name: this.currentMember.name,
+                avatar: this.currentMember.avatar,
+                game: this.currentMember.game,
+                is_active: true,
+                created_at: this.currentMember.created_at,
+                last_seen: new Date().toISOString(),
+                status: 'active',
+              });
+              resolve();
+            } catch (error) {
+              reject(error);
+            }
+          } else {
+            resolve();
+          }
+        } else if (status === 'CHANNEL_ERROR') {
+          logger.error('Channel error', {
             ...LOG_CONTEXT,
-            metadata: { key, leftPresences },
+            metadata: { channelName: CHANNEL_NAME },
           });
-          // Convert presence data to our expected format
-          const presenceData = (leftPresences as RawPresenceData[]).map((presence) => ({
-            id: presence.id || '',
-            status: presence.status as 'active' | 'idle' | 'left' | undefined,
-          }));
-          void this.handleMemberLeave(presenceData);
-        });
-
-        // Track current member immediately after subscription
-        if (this.currentMember) {
-          await channel.track({
-            id: this.currentMember.id,
-            name: this.currentMember.name,
-            avatar: this.currentMember.avatar,
-            game: this.currentMember.game,
-            is_active: true,
-            created_at: this.currentMember.created_at,
-            last_seen: new Date().toISOString(),
-            status: 'active',
+          reject(new Error('Channel error'));
+        } else if (status === 'CLOSED') {
+          logger.warn('Channel closed', {
+            ...LOG_CONTEXT,
+            metadata: { channelName: CHANNEL_NAME },
           });
+          reject(new Error('Channel closed'));
         }
-      } else if (status === 'CHANNEL_ERROR') {
-        logger.error('Channel error', {
-          ...LOG_CONTEXT,
-          metadata: { channelName: CHANNEL_NAME },
-        });
-        void this.handleChannelError();
-      } else if (status === 'CLOSED') {
-        logger.warn('Channel closed', {
-          ...LOG_CONTEXT,
-          metadata: { channelName: CHANNEL_NAME },
-        });
-        void this.handleChannelClosed();
-      }
+      });
     });
 
     // Store channel reference
     this.channel = channel;
 
     return channel;
+  }
+
+  private async reconnectWithBackoff(retryCount = 0): Promise<void> {
+    const maxRetries = 5;
+    const baseDelay = 1000; // 1 second
+
+    if (retryCount >= maxRetries) {
+      logger.error('Max reconnection attempts reached', {
+        ...LOG_CONTEXT,
+        metadata: { retryCount },
+      });
+      return;
+    }
+
+    const delay = Math.min(baseDelay * Math.pow(2, retryCount), 10000); // Max 10 second delay
+
+    try {
+      await new Promise(resolve => setTimeout(resolve, delay));
+      await this.initializeChannel();
+      logger.debug('Reconnection successful', {
+        ...LOG_CONTEXT,
+        metadata: { retryCount },
+      });
+    } catch (error) {
+      logger.warn('Reconnection attempt failed', {
+        ...LOG_CONTEXT,
+        metadata: { error, retryCount },
+      });
+      await this.reconnectWithBackoff(retryCount + 1);
+    }
+  }
+
+  private handleChannelError(): void {
+    if (this.currentMember) {
+      logger.debug('Attempting to reconnect after channel error', {
+        ...LOG_CONTEXT,
+        metadata: { memberId: this.currentMember.id },
+      });
+      void this.reconnectWithBackoff();
+    }
+  }
+
+  private handleChannelClosed(): void {
+    if (this.currentMember) {
+      logger.debug('Attempting to reconnect after channel close', {
+        ...LOG_CONTEXT,
+        metadata: { memberId: this.currentMember.id },
+      });
+      void this.reconnectWithBackoff();
+    }
   }
 
   private handlePresenceSync(payload: Record<string, PresenceMemberState[]>): void {
@@ -250,38 +315,6 @@ export class PresenceService {
 
     // Process the state update queue immediately
     this.processStateUpdateQueue();
-  }
-
-  private handleChannelError(): void {
-    if (this.currentMember) {
-      logger.debug('Attempting to reconnect after channel error', {
-        ...LOG_CONTEXT,
-        metadata: { memberId: this.currentMember.id },
-      });
-      // Try to reconnect if we have a current member
-      this.initializeChannel().catch((error) => {
-        logger.error('Failed to reconnect after channel error', {
-          ...LOG_CONTEXT,
-          metadata: { error },
-        });
-      });
-    }
-  }
-
-  private handleChannelClosed(): void {
-    if (this.currentMember) {
-      logger.debug('Attempting to reconnect after channel close', {
-        ...LOG_CONTEXT,
-        metadata: { memberId: this.currentMember.id },
-      });
-      // Try to reconnect if we have a current member
-      this.initializeChannel().catch((error) => {
-        logger.error('Failed to reconnect after channel close', {
-          ...LOG_CONTEXT,
-          metadata: { error },
-        });
-      });
-    }
   }
 
   private areMembersEqual(a: PartyMember, b: PartyMember): boolean {

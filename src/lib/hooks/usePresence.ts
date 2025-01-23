@@ -50,6 +50,7 @@ export function usePresence(): PresenceHookState & {
 
   const initialize = useCallback(async (member: PartyMember & Partial<VoiceMemberState>) => {
     const presenceService = PresenceService.getInstance();
+
     try {
       setStatus('connecting');
       await presenceService.initialize(member);

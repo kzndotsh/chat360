@@ -16,14 +16,10 @@ const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 // Create Supabase client with proper configuration
 export const supabase = createClient(supabaseUrl, supabaseKey, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-  },
   realtime: {
     params: {
       log_level: 'debug',
-      eventsPerSecond: 10,
+      eventsPerSecond: 100,
     },
   },
 });

@@ -135,7 +135,7 @@ export function usePartyState() {
       });
 
       // First cleanup presence service
-      await cleanupPresence();
+      cleanupPresence();
 
       // Then clear all local state
       localStorage.removeItem('partyState');

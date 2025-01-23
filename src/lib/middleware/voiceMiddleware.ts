@@ -4,7 +4,7 @@ import type { Store } from '@/lib/types/party/store';
 
 import { StateCreator } from 'zustand';
 
-const VOICE_MIN_VOLUME = 0.1;
+import { VOICE_CONSTANTS } from '@/lib/constants/voice';
 
 export const createVoiceMiddleware = (): StateCreator<Store, [], [], VoiceSlice> => (set) => ({
   // Initial voice state
@@ -31,30 +31,39 @@ export const createVoiceMiddleware = (): StateCreator<Store, [], [], VoiceSlice>
 
   // Mute actions
   setMuted: (isMuted) =>
-    set((state: Store) => ({
-      ...state,
-      voice: {
+    set((state: Store) => {
+      const newState = {
         ...state.voice,
         isMuted,
-        // When muting, also stop speaking
+        // When muting, stop speaking and reset volume
         isSpeaking: isMuted ? false : state.voice.isSpeaking,
-      },
-    })),
+        volume: isMuted ? 0 : state.voice.volume,
+      };
+
+      return {
+        ...state,
+        voice: newState,
+      };
+    }),
 
   // Volume actions
   setVolume: (volume) => {
     const normalizedVolume = Math.min(Math.max(volume, 0), 1);
-    const isSpeaking = normalizedVolume >= VOICE_MIN_VOLUME;
+    const isSpeaking = normalizedVolume >= VOICE_CONSTANTS.SPEAKING_THRESHOLD;
 
-    return set((state: Store) => ({
-      ...state,
-      voice: {
+    return set((state: Store) => {
+      const newState = {
         ...state.voice,
         volume: normalizedVolume,
-        // Only update speaking if not muted
+        // Only update speaking if not muted and volume crosses threshold
         isSpeaking: state.voice.isMuted ? false : isSpeaking,
-      },
-    }));
+      };
+
+      return {
+        ...state,
+        voice: newState,
+      };
+    });
   },
 
   // Speaking status actions
@@ -63,6 +72,7 @@ export const createVoiceMiddleware = (): StateCreator<Store, [], [], VoiceSlice>
       ...state,
       voice: {
         ...state.voice,
+        // Preserve muted state when updating speaking
         isSpeaking: state.voice.isMuted ? false : isSpeaking,
       },
     })),
