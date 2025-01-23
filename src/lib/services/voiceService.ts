@@ -56,13 +56,42 @@ export class VoiceService {
 
   private setupEventHandlers() {
     this.client.on('user-published', async (user, mediaType) => {
-      await this.client.subscribe(user, mediaType);
-      logger.info('Subscribe success', { metadata: { userId: user.uid, mediaType } });
+      try {
+        // Subscribe to the remote user
+        await this.client.subscribe(user, mediaType);
+
+        if (mediaType === 'audio') {
+          // Play the remote audio track
+          user.audioTrack?.play();
+
+          logger.info('Remote user audio subscribed and playing', {
+            metadata: {
+              userId: user.uid,
+              mediaType,
+              hasAudio: !!user.audioTrack
+            }
+          });
+        }
+      } catch (error) {
+        logger.error('Failed to subscribe to remote user', {
+          metadata: { userId: user.uid, mediaType, error }
+        });
+      }
     });
 
-    this.client.on('user-unpublished', async (user) => {
-      await this.client.unsubscribe(user);
-      logger.info('Unsubscribe success', { metadata: { userId: user.uid } });
+    this.client.on('user-unpublished', async (user, mediaType) => {
+      try {
+        if (mediaType === 'audio') {
+          // Stop the remote audio track
+          user.audioTrack?.stop();
+        }
+        await this.client.unsubscribe(user, mediaType);
+        logger.info('Unsubscribe success', { metadata: { userId: user.uid, mediaType } });
+      } catch (error) {
+        logger.error('Failed to unsubscribe from remote user', {
+          metadata: { userId: user.uid, mediaType, error }
+        });
+      }
     });
 
     // Volume indicator events will be enabled when joining
@@ -104,20 +133,30 @@ export class VoiceService {
         });
       });
 
-      // Handle local user's volume
+      // Handle local user's volume with input validation
       if (this.audioTrack && this.client.uid) {
         const agoraUid = this.client.uid.toString();
         const memberId = this.getMemberIdFromAgoraUid(agoraUid);
         updatedMembers.add(memberId);
 
-        const rawLevel = Math.min(this.audioTrack.getVolumeLevel(), 1);
+        // Check if audio track is actually getting input
+        const hasValidAudioInput = this.audioTrack.getMediaStreamTrack().enabled &&
+                                 this.audioTrack.getMediaStreamTrack().readyState === 'live';
+
+        const rawLevel = hasValidAudioInput ? Math.min(this.audioTrack.getVolumeLevel(), 1) : 0;
         const localLevel = this.smoothVolume(rawLevel);
         const currentState = this.memberVoiceStates.get(memberId);
 
+        // Force silent if no valid audio input
+        const effectiveLevel = hasValidAudioInput ? localLevel : 0;
+        const voice_status = this._isMuted ? 'muted' :
+                           (!hasValidAudioInput ? 'silent' :
+                           (effectiveLevel >= VOICE_CONSTANTS.SPEAKING_THRESHOLD ? 'speaking' : 'silent'));
+
         const voiceState: VoiceMemberState = {
           id: memberId,
-          level: this._isMuted ? 0 : localLevel,
-          voice_status: this._isMuted ? 'muted' : (localLevel >= VOICE_CONSTANTS.SPEAKING_THRESHOLD ? 'speaking' : 'silent'),
+          level: this._isMuted ? 0 : effectiveLevel,
+          voice_status,
           muted: this._isMuted,
           is_deafened: false,
           agora_uid: agoraUid,
@@ -128,13 +167,14 @@ export class VoiceService {
         this.memberVoiceStates.set(memberId, voiceState);
 
         // Log local volume for debugging
-        if (localLevel >= VOICE_CONSTANTS.SPEAKING_THRESHOLD && !this._isMuted) {
+        if (effectiveLevel >= VOICE_CONSTANTS.SPEAKING_THRESHOLD && !this._isMuted) {
           logger.debug('Local user speaking', {
             metadata: {
               rawLevel,
-              smoothedLevel: localLevel,
+              smoothedLevel: effectiveLevel,
               memberId,
               voice_status: voiceState.voice_status,
+              hasValidInput: hasValidAudioInput
             },
           });
         }
@@ -244,7 +284,7 @@ export class VoiceService {
       });
 
       // Subscribe and handle status
-      await this.broadcastChannel.subscribe(async (status) => {
+      this.broadcastChannel.subscribe(async (status) => {
         logger.debug('Voice broadcast channel status:', {
           component: 'VoiceService',
           action: 'setupBroadcastChannel',
@@ -417,7 +457,7 @@ export class VoiceService {
       });
 
       // Restore volume and check if it was set successfully
-      await this.audioTrack.setVolume(Math.round(currentVolume * VOICE_CONSTANTS.MAX_VOLUME));
+      this.audioTrack.setVolume(Math.round(currentVolume * VOICE_CONSTANTS.MAX_VOLUME));
       const newVolume = this.audioTrack.getVolumeLevel();
 
       if (Math.abs(newVolume - currentVolume) > VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
@@ -483,7 +523,7 @@ export class VoiceService {
           AGC: true,
           ANS: true,
         });
-        await this.audioTrack.setVolume(100);
+        this.audioTrack.setVolume(100);
       }
 
       // Get token for channel
@@ -639,7 +679,7 @@ export class VoiceService {
     try {
       // Convert 0-1 to 0-100 for Agora
       const agoraVolume = Math.round(volume * 100);
-      await this.audioTrack.setVolume(agoraVolume);
+      this.audioTrack.setVolume(agoraVolume);
     } catch (error) {
       logger.error('Set volume error', { metadata: { error } });
       throw error;

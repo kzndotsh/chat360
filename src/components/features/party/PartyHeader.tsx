@@ -25,7 +25,7 @@ const HeaderButton = ({
   children?: React.ReactNode;
 }) => (
   <button
-    className={`flex items-center justify-center ${width} relative h-[40px] cursor-pointer bg-[#6B717D] transition-colors hover:bg-[#5D626D]`}
+    className={`flex items-center justify-center ${width} relative h-[50px] cursor-pointer bg-[#6B717D] transition-colors hover:bg-[#5D626D]`}
   >
     <div className="absolute inset-0 shadow-[inset_0_-1px_1px_rgba(0,0,0,0.05)]"></div>
     <div className="absolute bottom-0 left-0 top-0 w-[1px] bg-[#5D626D]/50"></div>
@@ -107,9 +107,9 @@ export function PartyHeader({ membersCount }: PartyHeaderProps) {
       role="banner"
     >
       <div className="flex w-full flex-col sm:flex-row">
-        <div className="order-2 flex h-[40px] flex-1 items-center justify-between bg-[#f7ffff] sm:order-1">
+        <div className="order-2 flex h-[50px] flex-1 items-center justify-between bg-[#f7ffff] sm:order-1">
           <div className="flex items-center gap-2 pl-[30px]">
-            <Chat360Icon className="w-10 text-[#282b2f] opacity-90" />
+            <Chat360Icon className="w-14 h-14 text-[#282b2f] opacity-90" />
             <span className="text-2xl font-semibold text-[#282b2f]">Chat360 Party</span>
           </div>
         </div>
@@ -136,7 +136,7 @@ export function PartyHeader({ membersCount }: PartyHeaderProps) {
         </div>
       </div>
 
-      <div className="h-[10px] w-full border-b border-gray-200 bg-[#f7ffff]"></div>
+      <div className="h-[20px] w-full border-b border-gray-200 bg-[#f7ffff]"></div>
 
       <button
         onClick={handleCopyURL}
