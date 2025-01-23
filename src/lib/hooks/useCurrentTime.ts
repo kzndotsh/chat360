@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
-import { logger } from '@/lib/utils/logger';
+import { useEffect, useRef, useState } from 'react';
+
+import { logger } from '@/lib/logger';
 
 export function useCurrentTime() {
   const [currentTime, setCurrentTime] = useState(new Date());

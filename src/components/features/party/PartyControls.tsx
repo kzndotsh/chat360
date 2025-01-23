@@ -1,27 +1,17 @@
 'use client';
 
+import type { PartyControlsProps } from '@/lib/types/components/props';
+
 import React from 'react';
+
+import { AVATARS } from '@/lib/constants';
+import { useFormStore } from '@/lib/stores/useFormStore';
 import { useModalStore } from '@/lib/stores/useModalStore';
-import type { PartyMember } from '@/lib/types/party';
-import { AVATARS } from '@/lib/config/constants';
-
-type PartyState = 'idle' | 'joining' | 'joined' | 'leaving';
-
-interface PartyControlsProps {
-  currentUser: PartyMember | null;
-  isLeaving: boolean;
-  onLeave: () => void;
-  partyState: PartyState;
-  isMuted?: boolean;
-  onToggleMute?: () => void;
-  micPermissionDenied?: boolean;
-  onRequestMicrophonePermission?: () => void;
-}
 
 export function PartyControls({
   currentUser,
   isLeaving,
-  onLeave,
+  onLeaveAction,
   partyState,
   isMuted = false,
   onToggleMute,
@@ -29,30 +19,35 @@ export function PartyControls({
   onRequestMicrophonePermission,
 }: PartyControlsProps) {
   const showModal = useModalStore((state) => state.showModal);
+  const setFormData = useFormStore((state) => state.setFormData);
+
   const buttonClass = (isActive: boolean, isProcessing: boolean) =>
-    `flex items-center gap-0 sm:gap-2 transition-opacity ${
+    `flex items-center gap-2 transition-opacity ${
       isActive && !isProcessing ? 'hover:opacity-80' : 'opacity-50 cursor-not-allowed'
     }`;
 
   return (
-    <div className="flex flex-col gap-2 px-[30px]">
-      <div className="mt-1 flex flex-wrap items-center gap-1 text-sm sm:gap-2 sm:text-base">
+    <div className="flex flex-col px-[30px] py-3">
+      <div className="flex flex-wrap gap-4 text-sm">
         {!currentUser && (
           <button
-            onClick={() =>
+            onClick={() => {
+              const avatar = AVATARS[Math.floor(Math.random() * AVATARS.length)] ?? AVATARS[0]!;
+              setFormData({ avatar });
               showModal('join', {
                 name: '',
-                avatar: AVATARS[Math.floor(Math.random() * AVATARS.length)] ?? AVATARS[0]!,
+                avatar,
                 game: 'Offline',
-              })
-            }
+              });
+            }}
+
             className={buttonClass(partyState === 'idle', partyState === 'joining')}
             disabled={partyState !== 'idle'}
           >
-            <div className="flex h-3 w-3 items-center justify-center rounded-full bg-[#55b611] text-[8px] font-bold text-white sm:h-4 sm:w-4 sm:text-[10px]">
+            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#55b611] text-[11px] font-bold text-white">
               A
             </div>
-            <span className="ml-[-3px] text-white">
+            <span className="font-semibold text-white">
               {partyState === 'joining' ? 'Joining...' : 'Join Party'}
             </span>
           </button>
@@ -61,41 +56,40 @@ export function PartyControls({
         {currentUser && (
           <>
             <button
-              onClick={onLeave}
+              onClick={onLeaveAction}
+
               className={buttonClass(true, isLeaving)}
               disabled={isLeaving || partyState === 'joining'}
             >
-              <div className="flex h-3 w-3 items-center justify-center rounded-full bg-[#ae1228] text-[8px] font-bold text-white sm:h-4 sm:w-4 sm:text-[10px]">
+              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#ae1228] text-[11px] font-bold text-white">
                 B
               </div>
-              <span className="ml-[-3px] text-white">
-                {isLeaving ? 'Leaving...' : 'Leave Party'}
-              </span>
+              <span className="text-white">{isLeaving ? 'Leaving...' : 'Leave Party'}</span>
             </button>
 
-            {onToggleMute && (
-              <button
-                onClick={onToggleMute}
-                className={buttonClass(true, false)}
-                disabled={partyState === 'joining'}
-              >
-                <div className="flex h-3 w-3 items-center justify-center rounded-full bg-[#0c71ba] text-[8px] font-bold text-white sm:h-4 sm:w-4 sm:text-[10px]">
-                  X
-                </div>
-                <span className="ml-[-3px] text-white">{isMuted ? 'Unmute' : 'Mute'}</span>
-              </button>
-            )}
+            <button
+              onClick={onToggleMute}
+
+              className={buttonClass(true, false)}
+              disabled={partyState === 'joining'}
+            >
+              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#0c71ba] text-[11px] font-bold text-white">
+                X
+              </div>
+              <span className="text-white">{isMuted ? 'Unmute' : 'Mute'}</span>
+            </button>
 
             {micPermissionDenied && onRequestMicrophonePermission && (
               <button
                 onClick={onRequestMicrophonePermission}
+
                 className={buttonClass(true, false)}
                 disabled={partyState === 'joining'}
               >
-                <div className="flex h-3 w-3 items-center justify-center rounded-full bg-[#0c71ba] text-[8px] font-bold text-white sm:h-4 sm:w-4 sm:text-[10px]">
+                <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#0c71ba] text-[11px] font-bold text-white">
                   R
                 </div>
-                <span className="ml-[-3px] text-white">Re-request Mic</span>
+                <span className="text-white">Re-request Mic</span>
               </button>
             )}
 
@@ -107,13 +101,14 @@ export function PartyControls({
                   game: currentUser.game || 'Offline',
                 });
               }}
+
               className={buttonClass(true, false)}
               disabled={partyState === 'joining'}
             >
-              <div className="flex h-3 w-3 items-center justify-center rounded-full bg-[#e09a23] text-[8px] font-bold text-white sm:h-4 sm:w-4 sm:text-[10px]">
+              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#e09a23] text-[11px] font-bold text-white">
                 Y
               </div>
-              <span className="ml-[-3px] text-white">Edit Profile</span>
+              <span className="text-white">Edit Profile</span>
             </button>
           </>
         )}

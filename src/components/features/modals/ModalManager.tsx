@@ -1,9 +1,11 @@
 'use client';
 
 import React from 'react';
+
+import { logger } from '@/lib/logger';
 import { useModalStore } from '@/lib/stores/useModalStore';
+
 import { ProfileModal } from './ProfileModal';
-import { logger } from '@/lib/utils/logger';
 
 type FormData = {
   name: string;
@@ -12,22 +14,35 @@ type FormData = {
 };
 
 interface ModalManagerProps {
-  onJoinParty: (username: string, avatar: string, game: string) => Promise<void>;
-  onEditProfile: (username: string, avatar: string, game: string) => Promise<void>;
+  onEditProfileAction: (username: string, avatar: string, game: string) => Promise<void>;
+  onJoinPartyAction: (username: string, avatar: string, game: string) => Promise<void>;
 }
 
-export function ModalManager({ onJoinParty, onEditProfile }: ModalManagerProps) {
+export function ModalManager({ onJoinPartyAction, onEditProfileAction }: ModalManagerProps) {
   const { isOpen, type, data, hideModal } = useModalStore();
 
   if (!isOpen || !type) return null;
 
-  const handleSubmit = async (formData: FormData) => {
+  const handleSubmitAction = async (formData: FormData) => {
     try {
+      logger.debug('Handling modal submission', {
+        component: 'ModalManager',
+        action: 'handleSubmit',
+        metadata: { type, formData },
+      });
+
       if (type === 'join') {
-        await onJoinParty(formData.name, formData.avatar, formData.game);
+        await onJoinPartyAction(formData.name, formData.avatar, formData.game);
       } else {
-        await onEditProfile(formData.name, formData.avatar, formData.game);
+        await onEditProfileAction(formData.name, formData.avatar, formData.game);
       }
+
+      logger.debug('Modal submission successful', {
+        component: 'ModalManager',
+        action: 'handleSubmit',
+        metadata: { type },
+      });
+
       hideModal();
     } catch (error) {
       logger.error('Failed to submit profile', {
@@ -41,8 +56,9 @@ export function ModalManager({ onJoinParty, onEditProfile }: ModalManagerProps) 
 
   return (
     <ProfileModal
-      onSubmit={handleSubmit}
-      onClose={hideModal}
+      onCloseAction={hideModal}
+      onSubmitAction={handleSubmitAction}
+
       initialData={data || undefined}
     />
   );

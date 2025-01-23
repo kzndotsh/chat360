@@ -1,6 +1,8 @@
-import { RtcTokenBuilder } from 'agora-token';
 import { NextRequest, NextResponse } from 'next/server';
-import { logger } from '@/lib/utils/logger';
+
+import { RtcTokenBuilder } from 'agora-token';
+
+import { logger } from '@/lib/logger';
 
 // For server-side code, we use the non-public env vars
 const appId = process.env.NEXT_PUBLIC_AGORA_APP_ID;

@@ -4,23 +4,23 @@ export function UserGroupIcon({ className }: { className?: string }) {
   return (
     <svg
       className={className}
-      xmlns="http://www.w3.org/2000/svg"
       version="1.1"
       viewBox="0 0 3000 3000"
+      xmlns="http://www.w3.org/2000/svg"
     >
       <defs>
         <style>
           {`
             .st0 { fill: #acd43b; }
-            .st1 { fill: #abd33b; }
+            .st1 { fill: #161C26; }
             .st2 { fill: #fdfdfd; }
           `}
         </style>
       </defs>
       <rect
         className="st2"
-        width="3000"
         height="3000"
+        width="3000"
       />
       <path
         className="st1"

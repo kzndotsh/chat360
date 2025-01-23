@@ -1,25 +1,9 @@
+import type { FormData, FormStore } from '@/lib/types/party/middleware';
+
 import { create } from 'zustand';
-import { AVATARS, STATUSES } from '@/lib/config/constants';
-import { logger } from '@/lib/utils/logger';
 
-interface FormData {
-  name: string;
-  avatar: string;
-  game: string;
-}
-
-interface FormStore {
-  formData: FormData;
-  lastUsedData: FormData | null;
-  errors: Record<keyof FormData, string | undefined>;
-  isSubmitting: boolean;
-  setFormData: (data: Partial<FormData>) => void;
-  setError: (field: keyof FormData, error: string | undefined) => void;
-  setSubmitting: (isSubmitting: boolean) => void;
-  saveLastUsedData: (data: FormData) => void;
-  resetForm: () => void;
-  initializeWithLastUsed: () => void;
-}
+import { AVATARS, STATUSES } from '@/lib/constants';
+import { logger } from '@/lib/logger';
 
 const initialFormState: FormData = {
   name: '',
@@ -65,6 +49,21 @@ export const useFormStore = create<FormStore>((set, get) => ({
       formData: { ...data },
     }));
     localStorage.setItem('lastUsedFormData', JSON.stringify(data));
+  },
+  initializeFromMember: (member) => {
+    const data: FormData = {
+      name: member.name,
+      avatar: member.avatar,
+      game: member.game,
+    };
+    logger.info(`Initializing form from member: ${JSON.stringify(data)}`, {
+      component: 'useFormStore',
+      action: 'initializeFromMember',
+    });
+    set(() => ({
+      formData: data,
+      lastUsedData: data,
+    }));
   },
   resetForm: () => {
     const lastUsed = get().lastUsedData;

@@ -12,10 +12,13 @@
   },
   "aliases": {
     "components": "@/components",
-    "utils": "@/lib/utils",
     "ui": "@/components/ui",
     "lib": "@/lib",
-    "hooks": "@/hooks",
-    "types": "@/types"
+    "utils": "@/lib/utils",
+    "hooks": "@/lib/hooks",
+    "types": "@/lib/types",
+    "stores": "@/lib/stores",
+    "services": "@/lib/services",
+    "middleware": "@/lib/middleware"
   }
 }

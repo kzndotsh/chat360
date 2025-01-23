@@ -1,90 +1,85 @@
 'use client';
 
-import { VoiceStatusIcon } from '@/components/features/party/icons/VoiceStatusIcon';
-import { PartyMember } from '@/lib/types/party';
+import type { MemberListProps } from '@/lib/types/components/props';
+import type { VoiceStatus } from '@/lib/types/party/member';
+
 import Image from 'next/image';
-import { logger } from '@/lib/utils/logger';
-import { AVATARS } from '@/lib/config/constants';
 
-interface MemberListProps {
-  members: PartyMember[];
-  currentUserId?: string;
-  volumeLevels?: Record<string, number>;
-  onToggleMute?: (id: string) => void;
-}
+import { VoiceStatusIcon } from '@/components/features/party/icons/VoiceStatusIcon';
 
-export function MemberList({
-  members,
-  currentUserId,
-  volumeLevels = {},
-  onToggleMute,
-}: MemberListProps) {
-  if (!members?.length) {
+import { AVATARS } from '@/lib/constants';
+import { logger } from '@/lib/logger';
+
+export function MemberList({ members, currentUserId, volumeLevels = {} }: MemberListProps) {
+  if (!members.length) {
     return (
       <div className="flex h-full items-center justify-center">
-        <p className="p-10 text-muted-foreground">No members in party</p>
+        <span className="text-sm text-[#282b2f]">No members in party</span>
       </div>
     );
   }
 
   return (
-    <div className="flex h-full flex-col bg-white/5">
-      <div className="flex flex-col">
+    <div className="flex h-full flex-col">
+      <div className="flex flex-1 flex-col overflow-y-auto">
         {members.map((member) => {
           const isCurrentUser = member.id === currentUserId;
-          const volumeLevel = volumeLevels[member.id] || 0;
+          const volumeState = volumeLevels[member.id];
 
+          // Determine voice status with proper precedence
+          let voice_status: VoiceStatus = 'silent';
+          if (member.muted) {
+            voice_status = 'muted';
+          } else if (volumeState?.voice_status === 'speaking') {
+            voice_status = 'speaking';
+          }
+
+          const volumeLevel = member.muted ? 0 : (volumeState?.level ?? member.volumeLevel ?? 0);
+
+          // Log more detailed volume information for debugging
           logger.debug('Rendering member', {
             component: 'MemberList',
             action: 'renderMember',
             metadata: {
-              member,
+              memberId: member.id,
+              name: member.name,
               isCurrentUser,
               volumeLevel,
-              voice_status: member.voice_status,
+              voice_status,
               muted: member.muted,
+              volumeState: volumeState ? JSON.stringify(volumeState) : 'none',
             },
           });
 
           return (
             <div
+              className="flex h-9 items-center border-t border-white/20 px-4 transition-colors first:border-t-0 hover:bg-white/5"
               key={member.id}
-              className="flex h-12 items-center border-t border-white/20 px-4 transition-colors first:border-t-0 hover:bg-white/5"
             >
               {/* Column 1: Username section */}
               <div className="flex w-[440px] items-center gap-1">
-                {/* Voice status */}
-                <div className="-ml-4">
+                {/* Voice status with volume indicator */}
+                <div className="relative -ml-4">
                   <VoiceStatusIcon
-                    status={member.voice_status || 'silent'}
-                    className="h-7 w-7"
+                    className="h-6 w-6"
+                    status={voice_status}
                   />
                 </div>
 
                 {/* Avatar */}
-                <div className="h-7 w-7 overflow-hidden">
+                <div className="h-6 w-6 overflow-hidden">
                   <Image
-                    src={member.avatar || AVATARS[0]!}
-                    alt={member.name}
-                    width={30}
-                    height={30}
+                    alt={member.name ?? 'Member'}
                     className="object-cover"
-                    priority={true}
-                    loading="eager"
-                    unoptimized={true}
-                    onError={(e) => {
-                      const img = e.target as HTMLImageElement;
-                      const defaultAvatar = AVATARS[0]!;
-                      if (!img.src.includes(defaultAvatar)) {
-                        img.src = defaultAvatar;
-                      }
-                    }}
+                    height={24}
+                    src={member.avatar ?? AVATARS[0]!}
+                    width={24}
                   />
                 </div>
 
                 {/* Name */}
-                <span className="font-mediumt ml-2 flex-1 text-xl text-[#282b2f]">
-                  {member.name}
+                <span className="ml-2 flex-1 text-base font-medium text-[#282b2f]">
+                  {member.name ?? 'Unknown'}
                 </span>
               </div>
 
@@ -93,16 +88,16 @@ export function MemberList({
                 {/* Game status icon */}
                 <div className="mr-2">
                   <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 3000 3000"
-                    className="h-7 w-7"
+                    className="h-6 w-6"
                     fill="#acd43b"
+                    viewBox="0 0 3000 3000"
+                    xmlns="http://www.w3.org/2000/svg"
                   >
                     <path d="M1215.59,42.59c404.31-17.99,672.29,420,455.24,769.24-193.36,311.12-655.35,315.58-851.66,6-204.49-322.48,12.81-758.17,396.42-775.24Z" />
                     <path d="M2165.59,956.59c183.48-9.01,184.83,221.64,190.49,350.33,17.79,404.09,2.4,809.43,12,1214,2.5,105.19,10.31,288.29-94.24,349.92-38.25,22.55-102.62,29.46-146.86,35.14-99.53,12.79-200.19,23.62-300,34-69.02,7.18-145.2,17.33-213.9,20.1-171.11,6.89-271.76-164.73-351.91-290.25-218.29-341.85-406.95-701.94-617.53-1048.47-50.4-111.32,94.65-228.8,179.02-275.71,29.83-16.58,60.03-23.16,88-42,391.63-108.17,781.28-229.69,1174.92-331.08,26.43-6.81,52.47-14.63,80.02-15.98Z" />
                   </svg>
                 </div>
-                <span className="ml-[75px] text-xl font-[600] text-[#282b2f]">{member.game}</span>
+                <span className="ml-[75px] text-base font-[600] text-[#282b2f]">{member.game}</span>
               </div>
             </div>
           );

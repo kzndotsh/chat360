@@ -1,10 +1,18 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { PartyChat } from '@/components/features/party/PartyChat';
+import { useEffect, useState } from 'react';
+
+import dynamic from 'next/dynamic';
+
 import { XboxIntro } from '@/components/features/party/XboxIntro';
-import { logger } from '@/lib/utils/logger';
-import { BACKGROUND_VIDEO_URL } from '@/lib/config/constants';
+
+import { BACKGROUND_VIDEO_URL } from '@/lib/constants';
+import { logger } from '@/lib/logger';
+
+const PartyChat = dynamic(() => import('@/components/features/party/PartyChat'), {
+  ssr: false,
+  loading: () => null,
+});
 
 export default function Home() {
   const [showIntro, setShowIntro] = useState(true);
@@ -30,7 +38,7 @@ export default function Home() {
     <div className="fixed inset-0 min-h-screen overflow-hidden bg-black">
       {showIntro ? (
         <XboxIntro
-          onIntroEnd={() => {
+          onIntroEndAction={() => {
             if (videoLoaded) {
               setShowIntro(false);
             }
@@ -40,21 +48,23 @@ export default function Home() {
         <main className="relative h-full w-full">
           <div className="absolute inset-0 z-0">
             <video
-              id="xbox-bg"
-              autoPlay
-              loop
-              muted
-              playsInline
-              preload="metadata"
-              src={BACKGROUND_VIDEO_URL}
-              className="absolute left-1/2 top-1/2 min-h-full min-w-full -translate-x-1/2 -translate-y-1/2 transform object-cover"
-              style={{ filter: 'blur(6px)' }}
               onError={() => {
                 logger.error('Video playback error', {
                   action: 'videoPlayback',
                   metadata: { elementId: 'xbox-bg', url: BACKGROUND_VIDEO_URL },
                 });
               }}
+
+              autoPlay
+              loop
+              muted
+              playsInline
+
+              className="absolute left-1/2 top-1/2 min-h-full min-w-full -translate-x-1/2 -translate-y-1/2 transform object-cover"
+              id="xbox-bg"
+              preload="metadata"
+              src={BACKGROUND_VIDEO_URL}
+              style={{ filter: 'blur(6px)' }}
             >
               <source
                 src={BACKGROUND_VIDEO_URL}

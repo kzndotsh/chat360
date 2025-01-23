@@ -3,9 +3,9 @@ import React, { SVGProps } from 'react';
 export function UserIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 3000 3000"
       fill="currentColor"
+      viewBox="0 0 3000 3000"
+      xmlns="http://www.w3.org/2000/svg"
       {...props}
     >
       <path d="M1215.59,42.59c404.31-17.99,672.29,420,455.24,769.24-193.36,311.12-655.35,315.58-851.66,6-204.49-322.48,12.81-758.17,396.42-775.24Z" />

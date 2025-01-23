@@ -1,22 +1,8 @@
+import type { ModalStore } from '@/lib/types/party/middleware';
+
 import { create } from 'zustand';
 
-export type ModalType = 'profile' | 'join';
-
-export interface ModalData {
-  name: string;
-  avatar: string;
-  game: string;
-}
-
-interface ModalState {
-  isOpen: boolean;
-  type: ModalType | null;
-  data: ModalData | null;
-  showModal: (type: ModalType, data: ModalData) => void;
-  hideModal: () => void;
-}
-
-export const useModalStore = create<ModalState>((set) => ({
+export const useModalStore = create<ModalStore>((set) => ({
   isOpen: false,
   type: null,
   data: null,

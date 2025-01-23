@@ -1,8 +1,10 @@
 // "use client";
 
-import { ReactNode } from 'react';
 import type { Viewport } from 'next';
 import type { Metadata } from 'next';
+
+import { ReactNode } from 'react';
+
 import { ClientProviders } from '@/components/providers/ClientProviders';
 
 import '@/styles/globals.css';
@@ -112,12 +114,14 @@ interface RootLayoutProps {
 export default function RootLayout({ children }: RootLayoutProps) {
   return (
     <html
-      lang="en"
       suppressHydrationWarning
+
       className="bg-black"
+      lang="en"
     >
       <body
         suppressHydrationWarning
+
         className="bg-black"
       >
         <div className="min-h-screen bg-black">

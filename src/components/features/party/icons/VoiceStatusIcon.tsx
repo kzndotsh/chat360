@@ -1,7 +1,8 @@
+import { IoVolumeHighSharp, IoVolumeMuteSharp, IoVolumeOffSharp } from 'react-icons/io5';
+
+import { logger } from '@/lib/logger';
 import { VoiceStatus } from '@/lib/types/party';
 import { cn } from '@/lib/utils';
-import { IoVolumeHighSharp, IoVolumeOffSharp, IoVolumeMuteSharp } from 'react-icons/io5';
-import { logger } from '@/lib/utils/logger';
 
 interface VoiceStatusIconProps {
   status: VoiceStatus;
@@ -9,7 +10,7 @@ interface VoiceStatusIconProps {
 }
 
 export function VoiceStatusIcon({ status, className }: VoiceStatusIconProps) {
-  const iconClass = cn(className, 'text-[#282b2f]', 'h-9 w-9');
+  const iconClass = cn(className, 'text-[#282b2f]');
 
   logger.debug('Rendering VoiceStatusIcon', {
     component: 'VoiceStatusIcon',
@@ -20,7 +21,7 @@ export function VoiceStatusIcon({ status, className }: VoiceStatusIconProps) {
     },
   });
 
-  // Show appropriate icon based on voice status only
+  // Show appropriate icon based on voice status
   switch (status) {
     case 'muted':
       return <IoVolumeMuteSharp className={iconClass} />;

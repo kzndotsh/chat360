@@ -1,17 +1,20 @@
 'use client';
 
+import type { AgoraContextType } from '@/lib/types/agora';
+import type { AgoraProviderProps } from '@/lib/types/providers';
+import type { IAgoraRTC, IAgoraRTCClient } from 'agora-rtc-sdk-ng';
+
 import {
-  ReactNode,
-  useEffect,
-  useState,
-  useRef,
   createContext,
-  useContext,
   useCallback,
+  useContext,
+  useEffect,
   useMemo,
+  useRef,
+  useState,
 } from 'react';
-import type { IAgoraRTCClient, IAgoraRTC } from 'agora-rtc-sdk-ng';
-import { logger } from '@/lib/utils/logger';
+
+import { logger } from '@/lib/logger';
 
 // Constants for cleanup and reconnection
 const CLEANUP_DELAY = 500; // 500ms delay after cleanup
@@ -21,14 +24,6 @@ const LOG_CONTEXT = { component: 'AgoraProvider' };
 
 if (!process.env.NEXT_PUBLIC_AGORA_APP_ID) {
   throw new Error('NEXT_PUBLIC_AGORA_APP_ID is required');
-}
-
-interface AgoraContextType {
-  client: IAgoraRTCClient | null;
-  getClient: () => Promise<IAgoraRTCClient>;
-  cleanupClient: () => Promise<void>;
-  isInitializing: boolean;
-  error: Error | null;
 }
 
 const AgoraContext = createContext<AgoraContextType>({
@@ -43,10 +38,6 @@ const AgoraContext = createContext<AgoraContextType>({
 
 export const useAgoraContext = () => useContext(AgoraContext);
 
-interface AgoraProviderProps {
-  children: ReactNode;
-}
-
 // Lazy load AgoraRTC to avoid SSR issues
 let AgoraRTC: IAgoraRTC | null = null;
 
@@ -57,7 +48,7 @@ async function loadAgoraSDK(): Promise<void> {
   AgoraRTC = mod.default;
   if (AgoraRTC) {
     // Configure Agora SDK
-    AgoraRTC.setLogLevel(2); // Set to INFO level
+    AgoraRTC.setLogLevel(0); // Set to INFO level
   }
 }
 

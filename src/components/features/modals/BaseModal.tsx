@@ -1,31 +1,33 @@
 'use client';
 
 import React from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+
+import { AnimatePresence, motion } from 'framer-motion';
 
 interface BaseModalProps {
   children: React.ReactNode;
-  onClose: () => void;
-  isSubmitting?: boolean;
+  onCloseAction: () => void;
 }
 
-export function BaseModal({ children, onClose, isSubmitting }: BaseModalProps) {
+export function BaseModal({ children, onCloseAction }: BaseModalProps) {
   return (
     <AnimatePresence mode="wait">
       <div className="fixed inset-0 z-50 flex items-center justify-center">
         <motion.div
-          initial={{ opacity: 0 }}
+          onClick={onCloseAction}
+
           animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
           className="absolute inset-0 bg-black/50"
+          exit={{ opacity: 0 }}
+          initial={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
         />
         <motion.div
-          initial={{ opacity: 0, scale: 0.95, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 20 }}
-          transition={{ duration: 0.2 }}
           className="relative z-50"
+          exit={{ opacity: 0, scale: 0.95, y: 20 }}
+          initial={{ opacity: 0, scale: 0.95, y: 20 }}
+          transition={{ duration: 0.2 }}
         >
           {children}
         </motion.div>

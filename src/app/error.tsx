@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect } from 'react';
-import { logger } from '@/lib/utils/logger';
+
+import { logger } from '@/lib/logger';
 
 export default function Error({
   error,
@@ -29,6 +30,7 @@ export default function Error({
           });
           reset();
         }}
+
         className="rounded bg-white px-4 py-2 text-black transition-colors hover:bg-gray-200"
       >
         Try again

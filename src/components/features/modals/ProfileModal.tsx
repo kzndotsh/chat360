@@ -1,11 +1,13 @@
 'use client';
 
 import React from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
+
 import Image from 'next/image';
-import { BaseModal } from './BaseModal';
+
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useForm } from 'react-hook-form';
+import * as z from 'zod';
+
 import {
   Form,
   FormControl,
@@ -22,8 +24,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { AVATARS, STATUSES } from '@/lib/config/constants';
-import { logger } from '@/lib/utils/logger';
+
+import { AVATARS, STATUSES } from '@/lib/constants';
+import { logger } from '@/lib/logger';
+
+import { BaseModal } from './BaseModal';
 
 const formSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
@@ -34,12 +39,12 @@ const formSchema = z.object({
 type FormData = z.infer<typeof formSchema>;
 
 interface ProfileModalProps {
-  onSubmit: (data: FormData) => Promise<void>;
-  onClose: () => void;
   initialData?: FormData;
+  onCloseAction: () => void;
+  onSubmitAction: (data: FormData) => Promise<void>;
 }
 
-export function ProfileModal({ onSubmit, onClose, initialData }: ProfileModalProps) {
+export function ProfileModal({ onSubmitAction, onCloseAction, initialData }: ProfileModalProps) {
   const [error, setError] = React.useState<string | null>(null);
 
   const form = useForm<FormData>({
@@ -61,8 +66,19 @@ export function ProfileModal({ onSubmit, onClose, initialData }: ProfileModalPro
 
   const onSubmitForm = async (data: FormData) => {
     try {
+      logger.debug('Submitting profile form', {
+        component: 'ProfileModal',
+        action: 'submitForm',
+        metadata: { data },
+      });
+
       setError(null);
-      await onSubmit(data);
+      await onSubmitAction(data);
+
+      logger.debug('Profile form submitted successfully', {
+        component: 'ProfileModal',
+        action: 'submitForm',
+      });
     } catch (err) {
       logger.error('Failed to submit profile', {
         component: 'ProfileModal',
@@ -75,8 +91,7 @@ export function ProfileModal({ onSubmit, onClose, initialData }: ProfileModalPro
 
   return (
     <BaseModal
-      onClose={onClose}
-      isSubmitting={form.formState.isSubmitting}
+      onCloseAction={onCloseAction}
     >
       <div className="min-h-[520px] w-[480px] rounded-lg bg-white p-6 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
@@ -88,32 +103,32 @@ export function ProfileModal({ onSubmit, onClose, initialData }: ProfileModalPro
         <Form {...form}>
           <form
             onSubmit={form.handleSubmit(onSubmitForm)}
+
             className="flex h-full flex-col"
           >
             <div className="flex-1 space-y-8">
               <FormField
-                control={form.control}
-                name="name"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel className="text-sm font-medium text-[#161718]">Username</FormLabel>
                     <FormControl>
                       <Input
                         {...field}
-                        placeholder="Enter your name"
+                        autoComplete="off"
                         className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-black transition-colors focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                         disabled={form.formState.isSubmitting}
-                        autoComplete="off"
+                        placeholder="Enter your name"
                       />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
+
+                control={form.control}
+                name="name"
               />
 
               <FormField
-                control={form.control}
-                name="avatar"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel className="text-sm font-medium text-[#161718]">
@@ -122,55 +137,59 @@ export function ProfileModal({ onSubmit, onClose, initialData }: ProfileModalPro
                     <div className="grid grid-cols-5 gap-2">
                       {AVATARS.map((avatar, index) => (
                         <button
-                          key={index}
-                          type="button"
-                          onClick={() => field.onChange(avatar)}
-                          disabled={form.formState.isSubmitting}
                           className={`h-12 w-12 overflow-hidden rounded-md transition-all ${
                             field.value === avatar
                               ? 'ring-[3px] ring-[#55b611]'
                               : 'hover:ring-2 hover:ring-[#55b611]/50'
                           }`}
+
+                          onClick={() => field.onChange(avatar)}
+
+                          disabled={form.formState.isSubmitting}
+                          key={index}
+                          type="button"
                         >
                           <Image
-                            src={avatar}
                             alt={`Avatar ${index + 1}`}
-                            width={48}
-                            height={48}
                             className="h-full w-full object-cover"
+                            height={48}
+                            src={avatar}
+                            width={48}
                           />
                         </button>
                       ))}
                     </div>
                   </FormItem>
                 )}
+
+                control={form.control}
+                name="avatar"
               />
 
               <FormField
-                control={form.control}
-                name="game"
                 render={({ field }) => (
                   <FormItem className="mb-6">
                     <FormLabel className="text-sm font-medium text-[#161718]">
                       Current Game
                     </FormLabel>
                     <Select
-                      value={field.value}
                       onValueChange={field.onChange}
+
                       disabled={form.formState.isSubmitting}
+                      value={field.value}
                     >
                       <SelectTrigger className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-black transition-colors focus:outline-none">
                         <SelectValue
-                          placeholder="Select a game"
                           className="text-black"
+                          placeholder="Select a game"
                         />
                       </SelectTrigger>
                       <SelectContent className="border border-gray-300 bg-white shadow-lg">
                         {STATUSES.map((status) => (
                           <SelectItem
+                            className="cursor-pointer text-black hover:bg-[#f3f4f6] focus:bg-[#f3f4f6] focus:text-black"
                             key={status}
                             value={status}
-                            className="cursor-pointer text-black hover:bg-[#f3f4f6] focus:bg-[#f3f4f6] focus:text-black"
                           >
                             {status}
                           </SelectItem>
@@ -180,6 +199,9 @@ export function ProfileModal({ onSubmit, onClose, initialData }: ProfileModalPro
                     <FormMessage />
                   </FormItem>
                 )}
+
+                control={form.control}
+                name="game"
               />
 
               {error && (
@@ -187,15 +209,15 @@ export function ProfileModal({ onSubmit, onClose, initialData }: ProfileModalPro
                   <div className="flex">
                     <div className="flex-shrink-0">
                       <svg
-                        className="h-5 w-5 text-red-400"
-                        viewBox="0 0 20 20"
-                        fill="currentColor"
                         aria-hidden="true"
+                        className="h-5 w-5 text-red-400"
+                        fill="currentColor"
+                        viewBox="0 0 20 20"
                       >
                         <path
-                          fillRule="evenodd"
-                          d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z"
                           clipRule="evenodd"
+                          d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z"
+                          fillRule="evenodd"
                         />
                       </svg>
                     </div>
@@ -209,10 +231,11 @@ export function ProfileModal({ onSubmit, onClose, initialData }: ProfileModalPro
 
               <div className="mt-12 flex items-center justify-between">
                 <button
-                  type="button"
-                  onClick={onClose}
-                  disabled={form.formState.isSubmitting}
+                  onClick={onCloseAction}
+
                   className="flex items-center gap-0 opacity-80 transition-opacity hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-50 sm:gap-2"
+                  disabled={form.formState.isSubmitting}
+                  type="button"
                 >
                   <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#ae1228] text-xs font-bold text-white">
                     B
@@ -221,9 +244,9 @@ export function ProfileModal({ onSubmit, onClose, initialData }: ProfileModalPro
                 </button>
 
                 <button
-                  type="submit"
-                  disabled={form.formState.isSubmitting}
                   className="flex items-center gap-0 opacity-80 transition-opacity hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-50 sm:gap-2"
+                  disabled={form.formState.isSubmitting}
+                  type="submit"
                 >
                   <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#55b611] text-xs font-bold text-white">
                     A

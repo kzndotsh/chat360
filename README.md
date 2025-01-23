@@ -5,18 +5,21 @@ A modern, real-time voice chat application built with Next.js, Agora RTC, and Su
 ## Features
 
 - 🎙️ **Real-time Voice Chat**
+
   - High-quality audio streaming with Agora RTC
   - Echo cancellation, noise suppression, automatic gain control
   - Voice activity detection
   - Mute/unmute functionality
 
 - 👥 **Party System**
+
   - Real-time user presence tracking
   - Party member list with status indicators
   - Voice status indicators (speaking/silent/muted)
   - User avatars and profiles
 
 - 🔒 **Security**
+
   - Token-based voice channel access
   - Encrypted communication
 
@@ -60,12 +63,14 @@ AGORA_APP_CERTIFICATE=your_agora_certificate
 ## Installation
 
 1. Clone the repository:
+
    ```bash
    git clone https://github.com/yourusername/chat360.git
    cd chat360
    ```
 
 2. Install dependencies:
+
    ```bash
    npm install
    ```

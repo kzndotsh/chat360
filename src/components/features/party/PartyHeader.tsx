@@ -1,16 +1,17 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
-import { UserIcon } from './icons/UserIcon';
-import { Chat360Icon } from './icons/Chat360Icon';
-import { TbBrandX } from 'react-icons/tb';
-import { BiSolidBarChartAlt2 } from 'react-icons/bi';
-import { Clipboard } from 'lucide-react';
-import { logger } from '@/lib/utils/logger';
+import type { PartyHeaderProps } from '@/lib/types/components/props';
 
-interface PartyHeaderProps {
-  membersCount: number;
-}
+import React, { useRef, useState } from 'react';
+
+import { Clipboard } from 'lucide-react';
+import { BiSolidBarChartAlt2 } from 'react-icons/bi';
+import { TbBrandX } from 'react-icons/tb';
+
+import { logger } from '@/lib/logger';
+
+import { Chat360Icon } from './icons/Chat360Icon';
+import { UserIcon } from './icons/UserIcon';
 
 const HeaderButton = ({
   icon: Icon,
@@ -35,7 +36,7 @@ const HeaderButton = ({
 );
 
 export function PartyHeader({ membersCount }: PartyHeaderProps) {
-  const [copyStatus, setCopyStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [copyStatus, setCopyStatus] = useState<'error' | 'idle' | 'success'>('idle');
   const loggerRef = useRef(logger);
 
   const handleCopyURL = async () => {
@@ -102,14 +103,14 @@ export function PartyHeader({ membersCount }: PartyHeaderProps) {
 
   return (
     <div
-      role="banner"
       className="flex flex-col items-center justify-between"
+      role="banner"
     >
       <div className="flex w-full flex-col sm:flex-row">
-        <div className="order-2 flex h-[40px] flex-1 items-center justify-center bg-[#f8f8f8] sm:order-1 sm:items-center sm:justify-start">
-          <div className="flex w-full items-center gap-2 pl-[30px] sm:mt-0">
+        <div className="order-2 flex h-[40px] flex-1 items-center justify-between bg-[#f7ffff] sm:order-1">
+          <div className="flex items-center gap-2 pl-[30px]">
             <Chat360Icon className="w-10 text-[#282b2f] opacity-90" />
-            <span className="text-lg font-medium text-[#282b2f] sm:text-xl">Chat360 Party</span>
+            <span className="text-2xl font-semibold text-[#282b2f]">Chat360 Party</span>
           </div>
         </div>
 
@@ -135,23 +136,24 @@ export function PartyHeader({ membersCount }: PartyHeaderProps) {
         </div>
       </div>
 
-      <div className="h-[10px] border-b border-gray-200 bg-[#f0f0fa]"></div>
+      <div className="h-[10px] w-full border-b border-gray-200 bg-[#f7ffff]"></div>
 
       <button
-        className="flex h-[38px] w-full cursor-pointer items-center gap-2 bg-gradient-to-b from-[#70cc00] to-[#409202] pl-[30px] shadow-[inset_0_-2px_4px_rgba(0,0,0,0.1)] transition-all hover:brightness-110"
         onClick={handleCopyURL}
         onKeyDown={handleKeyDown}
+
         aria-label="Copy CA"
         aria-live="polite"
+        className="flex h-[40px] w-full cursor-pointer items-center gap-2 bg-gradient-to-b from-[#70cc00] to-[#409202] pl-[30px] shadow-[inset_0_-2px_4px_rgba(0,0,0,0.1)] transition-all hover:brightness-110"
       >
-        <span className="text-[1.15rem] font-medium text-white">
+        <span className="text-xl font-semibold text-white">
           {copyStatus === 'success' ? 'Copied!' : copyStatus === 'error' ? 'Failed!' : 'Copy CA'}
         </span>
         <Clipboard className="h-4 w-4 text-white opacity-90" />
       </button>
 
-      <div className="h-[38px] w-full border-b border-gray-400 bg-[#f0f0fa] pl-[30px]">
-        <span className="text-[1.15rem] font-medium leading-[38px] text-[#282b2f]">
+      <div className="h-[40px] w-full border-b border-gray-400 bg-[#eff3f6] pl-[30px]">
+        <span className="text-xl font-semibold leading-[38px] text-[#282b2f]">
           Party Options: Party Chat
         </span>
       </div>

@@ -1,8 +1,9 @@
 'use client';
 
-import React, { memo, useRef, useEffect } from 'react';
+import React, { memo, useEffect, useRef } from 'react';
+
 import { useCurrentTime } from '@/lib/hooks/useCurrentTime';
-import { logger } from '@/lib/utils/logger';
+import { logger } from '@/lib/logger';
 
 const TIME_FORMAT_OPTIONS = {
   hour: 'numeric' as const,
@@ -30,31 +31,27 @@ function Clock() {
   // Handle invalid dates
   if (!currentTime || isNaN(currentTime.getTime())) {
     return (
-      <div className="clock">
-        <time
-          role="time"
-          aria-label="Time unavailable"
-          aria-live="polite"
-          className="font-mono text-lg tabular-nums text-white"
-        >
-          --:-- --
-        </time>
-      </div>
+      <time
+        aria-label="Time unavailable"
+        aria-live="polite"
+        className="text-[22px] font-medium leading-none text-white"
+        role="time"
+      >
+        --:-- --
+      </time>
     );
   }
 
   return (
-    <div className="clock">
-      <time
-        role="time"
-        aria-label="Current time"
-        aria-live="polite"
-        className="font-mono text-lg tabular-nums text-white"
-        dateTime={currentTime.toISOString()}
-      >
-        {currentTime.toLocaleTimeString('en-US', TIME_FORMAT_OPTIONS)}
-      </time>
-    </div>
+    <time
+      aria-label="Current time"
+      aria-live="polite"
+      className="text-2xl font-medium leading-none text-white"
+      dateTime={currentTime.toISOString()}
+      role="time"
+    >
+      {currentTime.toLocaleTimeString('en-US', TIME_FORMAT_OPTIONS)}
+    </time>
   );
 }
 
