@@ -105,26 +105,22 @@ export class VoiceService {
         const memberId = this.getMemberIdFromAgoraUid(agoraUid);
         updatedMembers.add(memberId);
 
-        const level = vol.level / 100; // Convert to 0-1 range
+        const level = Math.min(vol.level / 100, 1); // Ensure 0-1 range
         const remoteUser = this.client.remoteUsers.find((u) => u.uid === vol.uid);
         const isMuted = remoteUser ? !remoteUser.hasAudio : false;
 
         const currentState = this.memberVoiceStates.get(memberId);
-        const preserveMuted = currentState?.muted ?? isMuted;
-        let voice_status: VoiceStatus = 'silent';
+        const preserveMuted = isMuted || (currentState?.muted ?? false);
 
-        if (preserveMuted) {
-          voice_status = 'muted';
-        } else {
-          const effectiveLevel = level;
-          if (effectiveLevel > VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
-            voice_status = 'speaking';
-          }
+        // Only update voice status if not muted
+        let voice_status: VoiceStatus = preserveMuted ? 'muted' : 'silent';
+        if (!preserveMuted && level > VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
+          voice_status = 'speaking';
         }
 
         const voiceState: VoiceMemberState = {
           id: memberId,
-          level: preserveMuted ? 0 : level,
+          level: preserveMuted ? 0 : this.smoothVolume(level),
           voice_status,
           muted: preserveMuted,
           is_deafened: false,
@@ -143,21 +139,20 @@ export class VoiceService {
         updatedMembers.add(memberId);
 
         const currentState = this.memberVoiceStates.get(memberId);
-        let voice_status: VoiceStatus = 'silent';
-        let effectiveLevel = 0;
+        let voice_status: VoiceStatus = this._isMuted ? 'muted' : 'silent';
+        let level = 0;
 
-        if (this._isMuted) {
-          voice_status = 'muted';
-        } else {
-          effectiveLevel = this.audioTrack.getVolumeLevel() / 100; // Convert to 0-1 range
-          if (effectiveLevel > VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
+        if (!this._isMuted) {
+          level = Math.min(this.audioTrack.getVolumeLevel() / 100, 1);
+          level = this.smoothVolume(level);
+          if (level > VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
             voice_status = 'speaking';
           }
         }
 
         const voiceState: VoiceMemberState = {
           id: memberId,
-          level: effectiveLevel,
+          level,
           voice_status,
           muted: this._isMuted,
           is_deafened: false,
