@@ -116,34 +116,27 @@ export class VoiceService {
         if (preserveMuted) {
           voice_status = 'muted';
         } else {
-          // Only process volume if not muted
-          const effectiveLevel = this.smoothVolume(level);
-
+          const effectiveLevel = level;
           if (effectiveLevel > VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
-            // Add debounce for speaking state
-            const now = Date.now();
-            const lastStateChange = currentState?.timestamp ?? 0;
-            const timeSinceLastChange = now - lastStateChange;
-
-            if (currentState?.voice_status === 'speaking' || timeSinceLastChange > VOICE_CONSTANTS.UPDATE_DEBOUNCE) {
-              voice_status = 'speaking';
-            }
+            voice_status = 'speaking';
           }
-
-          this.memberVoiceStates.set(memberId, {
-            id: memberId,
-            level: effectiveLevel,
-            voice_status,
-            muted: preserveMuted,
-            is_deafened: false,
-            agora_uid: agoraUid,
-            timestamp: Date.now(),
-            prev_state: currentState,
-          });
         }
+
+        const voiceState: VoiceMemberState = {
+          id: memberId,
+          level: preserveMuted ? 0 : level,
+          voice_status,
+          muted: preserveMuted,
+          is_deafened: false,
+          agora_uid: agoraUid,
+          timestamp: Date.now(),
+          prev_state: currentState,
+        };
+
+        this.memberVoiceStates.set(memberId, voiceState);
       });
 
-      // Handle local user's volume with input validation
+      // Handle local user's volume
       if (this.audioTrack && this.client.uid) {
         const agoraUid = this.client.uid.toString();
         const memberId = this.getMemberIdFromAgoraUid(agoraUid);
@@ -156,19 +149,9 @@ export class VoiceService {
         if (this._isMuted) {
           voice_status = 'muted';
         } else {
-          // Only check audio levels if not muted
-          const rawLevel = this.audioTrack.getVolumeLevel() / 100; // Convert to 0-1 range
-          effectiveLevel = this.smoothVolume(rawLevel);
-
+          effectiveLevel = this.audioTrack.getVolumeLevel() / 100; // Convert to 0-1 range
           if (effectiveLevel > VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
-            // Add debounce for speaking state
-            const now = Date.now();
-            const lastStateChange = currentState?.timestamp ?? 0;
-            const timeSinceLastChange = now - lastStateChange;
-
-            if (currentState?.voice_status === 'speaking' || timeSinceLastChange > VOICE_CONSTANTS.UPDATE_DEBOUNCE) {
-              voice_status = 'speaking';
-            }
+            voice_status = 'speaking';
           }
         }
 
@@ -184,19 +167,18 @@ export class VoiceService {
         };
 
         this.memberVoiceStates.set(memberId, voiceState);
-
-        // Broadcast the voice state
         void this.broadcastVoiceUpdate(voiceState);
       }
 
-      // Set silent state for members we haven't heard from
+      // Set silent state for members we haven't heard from in a while
+      const now = Date.now();
       Array.from(this.memberVoiceStates.entries()).forEach(([memberId, state]) => {
-        if (!updatedMembers.has(memberId)) {
+        if (!updatedMembers.has(memberId) && (state.timestamp || 0) < now - VOICE_CONSTANTS.UPDATE_DEBOUNCE * 2) {
           this.memberVoiceStates.set(memberId, {
             ...state,
             level: 0,
             voice_status: state.muted ? 'muted' : 'silent',
-            timestamp: Date.now(),
+            timestamp: now,
           });
         }
       });
