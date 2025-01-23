@@ -101,36 +101,39 @@ export class VoiceService {
       const updatedMembers = new Set<string>();
       const now = Date.now();
 
+      // Handle remote users' volumes
       volumes.forEach((vol) => {
         const agoraUid = vol.uid.toString();
         const memberId = this.getMemberIdFromAgoraUid(agoraUid);
         updatedMembers.add(memberId);
 
-        const level = Math.min(vol.level / 100, 1); // Ensure 0-1 range
+        // Get raw volume from Agora (0-100)
+        const rawLevel = vol.level;
+        // Normalize to 0-1 range and apply smoothing
+        const level = this.smoothVolume(rawLevel / 100);
+
         const remoteUser = this.client.remoteUsers.find((u) => u.uid === vol.uid);
         const isMuted = remoteUser ? !remoteUser.hasAudio : false;
 
         const currentState = this.memberVoiceStates.get(memberId);
         const preserveMuted = isMuted || (currentState?.muted ?? false);
 
-        // Only update voice status if not muted and the level has changed significantly
+        // Determine voice status based on Agora's recommended threshold (60)
         let voice_status: VoiceStatus = preserveMuted ? 'muted' : 'silent';
         if (!preserveMuted) {
-          if (level > VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
+          // Check if volume is above speaking threshold
+          const isAboveThreshold = rawLevel >= 60; // Agora's recommended threshold
+          const wasRecentlySpeaking = currentState?.voice_status === 'speaking' &&
+                                    now - (currentState.timestamp || 0) < VOICE_CONSTANTS.UPDATE_DEBOUNCE;
+
+          if (isAboveThreshold || wasRecentlySpeaking) {
             voice_status = 'speaking';
-          } else if (currentState?.voice_status === 'speaking' &&
-                     now - (currentState.timestamp || 0) < VOICE_CONSTANTS.UPDATE_DEBOUNCE) {
-            // Preserve speaking state for debounce period
-            voice_status = 'speaking';
-          } else if (currentState?.voice_status === 'speaking') {
-            // If was speaking but outside debounce, transition to silent
-            voice_status = 'silent';
           }
         }
 
         const voiceState: VoiceMemberState = {
           id: memberId,
-          level: preserveMuted ? 0 : this.smoothVolume(level),
+          level: preserveMuted ? 0 : level,
           voice_status,
           muted: preserveMuted,
           is_deafened: false,
@@ -142,7 +145,7 @@ export class VoiceService {
         this.memberVoiceStates.set(memberId, voiceState);
       });
 
-      // Handle local user's volume with similar debounce logic
+      // Handle local user's volume
       if (this.audioTrack && this.client.uid) {
         const agoraUid = this.client.uid.toString();
         const memberId = this.getMemberIdFromAgoraUid(agoraUid);
@@ -153,17 +156,18 @@ export class VoiceService {
         let level = 0;
 
         if (!this._isMuted) {
-          level = Math.min(this.audioTrack.getVolumeLevel() / 100, 1);
-          level = this.smoothVolume(level);
-          if (level > VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
+          // Get raw volume level from Agora (0-100)
+          const rawLevel = this.audioTrack.getVolumeLevel();
+          // Normalize to 0-1 range and apply smoothing
+          level = this.smoothVolume(rawLevel / 100);
+
+          // Use same threshold as remote users for consistency
+          const isAboveThreshold = rawLevel >= 60; // Agora's recommended threshold
+          const wasRecentlySpeaking = currentState?.voice_status === 'speaking' &&
+                                    now - (currentState.timestamp || 0) < VOICE_CONSTANTS.UPDATE_DEBOUNCE;
+
+          if (isAboveThreshold || wasRecentlySpeaking) {
             voice_status = 'speaking';
-          } else if (currentState?.voice_status === 'speaking' &&
-                     now - (currentState.timestamp || 0) < VOICE_CONSTANTS.UPDATE_DEBOUNCE) {
-            // Preserve speaking state for debounce period
-            voice_status = 'speaking';
-          } else if (currentState?.voice_status === 'speaking') {
-            // If was speaking but outside debounce, transition to silent
-            voice_status = 'silent';
           }
         }
 
@@ -182,10 +186,10 @@ export class VoiceService {
         void this.broadcastVoiceUpdate(voiceState);
       }
 
-      // Set silent state for members we haven't heard from in a longer period
+      // Set silent state for members we haven't heard from in 2 full intervals
       Array.from(this.memberVoiceStates.entries()).forEach(([memberId, state]) => {
         if (!updatedMembers.has(memberId) &&
-            (state.timestamp || 0) < now - VOICE_CONSTANTS.UPDATE_DEBOUNCE * 3) {
+            (state.timestamp || 0) < now - (VOICE_CONSTANTS.UPDATE_DEBOUNCE * 2)) {
           const currentState = this.memberVoiceStates.get(memberId);
           this.memberVoiceStates.set(memberId, {
             ...state,
@@ -539,7 +543,7 @@ export class VoiceService {
       // Set joined state before enabling volume indicator
       this._isJoined = true;
 
-      // Enable volume indicator with default settings
+      // Enable volume indicator
       this.client.enableAudioVolumeIndicator();
 
       // Reset audio quality monitoring
