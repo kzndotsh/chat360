@@ -154,9 +154,13 @@ export class PresenceService {
     // Clean up any existing channels
     await this.cleanupExistingChannels();
 
-    // Create new channel
+    // Create new channel with broadcast and presence enabled
     const channel = supabase.channel(CHANNEL_NAME, {
       config: {
+        broadcast: {
+          self: true,
+          ack: true,
+        },
         presence: {
           key: this.currentMember?.id,
         },
@@ -164,7 +168,7 @@ export class PresenceService {
     });
 
     // Subscribe to channel
-    await channel.subscribe(async (status) => {
+    channel.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
         logger.debug('Channel subscribed', {
           ...LOG_CONTEXT,
@@ -197,6 +201,32 @@ export class PresenceService {
           }));
           void this.handleMemberLeave(presenceData);
         });
+
+        // Track current member immediately after subscription
+        if (this.currentMember) {
+          await channel.track({
+            id: this.currentMember.id,
+            name: this.currentMember.name,
+            avatar: this.currentMember.avatar,
+            game: this.currentMember.game,
+            is_active: true,
+            created_at: this.currentMember.created_at,
+            last_seen: new Date().toISOString(),
+            status: 'active',
+          });
+        }
+      } else if (status === 'CHANNEL_ERROR') {
+        logger.error('Channel error', {
+          ...LOG_CONTEXT,
+          metadata: { channelName: CHANNEL_NAME },
+        });
+        void this.handleChannelError();
+      } else if (status === 'CLOSED') {
+        logger.warn('Channel closed', {
+          ...LOG_CONTEXT,
+          metadata: { channelName: CHANNEL_NAME },
+        });
+        void this.handleChannelClosed();
       }
     });
 

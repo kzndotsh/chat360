@@ -121,7 +121,7 @@ function PartyChat() {
 
   return (
     <div className="flex min-h-screen items-center justify-center">
-      <div className="origin-center scale-125">
+      <div className="origin-center scale-110">
         <div className="flex flex-col">
           <TopBar />
           <Card className="flex min-h-[500px] w-full min-w-[900px] flex-col rounded-none border-0 bg-[#dce4e7]">
