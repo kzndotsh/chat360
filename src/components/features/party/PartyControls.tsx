@@ -47,7 +47,7 @@ export function PartyControls({
             <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#55b611] text-[11px] font-bold text-white">
               A
             </div>
-            <span className="font-semibold text-white">
+            <span className="font-semibold text-white [text-shadow:_0_1px_1px_rgba(0,0,0,0.15)_inset]">
               {partyState === 'joining' ? 'Joining...' : 'Join Party'}
             </span>
           </button>
@@ -64,7 +64,9 @@ export function PartyControls({
               <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#ae1228] text-[11px] font-bold text-white">
                 B
               </div>
-              <span className="text-white">{isLeaving ? 'Leaving...' : 'Leave Party'}</span>
+              <span className="text-white [text-shadow:_0_1px_1px_rgba(0,0,0,0.15)_inset]">
+                {isLeaving ? 'Leaving...' : 'Leave Party'}
+              </span>
             </button>
 
             <button
@@ -76,7 +78,9 @@ export function PartyControls({
               <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#0c71ba] text-[11px] font-bold text-white">
                 X
               </div>
-              <span className="text-white">{isMuted ? 'Unmute' : 'Mute'}</span>
+              <span className="text-white [text-shadow:_0_1px_1px_rgba(0,0,0,0.15)_inset]">
+                {isMuted ? 'Unmute' : 'Mute'}
+              </span>
             </button>
 
             {micPermissionDenied && onRequestMicrophonePermission && (
@@ -89,7 +93,9 @@ export function PartyControls({
                 <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#0c71ba] text-[11px] font-bold text-white">
                   R
                 </div>
-                <span className="text-white">Re-request Mic</span>
+                <span className="text-white [text-shadow:_0_1px_1px_rgba(0,0,0,0.15)_inset]">
+                  Re-request Mic
+                </span>
               </button>
             )}
 
@@ -108,7 +114,9 @@ export function PartyControls({
               <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#e09a23] text-[11px] font-bold text-white">
                 Y
               </div>
-              <span className="text-white">Edit Profile</span>
+              <span className="text-white [text-shadow:_0_1px_1px_rgba(0,0,0,0.15)_inset]">
+                Edit Profile
+              </span>
             </button>
           </>
         )}

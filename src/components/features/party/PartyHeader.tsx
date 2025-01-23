@@ -16,7 +16,7 @@ import { UserIcon } from './icons/UserIcon';
 const HeaderButton = ({
   icon: Icon,
   iconSize = 'w-7 h-7',
-  width = 'w-[141px]',
+  width = 'w-[170px]',
   children,
   url,
 }: {
@@ -129,7 +129,7 @@ export function PartyHeader({ membersCount }: PartyHeaderProps) {
             icon={UserIcon}
             iconSize="w-7 h-6"
           >
-            <span className="text-bold ml-2 truncate text-sm text-white opacity-90">
+            <span className="font-bold ml-2 truncate text-sm text-white opacity-90">
               {membersCount}
             </span>
           </HeaderButton>

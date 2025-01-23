@@ -150,6 +150,7 @@ export class VoiceService {
 
         updatedMembers.add(memberId);
         const currentState = this.memberVoiceStates.get(memberId);
+        const now = Date.now();
 
         // Get raw volume level (0-100) and normalize to 0-1
         const rawLevel = this.audioTrack.getVolumeLevel();
@@ -157,10 +158,16 @@ export class VoiceService {
 
         // Determine voice status based on volume level and previous state
         let voice_status: VoiceStatus = this._isMuted ? 'muted' : 'silent';
-        if (!this._isMuted && rawLevel >= VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
+
+        // Only update to speaking if volume is above threshold
+        if (!this._isMuted && level >= VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
           voice_status = 'speaking';
-        } else if (currentState?.voice_status === 'speaking' &&
-                  now - (currentState.timestamp || 0) < VOICE_CONSTANTS.UPDATE_DEBOUNCE) {
+        } else if (
+          currentState?.voice_status === 'speaking' &&
+          level >= VOICE_CONSTANTS.SPEAKING_THRESHOLD / 2 &&
+          now - (currentState.timestamp || 0) < VOICE_CONSTANTS.UPDATE_DEBOUNCE
+        ) {
+          // Keep speaking state only if volume is still relatively high and within debounce window
           voice_status = 'speaking';
         }
 
@@ -643,16 +650,17 @@ export class VoiceService {
     try {
       // Update state first for immediate UI feedback
       this._isMuted = !this._isMuted;
+      const now = Date.now();
 
       // Create and broadcast state immediately
       const voiceState: VoiceMemberState = {
         id: this.currentMemberId!,
-        level: 0, // Set to 0 immediately when muting
+        level: 0,
         voice_status: this._isMuted ? 'muted' : 'silent',
         muted: this._isMuted,
         is_deafened: false,
         agora_uid: this.client.uid?.toString(),
-        timestamp: Date.now()
+        timestamp: now
       };
 
       // Update local state and notify subscribers immediately
@@ -665,18 +673,23 @@ export class VoiceService {
       void this.broadcastVoiceUpdate(voiceState);
 
       // Update the audio track asynchronously
-      void this.audioTrack.setEnabled(!this._isMuted).catch((error) => {
+      this.audioTrack.setEnabled(!this._isMuted).catch((error) => {
         // Revert state if audio track update fails
         this._isMuted = !this._isMuted;
         logger.error('Toggle mute error', { metadata: { error } });
-      });
 
-      logger.debug('[VoiceService][toggleMute] Mute state updated', {
-        metadata: {
-          memberId: this.currentMemberId,
+        // Broadcast revert state
+        const revertState: VoiceMemberState = {
+          ...voiceState,
           muted: this._isMuted,
-          voiceState
+          voice_status: this._isMuted ? 'muted' : 'silent' as VoiceStatus,
+          timestamp: Date.now()
+        };
+        this.memberVoiceStates.set(this.currentMemberId!, revertState);
+        if (this.volumeCallback) {
+          this.volumeCallback(Array.from(this.memberVoiceStates.values()));
         }
+        void this.broadcastVoiceUpdate(revertState);
       });
 
       return this._isMuted;
@@ -723,6 +736,9 @@ export class VoiceService {
   }
 
   private smoothVolume(currentVolume: number): number {
+    // Skip processing if muted
+    if (this._isMuted) return 0;
+
     const smoothed =
       this.lastVolume * (1 - VOICE_CONSTANTS.VOLUME_SMOOTHING) +
       currentVolume * VOICE_CONSTANTS.VOLUME_SMOOTHING;

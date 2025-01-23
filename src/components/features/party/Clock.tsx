@@ -46,7 +46,7 @@ function Clock() {
     <time
       aria-label="Current time"
       aria-live="polite"
-      className="text-2xl font-medium leading-none text-white"
+      className="text-2xl font-medium leading-none text-white [text-shadow:_0_1px_1px_rgba(0,0,0,0.15)_inset]"
       dateTime={currentTime.toISOString()}
       role="time"
     >
