@@ -107,35 +107,24 @@ export class VoiceService {
         const memberId = this.getMemberIdFromAgoraUid(agoraUid);
         updatedMembers.add(memberId);
 
-        // Get raw volume from Agora (0-100)
-        const rawLevel = vol.level;
-        // Normalize to 0-1 range and apply smoothing
-        const level = this.smoothVolume(rawLevel / 100);
-
         const remoteUser = this.client.remoteUsers.find((u) => u.uid === vol.uid);
         const isMuted = remoteUser ? !remoteUser.hasAudio : false;
-
         const currentState = this.memberVoiceStates.get(memberId);
-        const preserveMuted = isMuted || (currentState?.muted ?? false);
 
-        // Determine voice status based on Agora's recommended threshold (60)
-        let voice_status: VoiceStatus = preserveMuted ? 'muted' : 'silent';
-        if (!preserveMuted) {
-          // Check if volume is above speaking threshold
-          const isAboveThreshold = rawLevel >= 60; // Agora's recommended threshold
-          const wasRecentlySpeaking = currentState?.voice_status === 'speaking' &&
-                                    now - (currentState.timestamp || 0) < VOICE_CONSTANTS.UPDATE_DEBOUNCE;
+        // Normalize volume to 0-1 range
+        const level = isMuted ? 0 : vol.level / 100;
 
-          if (isAboveThreshold || wasRecentlySpeaking) {
-            voice_status = 'speaking';
-          }
+        // Determine voice status
+        let voice_status: VoiceStatus = isMuted ? 'muted' : 'silent';
+        if (!isMuted && vol.level >= 60) { // Agora's recommended speaking threshold
+          voice_status = 'speaking';
         }
 
         const voiceState: VoiceMemberState = {
           id: memberId,
-          level: preserveMuted ? 0 : level,
+          level,
           voice_status,
-          muted: preserveMuted,
+          muted: isMuted,
           is_deafened: false,
           agora_uid: agoraUid,
           timestamp: now,
@@ -145,30 +134,18 @@ export class VoiceService {
         this.memberVoiceStates.set(memberId, voiceState);
       });
 
-      // Handle local user's volume
+      // Handle local user's volume if we have an audio track
       if (this.audioTrack && this.client.uid) {
         const agoraUid = this.client.uid.toString();
         const memberId = this.getMemberIdFromAgoraUid(agoraUid);
         updatedMembers.add(memberId);
 
         const currentState = this.memberVoiceStates.get(memberId);
+        const level = this._isMuted ? 0 : this.audioTrack.getVolumeLevel() / 100;
+
         let voice_status: VoiceStatus = this._isMuted ? 'muted' : 'silent';
-        let level = 0;
-
-        if (!this._isMuted) {
-          // Get raw volume level from Agora (0-100)
-          const rawLevel = this.audioTrack.getVolumeLevel();
-          // Normalize to 0-1 range and apply smoothing
-          level = this.smoothVolume(rawLevel / 100);
-
-          // Use same threshold as remote users for consistency
-          const isAboveThreshold = rawLevel >= 60; // Agora's recommended threshold
-          const wasRecentlySpeaking = currentState?.voice_status === 'speaking' &&
-                                    now - (currentState.timestamp || 0) < VOICE_CONSTANTS.UPDATE_DEBOUNCE;
-
-          if (isAboveThreshold || wasRecentlySpeaking) {
-            voice_status = 'speaking';
-          }
+        if (!this._isMuted && level >= VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
+          voice_status = 'speaking';
         }
 
         const voiceState: VoiceMemberState = {
@@ -186,10 +163,11 @@ export class VoiceService {
         void this.broadcastVoiceUpdate(voiceState);
       }
 
-      // Set silent state for members we haven't heard from in 2 full intervals
+      // Set silent state for members we haven't heard from in a while
       Array.from(this.memberVoiceStates.entries()).forEach(([memberId, state]) => {
         if (!updatedMembers.has(memberId) &&
-            (state.timestamp || 0) < now - (VOICE_CONSTANTS.UPDATE_DEBOUNCE * 2)) {
+            state.voice_status !== 'muted' &&
+            (state.timestamp || 0) < now - VOICE_CONSTANTS.UPDATE_DEBOUNCE) {
           const currentState = this.memberVoiceStates.get(memberId);
           this.memberVoiceStates.set(memberId, {
             ...state,
@@ -610,19 +588,19 @@ export class VoiceService {
       this._isMuted = !this._isMuted;
       await this.audioTrack.setEnabled(!this._isMuted);
 
-      // Get current volume level
       const memberId = this.getMemberIdFromAgoraUid(this.client.uid?.toString() || '');
       if (memberId) {
         const currentState = this.memberVoiceStates.get(memberId);
+        const now = Date.now();
 
         const voiceState: VoiceMemberState = {
           id: memberId,
-          level: 0, // Always 0 when muted
-          voice_status: this._isMuted ? 'muted' : 'silent', // Start with silent when unmuting
+          level: 0,
+          voice_status: this._isMuted ? 'muted' : 'silent',
           muted: this._isMuted,
           is_deafened: false,
           agora_uid: this.client.uid?.toString(),
-          timestamp: Date.now(),
+          timestamp: now,
           prev_state: currentState,
         };
 
