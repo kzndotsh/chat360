@@ -12,7 +12,7 @@ export function Chat360Icon({ className }: { className?: string }) {
         <style>
           {`
             .st0 { fill: #161C26; }
-            .st1 { fill: #161C26; opacity: 0.9; }
+            .st1 { fill: #63666b; opacity: 0.9; }
           `}
         </style>
       </defs>

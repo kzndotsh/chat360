@@ -18,22 +18,32 @@ const HeaderButton = ({
   iconSize = 'w-7 h-7',
   width = 'w-[141px]',
   children,
+  url,
 }: {
   icon: React.FC<React.SVGProps<SVGSVGElement>>;
   iconSize?: string;
   width?: string;
   children?: React.ReactNode;
-}) => (
-  <button
-    className={`flex items-center justify-center ${width} relative h-[50px] cursor-pointer bg-[#6B717D] transition-colors hover:bg-[#5D626D]`}
-  >
-    <div className="absolute inset-0 shadow-[inset_0_-1px_1px_rgba(0,0,0,0.05)]"></div>
-    <div className="absolute bottom-0 left-0 top-0 w-[1px] bg-[#5D626D]/50"></div>
-    <div className="absolute bottom-0 left-0 top-0 w-5 bg-gradient-to-r from-black/5 to-transparent"></div>
-    <Icon className={`${iconSize} text-white opacity-90`} />
-    {children}
-  </button>
-);
+  url?: string;
+}) => {
+  const ButtonContent = (
+    <button
+      className={`flex items-center justify-center ${width} relative h-[50px] cursor-pointer bg-[#6B717D] transition-colors hover:bg-[#5D626D]`}
+    >
+      <div className="absolute inset-0 shadow-[inset_0_-1px_1px_rgba(0,0,0,0.05)]"></div>
+      <div className="absolute bottom-0 left-0 top-0 w-[1px] bg-[#5D626D]/50"></div>
+      <div className="absolute bottom-0 left-0 top-0 w-5 bg-gradient-to-r from-black/5 to-transparent"></div>
+      <Icon className={`${iconSize} text-white opacity-90`} />
+      {children}
+    </button>
+  );
+
+  return url ? (
+    <a href={url} rel="noopener noreferrer" target="_blank">
+      {ButtonContent}
+    </a>
+  ) : ButtonContent;
+};
 
 export function PartyHeader({ membersCount }: PartyHeaderProps) {
   const [copyStatus, setCopyStatus] = useState<'error' | 'idle' | 'success'>('idle');
@@ -132,11 +142,12 @@ export function PartyHeader({ membersCount }: PartyHeaderProps) {
           <HeaderButton
             icon={TbBrandX}
             iconSize="w-7 h-7"
+            url="https://x.com/chat360fun"
           />
         </div>
       </div>
 
-      <div className="h-[20px] w-full border-b border-gray-200 bg-[#f7ffff]"></div>
+      <div className="h-[15px] w-full border-b border-gray-200 bg-[#f7ffff]"></div>
 
       <button
         onClick={handleCopyURL}

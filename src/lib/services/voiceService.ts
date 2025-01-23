@@ -113,17 +113,23 @@ export class VoiceService {
         const currentState = this.memberVoiceStates.get(memberId);
         const preserveMuted = currentState?.muted ?? isMuted;
 
+        // Apply smoothing to remote user volumes
+        const smoothedLevel = this.smoothVolume(level);
+
         // Determine voice status based on mute state first
         let voice_status: VoiceStatus = 'silent';
         if (preserveMuted) {
           voice_status = 'muted';
-        } else if (level >= VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
-          voice_status = 'speaking';
+        } else if (smoothedLevel >= VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
+          // Only change to speaking if the previous state was also speaking or the level is significantly above threshold
+          if (currentState?.voice_status === 'speaking' || smoothedLevel >= VOICE_CONSTANTS.SPEAKING_THRESHOLD * 1.5) {
+            voice_status = 'speaking';
+          }
         }
 
         this.memberVoiceStates.set(memberId, {
           id: memberId,
-          level: preserveMuted ? 0 : level,
+          level: preserveMuted ? 0 : smoothedLevel,
           voice_status,
           muted: preserveMuted,
           is_deafened: false,
@@ -149,9 +155,16 @@ export class VoiceService {
 
         // Force silent if no valid audio input
         const effectiveLevel = hasValidAudioInput ? localLevel : 0;
-        const voice_status = this._isMuted ? 'muted' :
-                           (!hasValidAudioInput ? 'silent' :
-                           (effectiveLevel >= VOICE_CONSTANTS.SPEAKING_THRESHOLD ? 'speaking' : 'silent'));
+        let voice_status: VoiceStatus = 'silent';
+
+        if (this._isMuted) {
+          voice_status = 'muted';
+        } else if (hasValidAudioInput && effectiveLevel >= VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
+          // Only change to speaking if the previous state was also speaking or the level is significantly above threshold
+          if (currentState?.voice_status === 'speaking' || effectiveLevel >= VOICE_CONSTANTS.SPEAKING_THRESHOLD * 1.5) {
+            voice_status = 'speaking';
+          }
+        }
 
         const voiceState: VoiceMemberState = {
           id: memberId,
