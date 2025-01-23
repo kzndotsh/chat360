@@ -647,7 +647,7 @@ export class VoiceService {
       // Create and broadcast state immediately
       const voiceState: VoiceMemberState = {
         id: this.currentMemberId!,
-        level: this.audioTrack.getVolumeLevel() / 100,
+        level: 0, // Set to 0 immediately when muting
         voice_status: this._isMuted ? 'muted' : 'silent',
         muted: this._isMuted,
         is_deafened: false,
@@ -661,11 +661,15 @@ export class VoiceService {
         this.volumeCallback(Array.from(this.memberVoiceStates.values()));
       }
 
-      // Actually update the audio track
-      await this.audioTrack.setEnabled(!this._isMuted);
-
-      // Broadcast after track is updated
+      // Broadcast state change immediately
       void this.broadcastVoiceUpdate(voiceState);
+
+      // Update the audio track asynchronously
+      void this.audioTrack.setEnabled(!this._isMuted).catch((error) => {
+        // Revert state if audio track update fails
+        this._isMuted = !this._isMuted;
+        logger.error('Toggle mute error', { metadata: { error } });
+      });
 
       logger.debug('[VoiceService][toggleMute] Mute state updated', {
         metadata: {
@@ -677,7 +681,7 @@ export class VoiceService {
 
       return this._isMuted;
     } catch (error) {
-      // Revert state if audio track update fails
+      // Revert state if anything fails
       this._isMuted = !this._isMuted;
       logger.error('Toggle mute error', { metadata: { error } });
       return this._isMuted;

@@ -12,7 +12,6 @@ import {
   takeUntil,
   filter,
   share,
-  tap,
   auditTime
 } from 'rxjs/operators';
 
@@ -56,95 +55,70 @@ export function useVolumeControl() {
 
         // Create volume stream
         const volume$ = localVolumeSubject.pipe(
-          // Group by member ID to handle each member separately
           groupBy((vol: VoiceMemberState) => vol.id),
-          mergeMap((group: GroupedObservable<string, VoiceMemberState>) => group.pipe(
-            // Map volume updates to state updates
-            map((vol: VoiceMemberState): VoiceUpdate => {
-              const currentState = localStateCache.get(vol.id);
-              const newState = {
-                id: vol.id,
-                level: vol.level,
-                voice_status: determineVoiceStatus(vol, currentState),
-                muted: vol.muted,
-                is_deafened: vol.is_deafened,
-                agora_uid: (vol.agora_uid || '').toString()
-              };
-
-              // Log volume changes for debugging
-              logger.debug('[VolumeControl] Volume update', {
-                metadata: {
-                  memberId: vol.id,
+          mergeMap((group$: GroupedObservable<string, VoiceMemberState>) =>
+            group$.pipe(
+              map((vol: VoiceMemberState): VoiceUpdate => {
+                const currentState = localStateCache.get(vol.id);
+                const newState = {
+                  id: vol.id,
                   level: vol.level,
+                  voice_status: determineVoiceStatus(vol, currentState),
                   muted: vol.muted,
-                  currentStatus: currentState?.voice_status,
-                  newStatus: newState.voice_status
-                }
-              });
+                  is_deafened: vol.is_deafened,
+                  agora_uid: (vol.agora_uid || '').toString()
+                };
 
-              return newState;
-            }),
-            // Cache the state
-            tap((state: VoiceUpdate) => {
-              localStateCache.set(state.id, state);
-
-              // Log state changes for debugging
-              logger.debug('[VolumeControl] State cached', {
-                metadata: {
-                  memberId: state.id,
-                  status: state.voice_status,
-                  level: state.level
-                }
-              });
-            }),
-            // Use auditTime instead of debounceTime for more responsive updates
-            auditTime(VOICE_CONSTANTS.UPDATE_DEBOUNCE / 2),
-            // Only emit when voice status, mute state, or significant level changes occur
-            distinctUntilChanged((prev: VoiceUpdate, curr: VoiceUpdate) =>
-              prev.voice_status === curr.voice_status &&
-              prev.muted === curr.muted &&
-              prev.is_deafened === curr.is_deafened &&
-              Math.abs(prev.level - curr.level) < VOICE_CONSTANTS.SPEAKING_THRESHOLD / 2
-            ),
-            // Filter out null states and very low volumes when not speaking
-            filter((state: VoiceUpdate) =>
-              !!state && (
-                state.voice_status === 'speaking' ||
-                state.muted ||
-                state.level >= VOICE_CONSTANTS.SPEAKING_THRESHOLD / 4
+                // Cache the state immediately for faster access
+                localStateCache.set(vol.id, newState);
+                return newState;
+              }),
+              // Use a shorter auditTime for all updates to improve responsiveness
+              auditTime(VOICE_CONSTANTS.UPDATE_DEBOUNCE / 4),
+              // Only emit when there are meaningful changes
+              distinctUntilChanged((prev: VoiceUpdate, curr: VoiceUpdate) =>
+                prev.voice_status === curr.voice_status &&
+                prev.muted === curr.muted &&
+                prev.is_deafened === curr.is_deafened &&
+                (
+                  // Allow more granular volume changes when speaking
+                  curr.voice_status === 'speaking'
+                    ? Math.abs(prev.level - curr.level) < 0.05
+                    : Math.abs(prev.level - curr.level) < VOICE_CONSTANTS.SPEAKING_THRESHOLD / 2
+                )
+              ),
+              // Filter out unnecessary updates
+              filter((state: VoiceUpdate) =>
+                state.muted || // Always show muted state
+                state.voice_status === 'speaking' || // Always show speaking state
+                state.level >= VOICE_CONSTANTS.SPEAKING_THRESHOLD / 4 // Only show significant volume changes
               )
             )
-          )),
-          // Share the stream to prevent multiple subscriptions
+          ),
           share(),
-          // Stop the stream when cleanup is triggered
           takeUntil(localCleanup)
         );
 
-        // Subscribe to volume updates
+        // Subscribe to volume updates with optimized state updates
         volume$.subscribe({
           next: (newState: VoiceUpdate) => {
             setVolumeLevels(prev => {
-              const updated = {
+              // Skip update if nothing changed
+              const prevState = prev[newState.id];
+              if (
+                prevState &&
+                prevState.voice_status === newState.voice_status &&
+                prevState.muted === newState.muted &&
+                prevState.is_deafened === newState.is_deafened &&
+                Math.abs(prevState.level - newState.level) < 0.05
+              ) {
+                return prev;
+              }
+
+              return {
                 ...prev,
                 [newState.id]: newState
               };
-
-              // Log state updates for debugging
-              logger.debug('[VolumeControl] State updated', {
-                metadata: {
-                  memberId: newState.id,
-                  status: newState.voice_status,
-                  level: newState.level,
-                  states: Object.values(updated).map(s => ({
-                    id: s.id,
-                    status: s.voice_status,
-                    level: s.level
-                  }))
-                }
-              });
-
-              return updated;
             });
           },
           error: (error: Error) => {
@@ -156,7 +130,6 @@ export function useVolumeControl() {
         voiceService.onVolumeChange((volumes) => {
           volumes.forEach(vol => localVolumeSubject.next(vol));
         });
-
       } catch (error) {
         logger.error('Failed to initialize VoiceService:', { metadata: { error } });
       }
