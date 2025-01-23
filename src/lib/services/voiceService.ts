@@ -99,6 +99,7 @@ export class VoiceService {
       if (!this._isJoined) return;
 
       const updatedMembers = new Set<string>();
+      const now = Date.now();
 
       volumes.forEach((vol) => {
         const agoraUid = vol.uid.toString();
@@ -112,10 +113,19 @@ export class VoiceService {
         const currentState = this.memberVoiceStates.get(memberId);
         const preserveMuted = isMuted || (currentState?.muted ?? false);
 
-        // Only update voice status if not muted
+        // Only update voice status if not muted and the level has changed significantly
         let voice_status: VoiceStatus = preserveMuted ? 'muted' : 'silent';
-        if (!preserveMuted && level > VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
-          voice_status = 'speaking';
+        if (!preserveMuted) {
+          if (level > VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
+            voice_status = 'speaking';
+          } else if (currentState?.voice_status === 'speaking' &&
+                     now - (currentState.timestamp || 0) < VOICE_CONSTANTS.UPDATE_DEBOUNCE) {
+            // Preserve speaking state for debounce period
+            voice_status = 'speaking';
+          } else if (currentState?.voice_status === 'speaking') {
+            // If was speaking but outside debounce, transition to silent
+            voice_status = 'silent';
+          }
         }
 
         const voiceState: VoiceMemberState = {
@@ -125,14 +135,14 @@ export class VoiceService {
           muted: preserveMuted,
           is_deafened: false,
           agora_uid: agoraUid,
-          timestamp: Date.now(),
+          timestamp: now,
           prev_state: currentState,
         };
 
         this.memberVoiceStates.set(memberId, voiceState);
       });
 
-      // Handle local user's volume
+      // Handle local user's volume with similar debounce logic
       if (this.audioTrack && this.client.uid) {
         const agoraUid = this.client.uid.toString();
         const memberId = this.getMemberIdFromAgoraUid(agoraUid);
@@ -147,6 +157,13 @@ export class VoiceService {
           level = this.smoothVolume(level);
           if (level > VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
             voice_status = 'speaking';
+          } else if (currentState?.voice_status === 'speaking' &&
+                     now - (currentState.timestamp || 0) < VOICE_CONSTANTS.UPDATE_DEBOUNCE) {
+            // Preserve speaking state for debounce period
+            voice_status = 'speaking';
+          } else if (currentState?.voice_status === 'speaking') {
+            // If was speaking but outside debounce, transition to silent
+            voice_status = 'silent';
           }
         }
 
@@ -157,7 +174,7 @@ export class VoiceService {
           muted: this._isMuted,
           is_deafened: false,
           agora_uid: agoraUid,
-          timestamp: Date.now(),
+          timestamp: now,
           prev_state: currentState,
         };
 
@@ -165,15 +182,17 @@ export class VoiceService {
         void this.broadcastVoiceUpdate(voiceState);
       }
 
-      // Set silent state for members we haven't heard from in a while
-      const now = Date.now();
+      // Set silent state for members we haven't heard from in a longer period
       Array.from(this.memberVoiceStates.entries()).forEach(([memberId, state]) => {
-        if (!updatedMembers.has(memberId) && (state.timestamp || 0) < now - VOICE_CONSTANTS.UPDATE_DEBOUNCE * 2) {
+        if (!updatedMembers.has(memberId) &&
+            (state.timestamp || 0) < now - VOICE_CONSTANTS.UPDATE_DEBOUNCE * 3) {
+          const currentState = this.memberVoiceStates.get(memberId);
           this.memberVoiceStates.set(memberId, {
             ...state,
             level: 0,
             voice_status: state.muted ? 'muted' : 'silent',
             timestamp: now,
+            prev_state: currentState,
           });
         }
       });
@@ -181,22 +200,6 @@ export class VoiceService {
       // Notify subscribers with all current volumes
       if (this.volumeCallback) {
         this.volumeCallback(Array.from(this.memberVoiceStates.values()));
-      }
-
-      // Log speaking users for debugging
-      const speakingUsers = Array.from(this.memberVoiceStates.values()).filter(
-        (v) => v.voice_status === 'speaking'
-      );
-      if (speakingUsers.length > 0) {
-        logger.debug('Speaking users detected', {
-          metadata: {
-            users: speakingUsers.map((u) => ({
-              memberId: u.id,
-              level: u.level,
-              voice_status: u.voice_status,
-            })),
-          },
-        });
       }
     });
 
