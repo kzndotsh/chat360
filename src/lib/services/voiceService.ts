@@ -1,6 +1,8 @@
 import type { VoiceMemberState, VoiceStatus } from '@/lib/types/party/member';
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
+import type { AIDenoiserExtension } from 'agora-extension-ai-denoiser';
 
+import { AIDenoiserProcessorMode, AIDenoiserProcessorLevel } from 'agora-extension-ai-denoiser';
 import AgoraRTC, { IMicrophoneAudioTrack, IAgoraRTCClient } from 'agora-rtc-sdk-ng';
 
 import { VOICE_CONSTANTS } from '@/lib/constants/voice';
@@ -48,8 +50,9 @@ export class VoiceService {
     this.client = client;
     this.supabase = supabase;
     this.setupEventHandlers();
-    // Initialize broadcast channel asynchronously to avoid blocking constructor
-    void this.initializeBroadcastChannel();
+
+    // Remove immediate broadcast channel initialization
+    // void this.initializeBroadcastChannel();
 
     // Listen for client state changes
     this.client.on('connection-state-change', (curState, prevState) => {
@@ -59,8 +62,8 @@ export class VoiceService {
         metadata: { curState, prevState }
       });
 
-      // If we become connected and don't have a broadcast channel, initialize it
-      if (curState === 'CONNECTED' && !this.broadcastChannel) {
+      // Only initialize broadcast channel when we're fully connected and have a UID
+      if (curState === 'CONNECTED' && this.client.uid && !this.broadcastChannel) {
         void this.initializeBroadcastChannel();
       }
     });
@@ -680,12 +683,7 @@ export class VoiceService {
       await new Promise((resolve) => setTimeout(resolve, VOICE_CONSTANTS.RECOVERY_DELAY));
 
       // Create new track with enhanced settings
-      this.audioTrack = await AgoraRTC.createMicrophoneAudioTrack({
-        encoderConfig: VOICE_CONSTANTS.AUDIO_PROFILE,
-        AEC: true,
-        AGC: true,
-        ANS: true,
-      });
+      this.audioTrack = await this.createAudioTrack();
 
       // Restore volume (convert 0-1 to 0-1000 for setVolume)
       this.audioTrack.setVolume(Math.round(currentVolume * 1000));
@@ -725,7 +723,7 @@ export class VoiceService {
       // Attempt one more recovery with default settings
       try {
         if (!this.audioTrack) {
-          this.audioTrack = await AgoraRTC.createMicrophoneAudioTrack();
+          this.audioTrack = await this.createAudioTrack();
           if (this._isJoined) {
             await this.client.publish(this.audioTrack);
           }
@@ -785,15 +783,7 @@ export class VoiceService {
         );
 
         // Create and publish audio track
-        this.audioTrack = await AgoraRTC.createMicrophoneAudioTrack({
-          encoderConfig: VOICE_CONSTANTS.AUDIO_PROFILE,
-          AEC: true,
-          AGC: false,
-          ANS: true
-        });
-
-        this.audioTrack.setVolume(100);
-        await this.client.publish(this.audioTrack);
+        this.audioTrack = await this.createAudioTrack();
 
         // Enable volume indicator
         this.client.enableAudioVolumeIndicator();
@@ -805,6 +795,9 @@ export class VoiceService {
 
         // Set joined state before broadcasting initial state
         this._isJoined = true;
+
+        // Initialize broadcast channel now that we have a valid UID
+        await this.initializeBroadcastChannel();
 
         // Set initial voice state and broadcast it
         const initialState: VoiceMemberState = {
@@ -1167,15 +1160,16 @@ export class VoiceService {
       return currentVolume;
     }
 
-    // Use more aggressive factor for volume increases to be more responsive
-    const factor = currentVolume > this.lastVolume ? 0.7 : 0.3;
+    // Use more aggressive smoothing for volume drops
+    const factor = currentVolume > this.lastVolume ? 0.5 : 0.8;
     const smoothedVolume = this.lastVolume * (1 - factor) + currentVolume * factor;
 
-    // Prevent volume from decaying too much
-    const minVolume = currentVolume * 0.5; // Don't let it drop below 50% of current
-    const finalVolume = Math.max(smoothedVolume, minVolume);
-
-    this.lastVolume = finalVolume;
+    // If volume is below hold threshold, let it drop quickly
+    if (currentVolume < VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD) {
+      this.lastVolume = Math.min(smoothedVolume, currentVolume * 1.2);
+    } else {
+      this.lastVolume = smoothedVolume;
+    }
 
     logger.debug('Smoothed volume', {
       component: 'VoiceService',
@@ -1185,12 +1179,11 @@ export class VoiceService {
         previousSmoothed: this.lastVolume,
         factor,
         smoothedVolume,
-        minVolume,
-        finalVolume
+        finalVolume: this.lastVolume
       }
     });
 
-    return finalVolume;
+    return this.lastVolume;
   }
 
   private getMemberIdFromAgoraUid(agoraUid: number | string): string {
@@ -1246,5 +1239,68 @@ export class VoiceService {
       this.memberVoiceStates.set(memberId, voiceState);
       void this.broadcastVoiceUpdate(voiceState);
     }
+  }
+
+  private async createAudioTrack(): Promise<IMicrophoneAudioTrack> {
+    const track = await AgoraRTC.createMicrophoneAudioTrack({
+      encoderConfig: VOICE_CONSTANTS.AUDIO_PROFILE,
+      AEC: true, // Echo cancellation
+      AGC: false, // Auto gain control
+      ANS: true, // Basic noise suppression
+    });
+
+    // Create AI Denoiser processor if available
+    const denoiser = (AgoraRTC as { extensionsByName?: Map<string, AIDenoiserExtension> })
+      .extensionsByName?.get('agora-extension-ai-denoiser');
+
+    if (denoiser) {
+      try {
+        logger.info('Initializing AI Denoiser', {
+          component: 'VoiceService',
+          action: 'createAudioTrack'
+        });
+
+        // Create and configure processor
+        const processor = denoiser.createProcessor();
+        await processor.enable();
+
+        // Set noise suppression mode and level
+        await processor.setMode(AIDenoiserProcessorMode.NSNG);
+        await processor.setLevel(AIDenoiserProcessorLevel.SOFT);
+
+        // Handle overload events
+        processor.onoverload = async (elapsedTime: number) => {
+          logger.warn('AI Denoiser overloaded, switching to stationary mode', {
+            component: 'VoiceService',
+            action: 'createAudioTrack',
+            metadata: { elapsedTime }
+          });
+          await processor.setMode(AIDenoiserProcessorMode.STATIONARY_NS);
+        };
+
+        // Inject the processor into the audio pipeline
+        track.pipe(processor).pipe(track.processorDestination);
+
+        logger.info('AI Denoiser initialized successfully', {
+          component: 'VoiceService',
+          action: 'createAudioTrack'
+        });
+      } catch (error) {
+        logger.error('Failed to initialize AI Denoiser', {
+          component: 'VoiceService',
+          action: 'createAudioTrack',
+          metadata: { error }
+        });
+      }
+    } else {
+      logger.info('AI Denoiser not available, using basic noise suppression', {
+        component: 'VoiceService',
+        action: 'createAudioTrack'
+      });
+    }
+
+    // Set initial volume
+    await track.setVolume(100);
+    return track;
   }
 }

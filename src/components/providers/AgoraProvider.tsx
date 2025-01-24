@@ -14,6 +14,8 @@ import {
   useState,
 } from 'react';
 
+import { AIDenoiserExtension } from 'agora-extension-ai-denoiser';
+
 import { logger } from '@/lib/logger';
 
 // Constants for cleanup and reconnection
@@ -40,6 +42,7 @@ export const useAgoraContext = () => useContext(AgoraContext);
 
 // Lazy load AgoraRTC to avoid SSR issues
 let AgoraRTC: IAgoraRTC | null = null;
+let denoiser: AIDenoiserExtension | null = null;
 
 async function loadAgoraSDK(): Promise<void> {
   if (typeof window === 'undefined' || AgoraRTC) return;
@@ -50,6 +53,32 @@ async function loadAgoraSDK(): Promise<void> {
     // Configure Agora SDK
     AgoraRTC.disableLogUpload();
     AgoraRTC.setLogLevel(0); // Set to INFO level
+
+    // Initialize AI Denoiser
+    denoiser = new AIDenoiserExtension({ assetsPath: '/external' });
+
+    // Check compatibility
+    if (!denoiser.checkCompatibility()) {
+      logger.warn('AI Denoiser not supported in this browser', {
+        ...LOG_CONTEXT,
+        action: 'loadSDK'
+      });
+      denoiser = null;
+      return;
+    }
+
+    // Register the extension
+    AgoraRTC.registerExtensions([denoiser]);
+
+    // Listen for load errors
+    denoiser.onloaderror = (error) => {
+      logger.error('AI Denoiser failed to load', {
+        ...LOG_CONTEXT,
+        action: 'loadSDK',
+        metadata: { error }
+      });
+      denoiser = null;
+    };
   }
 }
 
@@ -102,6 +131,9 @@ export function AgoraProvider({ children }: AgoraProviderProps) {
         metadata: { error: err },
       });
     });
+
+    // Enable volume indicator for voice detection
+    await newClient.enableAudioVolumeIndicator();
 
     return newClient;
   }, []);
