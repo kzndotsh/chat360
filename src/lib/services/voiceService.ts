@@ -2,6 +2,7 @@ import type { VoiceMemberState, VoiceStatus } from '@/lib/types/party/member';
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 import type { AIDenoiserExtension } from 'agora-extension-ai-denoiser';
 
+import * as VAD from '@ricky0123/vad-web';
 import { AIDenoiserProcessorMode, AIDenoiserProcessorLevel } from 'agora-extension-ai-denoiser';
 import AgoraRTC, { IMicrophoneAudioTrack, IAgoraRTCClient } from 'agora-rtc-sdk-ng';
 
@@ -45,6 +46,11 @@ export class VoiceService {
   private memberIdToAgoraUid: Map<string, string> = new Map();
   private agoraUidToMemberId: Map<string, string> = new Map();
   private currentMemberId: string | null = null;
+
+  // Add VAD-related properties
+  private vad: VAD.MicVAD | null = null;
+  private vadSpeakingHistory: boolean[] = [];
+  private isVadSpeaking: boolean = false;
 
   constructor(client: IAgoraRTCClient, supabase: SupabaseClient) {
     this.client = client;
@@ -757,6 +763,9 @@ export class VoiceService {
           return;
         }
 
+        // Initialize VAD before joining
+        await this.initializeVAD();
+
         this.currentMemberId = memberId;
 
         // Get token from backend with proper error handling
@@ -816,7 +825,11 @@ export class VoiceService {
           metadata: { channelName, memberId }
         });
       } catch (error) {
-        // Reset joined state if join fails
+        // Clean up VAD if join fails
+        if (this.vad) {
+          await this.vad.pause();
+          this.vad = null;
+        }
         this._isJoined = false;
         logger.error('Join error', { metadata: { error } });
         throw error;
@@ -827,6 +840,22 @@ export class VoiceService {
   public async leave(): Promise<void> {
     return this.withJoinMutex(async () => {
       logger.info('Leaving voice service');
+
+      // Stop VAD
+      if (this.vad) {
+        try {
+          await this.vad.pause();
+          this.vad = null;
+          this.vadSpeakingHistory = [];
+          this.isVadSpeaking = false;
+        } catch (error) {
+          logger.warn('Error stopping VAD', {
+            component: 'VoiceService',
+            action: 'leave',
+            metadata: { error }
+          });
+        }
+      }
 
       // Set joined state to false first to prevent any new operations
       this._isJoined = false;
@@ -1132,56 +1161,25 @@ export class VoiceService {
 
   private smoothVolume(currentVolume: number): number {
     if (this._isMuted) {
-      logger.debug('Smoothing volume (muted)', {
-        component: 'VoiceService',
-        action: 'smoothVolume',
-        metadata: {
-          currentVolume,
-          lastVolume: this.lastVolume,
-          isMuted: this._isMuted,
-          result: 0
-        }
-      });
       return 0;
     }
 
     // Reset smoothing if coming from muted state
     if (this.lastVolume === 0 && currentVolume > 0) {
-      logger.debug('Resetting volume smoothing', {
-        component: 'VoiceService',
-        action: 'smoothVolume',
-        metadata: {
-          currentVolume,
-          lastVolume: this.lastVolume,
-          resetReason: 'coming_from_muted'
-        }
-      });
       this.lastVolume = currentVolume;
       return currentVolume;
     }
 
-    // Use more aggressive smoothing for volume drops
-    const factor = currentVolume > this.lastVolume ? 0.5 : 0.8;
+    // Use more aggressive smoothing when VAD indicates no speech
+    const factor = this.isVadSpeaking ? 0.5 : 0.8;
     const smoothedVolume = this.lastVolume * (1 - factor) + currentVolume * factor;
 
-    // If volume is below hold threshold, let it drop quickly
-    if (currentVolume < VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD) {
+    // If volume is below hold threshold and VAD shows no speech, let it drop quickly
+    if (currentVolume < VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD && !this.isVadSpeaking) {
       this.lastVolume = Math.min(smoothedVolume, currentVolume * 1.2);
     } else {
       this.lastVolume = smoothedVolume;
     }
-
-    logger.debug('Smoothed volume', {
-      component: 'VoiceService',
-      action: 'smoothVolume',
-      metadata: {
-        inputVolume: currentVolume,
-        previousSmoothed: this.lastVolume,
-        factor,
-        smoothedVolume,
-        finalVolume: this.lastVolume
-      }
-    });
 
     return this.lastVolume;
   }
@@ -1219,7 +1217,19 @@ export class VoiceService {
 
     // Process volume for unmuted members (level is already 0-1)
     const smoothedLevel = this.smoothVolume(level);
-    const voice_status = smoothedLevel >= VOICE_CONSTANTS.SPEAKING_THRESHOLD ? 'speaking' : 'silent';
+
+    // Determine voice status using both VAD and volume level
+    let voice_status: VoiceStatus = 'silent';
+    const isLoudEnough = smoothedLevel >= VOICE_CONSTANTS.SPEAKING_THRESHOLD;
+
+    // For local user, use VAD results
+    if (memberId === this.currentMemberId) {
+      const vadSpeaking = this.updateVadHistory(this.isVadSpeaking);
+      voice_status = (isLoudEnough && vadSpeaking) ? 'speaking' : 'silent';
+    } else {
+      // For remote users, fall back to just volume threshold
+      voice_status = isLoudEnough ? 'speaking' : 'silent';
+    }
 
     const voiceState: VoiceMemberState = {
       id: memberId,
@@ -1302,5 +1312,64 @@ export class VoiceService {
     // Set initial volume
     await track.setVolume(100);
     return track;
+  }
+
+  private async initializeVAD(): Promise<void> {
+    try {
+      logger.info('Initializing VAD');
+
+      this.vad = await VAD.MicVAD.new({
+        onSpeechStart: () => {
+          logger.debug('VAD speech start detected');
+          this.isVadSpeaking = true;
+        },
+        onSpeechEnd: () => {
+          logger.debug('VAD speech end detected');
+          this.isVadSpeaking = false;
+        },
+        onVADMisfire: () => {
+          logger.warn('VAD misfire detected');
+        },
+        minSpeechFrames: 4, // Minimum frames of speech needed to trigger a speech event
+      });
+
+      // Start VAD processing
+      await this.vad.start();
+
+      logger.info('VAD initialized successfully');
+    } catch (error) {
+      logger.error('Failed to initialize VAD', {
+        component: 'VoiceService',
+        action: 'initializeVAD',
+        metadata: { error }
+      });
+    }
+  }
+
+  private updateVadHistory(isSpeaking: boolean): boolean {
+    // Add current state to history
+    this.vadSpeakingHistory.push(isSpeaking);
+
+    // Keep only recent history
+    if (this.vadSpeakingHistory.length > VOICE_CONSTANTS.VAD_SPEAKING_HISTORY) {
+      this.vadSpeakingHistory.shift();
+    }
+
+    // Calculate ratio of speaking frames
+    const speakingFrames = this.vadSpeakingHistory.filter(Boolean).length;
+    const speakingRatio = speakingFrames / this.vadSpeakingHistory.length;
+
+    return speakingRatio >= VOICE_CONSTANTS.VAD_SPEAKING_RATIO_THRESHOLD;
+  }
+
+  private determineVoiceStatus(audioLevel: number): VoiceStatus {
+    if (this._isMuted) return 'muted';
+
+    // Combine VAD and audio level detection
+    const isLoudEnough = audioLevel >= VOICE_CONSTANTS.SPEAKING_THRESHOLD;
+    const vadSpeaking = this.updateVadHistory(this.isVadSpeaking);
+
+    // Consider it speaking if both VAD and volume threshold indicate speech
+    return (isLoudEnough && vadSpeaking) ? 'speaking' : 'silent';
   }
 }

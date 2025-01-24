@@ -16,4 +16,9 @@ export const VOICE_CONSTANTS = {
   APP_ID: 'b692145dadfd4f2b9bd3c0e9e5ecaab8',
   AUDIO_PROFILE: 'high_quality',
   MAX_VOLUME: 1000,
+
+  // VAD configuration
+  VAD_CONFIDENCE_THRESHOLD: 0.75, // Minimum confidence to consider as speech
+  VAD_SPEAKING_HISTORY: 8, // Number of frames to keep in speaking history
+  VAD_SPEAKING_RATIO_THRESHOLD: 0.6, // Ratio of speaking frames needed to trigger speaking state
 } as const;
