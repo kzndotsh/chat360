@@ -3,27 +3,18 @@
 import type { MemberListProps } from '@/lib/types/components/props';
 import type { VoiceStatus } from '@/lib/types/party/member';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
 
 import Image from 'next/image';
 
 import { VoiceStatusIcon } from '@/components/features/party/icons/VoiceStatusIcon';
 
 import { AVATARS } from '@/lib/constants';
-import { VOICE_CONSTANTS } from '@/lib/constants/voice';
 import { logger } from '@/lib/logger';
+import { usePartyStore } from '@/lib/stores/partyStore';
 
 export function MemberList({ members, currentUserId, volumeLevels = {} }: MemberListProps) {
-  const [debouncedVolumeLevels, setDebouncedVolumeLevels] = useState(volumeLevels);
-
-  // Debounce volume level updates with a longer delay for UI updates
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedVolumeLevels(volumeLevels);
-    }, VOICE_CONSTANTS.UPDATE_DEBOUNCE * 2);
-
-    return () => clearTimeout(timer);
-  }, [volumeLevels]);
+  const { voice: { isMuted: storeIsMuted } } = usePartyStore();
 
   // Memoize member rendering to prevent unnecessary recalculations
   const renderedMembers = useMemo(() => {
@@ -35,36 +26,56 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
       );
     }
 
-    return members.map((member) => {
+    // Sort members to ensure current user is first
+    const sortedMembers = [...members].sort((a, b) => {
+      if (a.id === currentUserId) return -1;
+      if (b.id === currentUserId) return 1;
+      return 0;
+    });
+
+    return sortedMembers.map((member) => {
       const isCurrentUser = member.id === currentUserId;
-      const volumeState = debouncedVolumeLevels[member.id];
+      const volumeState = volumeLevels[member.id];
+      const isMuted = isCurrentUser ? storeIsMuted : (volumeState?.muted ?? false);
+      const volumeLevel = volumeState?.level ?? 0;
 
-      // Get mute state from volumeState
-      const isMuted = volumeState?.muted ?? false;
-
-      // Use volume state's voice status as base, fallback to silent
-      let voice_status: VoiceStatus = volumeState?.voice_status ?? 'silent';
-
-      // Only override if conditions don't match the expected state
-      if (isMuted && voice_status !== 'muted') {
-        voice_status = 'muted';
-      } else if (!isMuted && voice_status === 'muted') {
-        voice_status = 'silent';
-      }
-
-      // Log state changes for debugging
-      logger.debug('Rendering member', {
+      // Log initial state for debugging
+      logger.debug('Processing member voice state', {
         component: 'MemberList',
-        action: 'renderMember',
+        action: 'processVoiceState',
         metadata: {
           memberId: member.id,
-          name: member.name,
           isCurrentUser,
-          volumeLevel: volumeState?.level ?? 0,
-          voice_status,
-          muted: isMuted,
-          volumeState: volumeState ? JSON.stringify(volumeState) : 'none',
-        },
+          volumeLevel,
+          isMuted,
+          volumeState,
+          storeIsMuted: isCurrentUser ? storeIsMuted : undefined
+        }
+      });
+
+      // Start with the volume state's voice status or default to silent
+      let voice_status: VoiceStatus = volumeState?.voice_status ?? 'silent';
+
+      // Override voice status only for mute state
+      if (isMuted) {
+        voice_status = 'muted';
+      }
+
+      // Log final voice status
+      logger.debug('Final voice status determined', {
+        component: 'MemberList',
+        action: 'finalVoiceStatus',
+        metadata: {
+          memberId: member.id,
+          finalStatus: voice_status,
+          volumeLevel,
+          isMuted,
+          volumeState: volumeState ? {
+            level: volumeState.level,
+            voice_status: volumeState.voice_status,
+            muted: volumeState.muted
+          } : 'none'
+        }
       });
 
       return (
@@ -119,7 +130,7 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
         </div>
       );
     });
-  }, [members, currentUserId, debouncedVolumeLevels]);
+  }, [members, currentUserId, volumeLevels, storeIsMuted]);
 
   return (
     <div className="flex h-full flex-col">

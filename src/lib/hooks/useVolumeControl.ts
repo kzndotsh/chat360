@@ -1,166 +1,97 @@
-import type { VolumeState } from '@/lib/types/components/props';
-import type { VoiceMemberState } from '@/lib/types/party/member';
+import type { VoiceStatus } from '@/lib/types/party/member';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 
-import { Subject, GroupedObservable } from 'rxjs';
+import { Subject } from 'rxjs';
 import {
-  groupBy,
-  mergeMap,
-  map,
-  distinctUntilChanged,
-  takeUntil,
-  filter,
-  share,
-  auditTime
+  debounceTime,
+  map
 } from 'rxjs/operators';
 
-import { useAgoraContext } from '@/components/providers/AgoraProvider';
+import { VOICE_CONSTANTS } from '../constants/voice';
 
-import { VOICE_CONSTANTS } from '@/lib/constants/voice';
-import { logger } from '@/lib/logger';
-
-import { VoiceService } from '../services/voiceService';
-
-interface VoiceUpdate {
-  agora_uid: string;
-  id: string;
-  is_deafened: boolean;
-  level: number;
-  muted: boolean;
-  voice_status: VolumeState['voice_status'];
+interface UseVolumeControlOptions {
+  isMuted?: boolean;
+  onVoiceStatusChange?: (status: VoiceStatus) => void;
+  onVolumeChange?: (volume: number) => void;
 }
 
-export function useVolumeControl() {
-  const [volumeLevels, setVolumeLevels] = useState<Record<string, VolumeState>>({});
-  const { client } = useAgoraContext();
-  const serviceRef = useRef<VoiceService | null>(null);
+export function determineVoiceStatus(
+  volume: number,
+  currentStatus: VoiceStatus,
+  isMuted: boolean
+): VoiceStatus {
+  if (isMuted) return "muted";
 
-  // RxJS Subjects with improved memory management
-  const volumeSubject = useRef(new Subject<VoiceMemberState>());
-  const cleanup$ = useRef(new Subject<void>());
-  const stateCache = useRef(new Map<string, VoiceUpdate>());
+  const isSpeaking = volume >= VOICE_CONSTANTS.SPEAKING_THRESHOLD;
+  const isHoldingSpeaking =
+    currentStatus === "speaking" &&
+    volume >= VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD;
+
+  // Immediate transition to speaking state when threshold is met
+  if (isSpeaking || isHoldingSpeaking) {
+    return "speaking";
+  }
+
+  // Quick transition to silent state when volume is very low
+  if (volume < VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD) {
+    return "silent";
+  }
+
+  // Keep current state if in transition
+  return currentStatus;
+}
+
+export function useVolumeControl(options: UseVolumeControlOptions) {
+  const { onVolumeChange, onVoiceStatusChange, isMuted = false } = options;
+  const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>('silent');
+  const volumeSubject = useMemo(() => new Subject<number>(), []);
+  const lastVolume = useRef<number>(0);
+  const silenceTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
-    let voiceService: VoiceService | null = null;
-    const localCleanup = cleanup$.current;
-    const localStateCache = stateCache.current;
-    const localVolumeSubject = volumeSubject.current;
+    const subscription = volumeSubject
+      .pipe(
+        debounceTime(VOICE_CONSTANTS.UPDATE_DEBOUNCE),
+        map((volume) => {
+          // Use raw volume for immediate response
+          lastVolume.current = volume;
+          return volume;
+        })
+      )
+      .subscribe((volume) => {
+        const newStatus = determineVoiceStatus(volume, voiceStatus, isMuted);
 
-    if (client) {
-      try {
-        voiceService = VoiceService.getInstance(client);
-        serviceRef.current = voiceService;
+        // Clear any existing timeout
+        if (silenceTimeoutRef.current) {
+          clearTimeout(silenceTimeoutRef.current);
+        }
 
-        // Optimized volume stream with better performance
-        const volume$ = localVolumeSubject.pipe(
-          groupBy((vol: VoiceMemberState) => vol.id),
-          mergeMap((group$: GroupedObservable<string, VoiceMemberState>) =>
-            group$.pipe(
-              map((vol: VoiceMemberState): VoiceUpdate => {
-                const currentState = localStateCache.get(vol.id);
-                const newState = {
-                  id: vol.id,
-                  level: vol.level,
-                  voice_status: determineVoiceStatus(vol, currentState),
-                  muted: vol.muted,
-                  is_deafened: vol.is_deafened,
-                  agora_uid: (vol.agora_uid || '').toString()
-                };
-                localStateCache.set(vol.id, newState);
-                return newState;
-              }),
-              // Faster updates for mute/unmute
-              auditTime(VOICE_CONSTANTS.UPDATE_DEBOUNCE / 4),
-              distinctUntilChanged((prev, curr) => {
-                if (prev.muted !== curr.muted) return false;
-                if (prev.voice_status !== curr.voice_status) return false;
-                if (prev.is_deafened !== curr.is_deafened) return false;
-                return Math.abs(prev.level - curr.level) <
-                  (curr.voice_status === 'speaking' ? 0.05 : VOICE_CONSTANTS.SPEAKING_THRESHOLD / 2);
-              }),
-              filter((state: VoiceUpdate) => {
-                const prevState = stateCache.current.get(state.id);
-                return state.muted ||
-                       prevState?.muted || // Allow unmute transitions
-                       state.voice_status === 'speaking' ||
-                       state.level >= VOICE_CONSTANTS.SPEAKING_THRESHOLD / 4;
-              })
-            )
-          ),
-          share(),
-          takeUntil(localCleanup)
-        );
+        // Set timeout to transition to silent if volume stays low
+        if (newStatus === "speaking" && volume < VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD) {
+          silenceTimeoutRef.current = setTimeout(() => {
+            setVoiceStatus("silent");
+            onVoiceStatusChange?.("silent");
+          }, VOICE_CONSTANTS.SPEAKING_TIMEOUT);
+        }
 
-        // Optimized state updates with batching
-        volume$.subscribe({
-          next: (newState: VoiceUpdate) => {
-            setVolumeLevels(prev => {
-              const prevState = prev[newState.id];
-              if (prevState?.muted === newState.muted &&
-                  prevState?.voice_status === newState.voice_status &&
-                  prevState?.is_deafened === newState.is_deafened &&
-                  Math.abs(prevState.level - newState.level) < 0.05) {
-                return prev;
-              }
-              return { ...prev, [newState.id]: newState };
-            });
-          },
-          error: (error: Error) => {
-            logger.error('Error in volume stream:', { metadata: { error } });
-          }
-        });
-
-        // Optimized volume change handler
-        voiceService.onVolumeChange((volumes) => {
-          volumes.forEach(vol => {
-            const prevState = localStateCache.get(vol.id);
-            if (vol.muted !== prevState?.muted || // Always send mute state changes
-                vol.level >= VOICE_CONSTANTS.SPEAKING_THRESHOLD / 4) {
-              localVolumeSubject.next(vol);
-            }
-          });
-        });
-      } catch (error) {
-        logger.error('Failed to initialize VoiceService:', { metadata: { error } });
-      }
-    }
+        if (newStatus !== voiceStatus) {
+          setVoiceStatus(newStatus);
+          onVoiceStatusChange?.(newStatus);
+        }
+        onVolumeChange?.(volume);
+      });
 
     return () => {
-      localCleanup.next();
-      localCleanup.complete();
-      if (voiceService) {
-        voiceService.onVolumeChange(null);
-        setVolumeLevels({});
-        serviceRef.current = null;
-        localStateCache.clear();
+      subscription.unsubscribe();
+      if (silenceTimeoutRef.current) {
+        clearTimeout(silenceTimeoutRef.current);
       }
     };
-  }, [client]);
+  }, [isMuted, voiceStatus, onVoiceStatusChange, onVolumeChange, volumeSubject]);
 
-  return volumeLevels;
-}
-
-function determineVoiceStatus(
-  vol: VoiceMemberState,
-  currentState?: VoiceUpdate
-): VolumeState['voice_status'] {
-  // If muted, always return muted state
-  if (vol.muted) {
-    return 'muted';
-  }
-
-  // If volume is above threshold, user is speaking
-  if (vol.level >= VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
-    return 'speaking';
-  }
-
-  // Keep speaking state for a short while to prevent flickering
-  if (currentState?.voice_status === 'speaking' &&
-      vol.level >= VOICE_CONSTANTS.SPEAKING_THRESHOLD / 2) {
-    return 'speaking';
-  }
-
-  // Otherwise user is silent
-  return 'silent';
+  return {
+    voiceStatus,
+    updateVolume: (volume: number) => volumeSubject.next(volume)
+  };
 }

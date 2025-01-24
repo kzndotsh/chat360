@@ -1,8 +1,7 @@
-import type { VolumeState } from '@/lib/types/components/props';
-import type { PartyMember } from '@/lib/types/party/member';
+import type { PartyMember, VoiceMemberState } from '@/lib/types/party/member';
 import type { PartyStatus } from '@/lib/types/party/state';
 
-import { createContext, useCallback, useContext, useMemo } from 'react';
+import { createContext, useCallback, useContext, useMemo, useEffect } from 'react';
 
 import { useAgoraContext } from '@/components/providers/AgoraProvider';
 
@@ -19,10 +18,10 @@ interface PartyContextType {
   members: PartyMember[];
   micPermissionDenied: boolean;
   partyState: PartyStatus;
-  volumeLevels: Record<string, VolumeState>;
+  volumeLevels: Record<string, VoiceMemberState>;
   join: (member: PartyMember) => Promise<void>;
   leave: () => Promise<void>;
-  toggleMute: () => void;
+  toggleMute: () => Promise<void>;
   updateProfile: (updates: Partial<PartyMember>) => Promise<void>;
 }
 
@@ -39,7 +38,7 @@ const PartyContext = createContext<PartyContextType>({
   volumeLevels: {},
   join: async () => {},
   leave: async () => {},
-  toggleMute: () => {},
+  toggleMute: async () => {},
   updateProfile: async () => {},
 });
 
@@ -49,16 +48,56 @@ export const useParty = () => useContext(PartyContext);
 const CHANNEL_NAME = 'party';
 
 export function PartyProvider({ children }: { children: React.ReactNode }) {
-  const volumeLevels = useVolumeControl();
-  const { getClient } = useAgoraContext();
-  const { initializePresence, cleanupPresence, updatePresence } = usePartyStore();
-
   const {
     presence: { currentMember, members, error: presenceError },
     party: { status: partyState, error: partyError },
     voice: { isMuted },
     setMuted,
   } = usePartyStore();
+
+  const { getClient } = useAgoraContext();
+
+  const { voiceStatus, updateVolume } = useVolumeControl({
+    isMuted,
+    onVoiceStatusChange: (status) => {
+      logger.debug('Voice status changed', {
+        component: 'PartyContext',
+        action: 'onVoiceStatusChange',
+        metadata: { status, isMuted }
+      });
+    },
+    onVolumeChange: (volume) => {
+      logger.debug('Volume changed', {
+        component: 'PartyContext',
+        action: 'onVolumeChange',
+        metadata: { volume, isMuted }
+      });
+    }
+  });
+
+  // Set up volume update handler
+  useEffect(() => {
+    const setupVoiceService = async () => {
+      const client = await getClient();
+      if (!client) return;
+
+      const voiceService = VoiceService.getInstance(client);
+      if (!voiceService) return;
+
+      const handleVolumeChange = (volumes: VoiceMemberState[]) => {
+        volumes.forEach(vol => {
+          updateVolume(vol.level);
+        });
+      };
+
+      voiceService.onVolumeChange(handleVolumeChange);
+      return () => voiceService.onVolumeChange(null);
+    };
+
+    void setupVoiceService();
+  }, [updateVolume, getClient]);
+
+  const { initializePresence, cleanupPresence, updatePresence } = usePartyStore();
 
   const join = useCallback(
     async (member: PartyMember) => {
@@ -120,15 +159,40 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
   const toggleMute = useCallback(async () => {
     try {
       const client = await getClient();
-      if (!client) return;
+      if (!client) {
+        logger.error('Voice client not initialized');
+        return;
+      }
 
       const voiceService = VoiceService.getInstance(client);
-      const newMuted = await voiceService.toggleMute();
-      setMuted(newMuted);
+      const newMuteState = await voiceService.toggleMute();
+
+      // Update the store with the new mute state
+      setMuted(newMuteState);
+
+      // Log state change for debugging
+      logger.debug('Mute state updated in context', {
+        component: 'PartyContext',
+        action: 'toggleMute',
+        metadata: {
+          newMuteState,
+          voiceServiceMuted: voiceService.isMuted,
+          currentMemberId: currentMember?.id
+        }
+      });
     } catch (error) {
-      throw error;
+      logger.error('Toggle mute error', { metadata: { error } });
     }
-  }, [getClient, setMuted]);
+  }, [getClient, setMuted, currentMember]);
+
+  // Force re-render when isMuted changes
+  useEffect(() => {
+    logger.debug('Mute state changed in store', {
+      component: 'PartyContext',
+      action: 'muteStateEffect',
+      metadata: { isMuted }
+    });
+  }, [isMuted]);
 
   const value = useMemo(
     () => ({
@@ -143,7 +207,17 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
       partyState,
       toggleMute,
       updateProfile,
-      volumeLevels,
+      volumeLevels: {
+        [currentMember?.id || '']: {
+          id: currentMember?.id || '',
+          level: 0,
+          voice_status: voiceStatus,
+          muted: isMuted,
+          is_deafened: false,
+          agora_uid: currentMember?.agora_uid,
+          timestamp: Date.now(),
+        }
+      },
     }),
     [
       currentMember,
@@ -156,7 +230,7 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
       members,
       toggleMute,
       updateProfile,
-      volumeLevels,
+      voiceStatus,
     ]
   );
 

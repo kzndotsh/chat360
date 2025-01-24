@@ -780,84 +780,86 @@ export class PresenceService {
     if (!this.channel) return;
 
     try {
-      // Block any new state updates during cleanup
-      this.isProcessingQueue = true;
-      this.stateUpdateQueue = [];
+        // Block any new state updates during cleanup
+        this.isProcessingQueue = true;
+        this.stateUpdateQueue = [];
 
-      // Clear any pending presence updates
-      if (this.updateTimeout) {
-        clearTimeout(this.updateTimeout);
-        this.updateTimeout = null;
-        this.pendingUpdate = null;
-      }
+        // Clear any pending presence updates
+        if (this.updateTimeout) {
+            clearTimeout(this.updateTimeout);
+            this.updateTimeout = null;
+            this.pendingUpdate = null;
+        }
 
-      // Clear stored state first to prevent restoration
-      try {
-        localStorage.removeItem(MEMBER_STORAGE_KEY);
-      } catch (error) {
-        logger.warn('Failed to remove stored member', {
-          ...LOG_CONTEXT,
-          metadata: { error },
-        });
-      }
-
-      // Mark member as left and untrack
-      if (this.currentMember && this.channel.state === 'joined') {
+        // Clear stored state first to prevent restoration
         try {
-          // Update member state before leaving
-          const finalState: PresenceMemberState = {
-            ...this.currentMember,
-            status: 'left',
-            agora_uid: undefined,
-          };
-
-          // Update local state first to ensure UI updates
-          this.currentMember = finalState;
-          this.members.set(finalState.id, finalState);
-          this.notifyListeners();
-
-          // Then update remote state
-          await this.channel.track({
-            id: finalState.id,
-            name: finalState.name,
-            avatar: finalState.avatar,
-            game: finalState.game,
-            is_active: false,
-            created_at: finalState.created_at,
-            last_seen: finalState.last_seen,
-            status: 'left',
-          });
-          await this.channel.untrack();
+            localStorage.removeItem(MEMBER_STORAGE_KEY);
         } catch (error) {
-          logger.warn('Failed to mark member as left', {
-            ...LOG_CONTEXT,
-            metadata: { error },
-          });
+            logger.warn('Failed to remove stored member', {
+                ...LOG_CONTEXT,
+                metadata: { error },
+            });
         }
-      }
 
-      // Unsubscribe from channel first
-      try {
-        if (this.channel.state === 'joined') {
-          await this.channel.unsubscribe();
+        // Mark member as left and untrack
+        if (this.currentMember && this.channel?.state === 'joined') {
+            try {
+                // Create final state while preserving voice-related fields
+                const finalState: PresenceMemberState = {
+                    ...this.currentMember,
+                    status: 'left',
+                    // Preserve voice state for cleanup
+                    voice_status: this.currentMember.voice_status,
+                    muted: this.currentMember.muted,
+                    is_deafened: this.currentMember.is_deafened,
+                    level: this.currentMember.level,
+                    agora_uid: this.currentMember.agora_uid
+                };
+
+                // Update local state first
+                this.currentMember = finalState;
+                this.members.set(finalState.id, finalState);
+
+                // Notify listeners before remote update
+                this.notifyListeners();
+
+                // Update remote state
+                await this.channel?.track(finalState);
+
+                // Add delay to ensure voice service has time to cleanup
+                await new Promise(resolve => setTimeout(resolve, 500));
+
+                await this.channel?.untrack();
+            } catch (error) {
+                logger.warn('Failed to mark member as left', {
+                    ...LOG_CONTEXT,
+                    metadata: { error },
+                });
+            }
         }
-      } catch (error) {
-        logger.warn('Failed to unsubscribe from channel', {
-          ...LOG_CONTEXT,
-          metadata: { error },
-        });
-      }
 
-      // Clear all state after channel cleanup
-      this.channel = null;
-      this.currentMember = null;
-      this.members.clear();
-      this.state = { status: 'idle' };
+        // Unsubscribe from channel
+        try {
+            if (this.channel?.state === 'joined') {
+                await this.channel.unsubscribe();
+            }
+        } catch (error) {
+            logger.warn('Failed to unsubscribe from channel', {
+                ...LOG_CONTEXT,
+                metadata: { error },
+            });
+        }
 
-      // Notify listeners one final time
-      this.notifyListeners();
+        // Clear all state after channel cleanup
+        this.channel = null;
+        this.currentMember = null;
+        this.members.clear();
+        this.state = { status: 'idle' };
+
+        // Notify listeners one final time
+        this.notifyListeners();
     } finally {
-      this.isProcessingQueue = false;
+        this.isProcessingQueue = false;
     }
   }
 }

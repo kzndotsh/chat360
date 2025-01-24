@@ -55,13 +55,53 @@ export function useVoice({ partyState = 'idle', channelName, uid }: Partial<Voic
   }, [partyState, channelName, uid, voiceService]);
 
   const toggleMute = useCallback(async () => {
-    if (!voiceService) return;
+    logger.info('Toggle mute requested', {
+      component: 'useVoice',
+      action: 'toggleMute',
+      metadata: {
+        hasVoiceService: !!voiceService,
+        currentMuteState: voiceService?.isMuted
+      }
+    });
+
+    if (!voiceService) {
+      logger.warn('Cannot toggle mute - no voice service available', {
+        component: 'useVoice',
+        action: 'toggleMute'
+      });
+      return;
+    }
+
     try {
       await voiceService.toggleMute();
+      logger.info('Mute state toggled successfully', {
+        component: 'useVoice',
+        action: 'toggleMute',
+        metadata: {
+          newMuteState: voiceService.isMuted
+        }
+      });
     } catch (error) {
-      logger.error('Toggle mute error', { metadata: { error } });
+      logger.error('Toggle mute error', {
+        component: 'useVoice',
+        action: 'toggleMute',
+        metadata: { error }
+      });
     }
   }, [voiceService]);
+
+  logger.debug('Voice hook state', {
+    component: 'useVoice',
+    action: 'render',
+    metadata: {
+      state,
+      isMuted: voiceService?.isMuted,
+      volume: voiceService?.getVolume(),
+      partyState,
+      channelName,
+      uid
+    }
+  });
 
   return {
     state,

@@ -5,6 +5,7 @@ import type { Store } from '@/lib/types/party/store';
 import { StateCreator } from 'zustand';
 
 import { VOICE_CONSTANTS } from '@/lib/constants/voice';
+import { logger } from '@/lib/logger';
 
 export const createVoiceMiddleware = (): StateCreator<Store, [], [], VoiceSlice> => (set) => ({
   // Initial voice state
@@ -21,6 +22,16 @@ export const createVoiceMiddleware = (): StateCreator<Store, [], [], VoiceSlice>
   setVoiceStatus: (status: VoiceConnectionStatus) =>
     set((state: Store) => {
       if (state.voice.status === status) return state;
+
+      logger.debug('Voice status changed', {
+        component: 'voiceMiddleware',
+        action: 'setVoiceStatus',
+        metadata: {
+          previousStatus: state.voice.status,
+          newStatus: status
+        }
+      });
+
       return {
         ...state,
         voice: {
@@ -35,6 +46,16 @@ export const createVoiceMiddleware = (): StateCreator<Store, [], [], VoiceSlice>
   setMuted: (isMuted) =>
     set((state: Store) => {
       if (state.voice.isMuted === isMuted) return state;
+
+      logger.debug('Mute state changed', {
+        component: 'voiceMiddleware',
+        action: 'setMuted',
+        metadata: {
+          wasMuted: state.voice.isMuted,
+          isMuted
+        }
+      });
+
       return {
         ...state,
         voice: {
@@ -48,7 +69,9 @@ export const createVoiceMiddleware = (): StateCreator<Store, [], [], VoiceSlice>
 
   // Volume actions
   setVolume: (volume) => {
+    // Ensure volume is in 0-1 range
     const normalizedVolume = Math.min(Math.max(volume, 0), 1);
+
     return set((state: Store) => {
       if (state.voice.isMuted) {
         if (state.voice.volume === 0) return state;
@@ -59,68 +82,93 @@ export const createVoiceMiddleware = (): StateCreator<Store, [], [], VoiceSlice>
       }
 
       const isSpeaking = normalizedVolume >= VOICE_CONSTANTS.SPEAKING_THRESHOLD;
+      const isHoldingSpeaking =
+        state.voice.isSpeaking &&
+        normalizedVolume >= VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD;
+
+      // More responsive volume change detection
+      const hasSignificantVolumeChange =
+        Math.abs(state.voice.volume - normalizedVolume) >= 0.02;
+
+      // Update state if:
+      // 1. Speaking state changed
+      // 2. Significant volume change while speaking
+      // 3. Initial volume update
       if (
-        Math.abs(state.voice.volume - normalizedVolume) < 0.05 &&
-        state.voice.isSpeaking === isSpeaking
+        state.voice.isSpeaking !== (isSpeaking || isHoldingSpeaking) ||
+        (state.voice.isSpeaking && hasSignificantVolumeChange) ||
+        state.voice.volume === 0
       ) {
-        return state;
+        logger.debug('Voice state updated', {
+          component: 'voiceMiddleware',
+          action: 'setVolume',
+          metadata: {
+            previousVolume: state.voice.volume,
+            newVolume: normalizedVolume,
+            wasSpeaking: state.voice.isSpeaking,
+            isSpeaking: isSpeaking || isHoldingSpeaking,
+            thresholds: {
+              speaking: VOICE_CONSTANTS.SPEAKING_THRESHOLD,
+              hold: VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD
+            }
+          }
+        });
+
+        return {
+          ...state,
+          voice: {
+            ...state.voice,
+            volume: normalizedVolume,
+            isSpeaking: isSpeaking || isHoldingSpeaking,
+          },
+        };
       }
 
-      return {
-        ...state,
-        voice: {
-          ...state.voice,
-          volume: normalizedVolume,
-          isSpeaking,
-        },
-      };
+      return state;
     });
   },
 
-  // Speaking status actions
+  // Remote users actions
+  updateRemoteUsers: (users) =>
+    set((state: Store) => ({
+      ...state,
+      voice: {
+        ...state.voice,
+        remoteUsers: users,
+      },
+    })),
+
+  // Error actions
+  setVoiceError: (error) =>
+    set((state: Store) => ({
+      ...state,
+      voice: {
+        ...state.voice,
+        error,
+        status: error ? 'idle' : state.voice.status,
+      },
+    })),
+
+  // Speaking state actions
   setSpeaking: (isSpeaking) =>
     set((state: Store) => {
-      if (state.voice.isMuted || state.voice.isSpeaking === isSpeaking) return state;
+      if (state.voice.isSpeaking === isSpeaking || state.voice.isMuted) return state;
+
+      logger.debug('Speaking state changed', {
+        component: 'voiceMiddleware',
+        action: 'setSpeaking',
+        metadata: {
+          wasSpeaking: state.voice.isSpeaking,
+          isSpeaking
+        }
+      });
+
       return {
         ...state,
         voice: {
           ...state.voice,
           isSpeaking,
-        },
-      };
-    }),
-
-  // Remote users actions
-  updateRemoteUsers: (users) =>
-    set((state: Store) => {
-      const newUsers = new Set(users);
-      if (setsAreEqual(state.voice.remoteUsers, newUsers)) return state;
-      return {
-        ...state,
-        voice: {
-          ...state.voice,
-          remoteUsers: newUsers,
-        },
-      };
-    }),
-
-  // Error actions
-  setVoiceError: (error) =>
-    set((state: Store) => {
-      if (state.voice.error === error) return state;
-      return {
-        ...state,
-        voice: {
-          ...state.voice,
-          error,
-          status: error ? 'disconnected' : state.voice.status,
         },
       };
     }),
 });
-
-// Helper function to compare sets
-function setsAreEqual<T>(a: Set<T>, b: Set<T>): boolean {
-  if (a.size !== b.size) return false;
-  return Array.from(a).every((item) => b.has(item));
-}

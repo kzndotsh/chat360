@@ -26,6 +26,18 @@ export function usePartyState() {
     updatePresence,
   } = usePresence();
 
+  // Sync party state with presence status
+  useEffect(() => {
+    if (presenceStatus === 'error') {
+      setPartyState('idle');
+      return;
+    }
+
+    if (presenceStatus === 'connected' && partyState === 'joining') {
+      setPartyState('joined');
+    }
+  }, [presenceStatus, partyState]);
+
   // Initialize state from localStorage on mount
   useEffect(() => {
     const savedState = localStorage.getItem('partyState') as PartyStatus;
@@ -84,6 +96,7 @@ export function usePartyState() {
   useEffect(() => {
     if (partyState === 'joined' && currentMember) {
       localStorage.setItem('partyState', partyState);
+      localStorage.setItem('party_member', JSON.stringify(currentMember));
       logger.debug('Saved party state', {
         ...LOG_CONTEXT,
         action: 'saveState',
@@ -91,6 +104,7 @@ export function usePartyState() {
       });
     } else if (partyState === 'idle') {
       localStorage.removeItem('partyState');
+      localStorage.removeItem('party_member');
       logger.debug('Removed party state', {
         ...LOG_CONTEXT,
         action: 'removeState',
@@ -108,9 +122,9 @@ export function usePartyState() {
 
       try {
         setPartyState('joining');
-        // Initialize presence
+        // Initialize presence and wait for connection
         await initializePresence(member);
-        setPartyState('joined');
+        // State will be updated by the presence status effect
       } catch (error) {
         setPartyState('idle');
         logger.error('Failed to join party', {
@@ -134,11 +148,12 @@ export function usePartyState() {
         action: 'leave',
       });
 
-      // First cleanup presence service
-      cleanupPresence();
+      // First cleanup presence service and wait for completion
+      await cleanupPresence();
 
       // Then clear all local state
       localStorage.removeItem('partyState');
+      localStorage.removeItem('party_member');
       setPartyState('idle');
 
       logger.debug('Successfully left party', {
