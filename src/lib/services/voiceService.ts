@@ -1,8 +1,8 @@
 import type { VoiceMemberState, VoiceStatus } from '@/lib/types/party/member';
+import type { MicVAD } from '@ricky0123/vad-web';
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 import type { AIDenoiserExtension } from 'agora-extension-ai-denoiser';
 
-import * as VAD from '@ricky0123/vad-web';
 import { AIDenoiserProcessorMode, AIDenoiserProcessorLevel } from 'agora-extension-ai-denoiser';
 import AgoraRTC, { IMicrophoneAudioTrack, IAgoraRTCClient } from 'agora-rtc-sdk-ng';
 
@@ -48,7 +48,7 @@ export class VoiceService {
   private currentMemberId: string | null = null;
 
   // Add VAD-related properties
-  private vad: VAD.MicVAD | null = null;
+  private vad: MicVAD | null = null;
   private vadSpeakingHistory: boolean[] = [];
   private isVadSpeaking: boolean = false;
 
@@ -76,6 +76,11 @@ export class VoiceService {
   }
 
   public static getInstance(client?: IAgoraRTCClient): VoiceService {
+    // Skip initialization in non-browser environment
+    if (typeof window === 'undefined') {
+      return {} as VoiceService; // Return empty instance for SSR
+    }
+
     if (!VoiceService.instance && client) {
       VoiceService.instance = new VoiceService(client, supabase);
     } else if (!VoiceService.instance) {
@@ -1252,6 +1257,16 @@ export class VoiceService {
   }
 
   private async createAudioTrack(): Promise<IMicrophoneAudioTrack> {
+    // Skip WASM features in non-browser environment
+    if (typeof window === 'undefined') {
+      return AgoraRTC.createMicrophoneAudioTrack({
+        encoderConfig: VOICE_CONSTANTS.AUDIO_PROFILE,
+        AEC: true,
+        AGC: false,
+        ANS: true,
+      });
+    }
+
     const track = await AgoraRTC.createMicrophoneAudioTrack({
       encoderConfig: VOICE_CONSTANTS.AUDIO_PROFILE,
       AEC: true, // Echo cancellation
@@ -1259,12 +1274,12 @@ export class VoiceService {
       ANS: true, // Basic noise suppression
     });
 
-    // Create AI Denoiser processor if available
-    const denoiser = (AgoraRTC as { extensionsByName?: Map<string, AIDenoiserExtension> })
-      .extensionsByName?.get('agora-extension-ai-denoiser');
+    try {
+      // Dynamically load AI Denoiser in browser environment
+      const denoiser = (AgoraRTC as { extensionsByName?: Map<string, AIDenoiserExtension> })
+        .extensionsByName?.get('agora-extension-ai-denoiser');
 
-    if (denoiser) {
-      try {
+      if (denoiser) {
         logger.info('Initializing AI Denoiser', {
           component: 'VoiceService',
           action: 'createAudioTrack'
@@ -1295,17 +1310,17 @@ export class VoiceService {
           component: 'VoiceService',
           action: 'createAudioTrack'
         });
-      } catch (error) {
-        logger.error('Failed to initialize AI Denoiser', {
+      } else {
+        logger.info('AI Denoiser not available, using basic noise suppression', {
           component: 'VoiceService',
-          action: 'createAudioTrack',
-          metadata: { error }
+          action: 'createAudioTrack'
         });
       }
-    } else {
-      logger.info('AI Denoiser not available, using basic noise suppression', {
+    } catch (error) {
+      logger.error('Failed to initialize AI Denoiser, falling back to basic noise suppression', {
         component: 'VoiceService',
-        action: 'createAudioTrack'
+        action: 'createAudioTrack',
+        metadata: { error }
       });
     }
 
@@ -1315,8 +1330,17 @@ export class VoiceService {
   }
 
   private async initializeVAD(): Promise<void> {
+    // Only initialize VAD in browser environment
+    if (typeof window === 'undefined') {
+      logger.info('Skipping VAD initialization in non-browser environment');
+      return;
+    }
+
     try {
       logger.info('Initializing VAD');
+
+      // Dynamically import VAD only in browser environment
+      const VAD = await import('@ricky0123/vad-web');
 
       this.vad = await VAD.MicVAD.new({
         onSpeechStart: () => {
@@ -1333,10 +1357,11 @@ export class VoiceService {
         minSpeechFrames: 4, // Minimum frames of speech needed to trigger a speech event
       });
 
-      // Start VAD processing
-      await this.vad.start();
-
-      logger.info('VAD initialized successfully');
+      // Start VAD processing if initialization succeeded
+      if (this.vad) {
+        await this.vad.start();
+        logger.info('VAD initialized successfully');
+      }
     } catch (error) {
       logger.error('Failed to initialize VAD', {
         component: 'VoiceService',
@@ -1347,6 +1372,11 @@ export class VoiceService {
   }
 
   private updateVadHistory(isSpeaking: boolean): boolean {
+    // Skip VAD processing in non-browser environment
+    if (typeof window === 'undefined') {
+      return false;
+    }
+
     // Add current state to history
     this.vadSpeakingHistory.push(isSpeaking);
 
