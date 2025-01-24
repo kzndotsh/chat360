@@ -2,9 +2,9 @@ import type { VoiceMemberState, VoiceStatus } from '@/lib/types/party/member';
 import type { MicVAD } from '@ricky0123/vad-web';
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 import type { AIDenoiserExtension } from 'agora-extension-ai-denoiser';
+import type { IMicrophoneAudioTrack, IAgoraRTCClient } from 'agora-rtc-sdk-ng';
 
 import { AIDenoiserProcessorMode, AIDenoiserProcessorLevel } from 'agora-extension-ai-denoiser';
-import AgoraRTC, { IMicrophoneAudioTrack, IAgoraRTCClient } from 'agora-rtc-sdk-ng';
 
 import { VOICE_CONSTANTS } from '@/lib/constants/voice';
 import { logger } from '@/lib/logger';
@@ -75,16 +75,32 @@ export class VoiceService {
     });
   }
 
+  public static async createInstance(): Promise<VoiceService> {
+    // Skip initialization in non-browser environment
+    if (typeof window === 'undefined') {
+      return {} as VoiceService; // Return empty instance for SSR
+    }
+
+    if (!VoiceService.instance) {
+      // Dynamically import AgoraRTC only in browser environment
+      const AgoraRTC = (await import('agora-rtc-sdk-ng')).default;
+      const client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
+      VoiceService.instance = new VoiceService(client, supabase);
+    }
+    return VoiceService.instance;
+  }
+
   public static getInstance(client?: IAgoraRTCClient): VoiceService {
     // Skip initialization in non-browser environment
     if (typeof window === 'undefined') {
       return {} as VoiceService; // Return empty instance for SSR
     }
 
-    if (!VoiceService.instance && client) {
+    if (!VoiceService.instance) {
+      if (!client) {
+        throw new Error('Client is required for first initialization');
+      }
       VoiceService.instance = new VoiceService(client, supabase);
-    } else if (!VoiceService.instance) {
-      throw new Error('VoiceService not initialized with client');
     }
     return VoiceService.instance;
   }
@@ -1259,6 +1275,7 @@ export class VoiceService {
   private async createAudioTrack(): Promise<IMicrophoneAudioTrack> {
     // Skip WASM features in non-browser environment
     if (typeof window === 'undefined') {
+      const AgoraRTC = (await import('agora-rtc-sdk-ng')).default;
       return AgoraRTC.createMicrophoneAudioTrack({
         encoderConfig: VOICE_CONSTANTS.AUDIO_PROFILE,
         AEC: true,
@@ -1267,6 +1284,8 @@ export class VoiceService {
       });
     }
 
+    // Dynamically import AgoraRTC in browser environment
+    const AgoraRTC = (await import('agora-rtc-sdk-ng')).default;
     const track = await AgoraRTC.createMicrophoneAudioTrack({
       encoderConfig: VOICE_CONSTANTS.AUDIO_PROFILE,
       AEC: true, // Echo cancellation
