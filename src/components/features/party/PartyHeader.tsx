@@ -123,68 +123,69 @@ export function PartyHeader({ membersCount }: PartyHeaderProps) {
       role="banner"
     >
       <div className="flex w-full flex-col sm:flex-row">
-        <div className="order-2 flex h-[50px] flex-1 items-center justify-center sm:max-w-[400px] sm:justify-start bg-[#f7ffff] sm:order-1">
+        <div className="order-2 flex h-[50px] flex-1 items-center justify-center py-2 sm:py-0 sm:justify-start bg-[#f7ffff] sm:order-1">
           <div className="flex items-center gap-2 sm:pl-[30px]">
             <Chat360Icon className="h-14 w-14 text-[#282b2f] opacity-90" />
             <span className="text-2xl font-semibold text-[#282b2f]">Chat360 Party</span>
           </div>
         </div>
 
-        <div className="order-1 flex h-[80px] w-full flex-col gap-[1px] sm:h-[40px] sm:flex-row sm:gap-0 sm:order-2 sm:w-[360px]">
-            <div className="flex h-[40px] w-full sm:hidden">
-                <div className="flex-1">
-                    <HeaderButton
-                      icon={BiSolidBarChartAlt2}
-                      iconSize="w-7 h-7"
-                      width="w-full"
-                    />
-                </div>
-                <div className="flex-1">
-                    <HeaderButton
-                      icon={TbBrandX}
-                      iconSize="w-7 h-7"
-                      url="https://x.com/chat360fun"
-                      width="w-full"
-                    />
-                </div>
+        <div className="order-1 flex h-[80px] w-full flex-col gap-[1px] sm:h-[40px] sm:flex-row sm:gap-0 sm:order-2 sm:w-auto">
+          <div className="flex h-[40px] w-full sm:hidden">
+            <div className="flex-1">
+            <HeaderButton
+              icon={BiSolidBarChartAlt2}
+              iconSize="w-7 h-7"
+                width="w-full"
+            />
             </div>
+            <div className="flex-1">
+            <HeaderButton
+              icon={TbBrandX}
+              iconSize="w-7 h-7"
+              url="https://x.com/chat360fun"
+                width="w-full"
+            />
 
-            <div className="h-[40px] w-full sm:hidden">
-                <HeaderButton
-                  icon={UserIcon}
-                  iconSize="w-7 h-6"
-                  width="w-full"
-                >
-                  <span className="ml-2 truncate text-sm font-bold text-white opacity-90">
-                    {membersCount}
-                  </span>
-                </HeaderButton>
-            </div>
+          </div>
+          </div>
 
-            <div className="hidden sm:flex">
-                <HeaderButton
-                  icon={UserIcon}
-                  iconSize="w-7 h-6"
-                  width="w-[120px]"
-                >
-                  <span className="ml-2 truncate text-sm font-bold text-white opacity-90">
-                    {membersCount}
-                  </span>
-                </HeaderButton>
+          <div className="h-[40px] w-full sm:hidden">
+            <HeaderButton
+              icon={UserIcon}
+              iconSize="w-7 h-6"
+              width="w-full"
+            >
+              <span className="ml-2 truncate text-sm font-bold text-white opacity-90">
+                {membersCount}
+              </span>
+            </HeaderButton>
+        </div>
 
-                <HeaderButton
-                  icon={BiSolidBarChartAlt2}
-                  iconSize="w-7 h-7"
-                  width="w-[120px]"
-                />
+          <div className="hidden sm:flex">
+          <HeaderButton
+            icon={UserIcon}
+            iconSize="w-7 h-6"
+            width="w-[140px]"
+          >
+            <span className="ml-2 truncate text-sm font-bold text-white opacity-90">
+              {membersCount}
+            </span>
+          </HeaderButton>
 
-                <HeaderButton
-                  icon={TbBrandX}
-                  iconSize="w-7 h-7"
-                  url="https://x.com/chat360fun"
-                  width="w-[120px]"
-                />
-            </div>
+          <HeaderButton
+            icon={BiSolidBarChartAlt2}
+            iconSize="w-7 h-7"
+            width="w-[140px]"
+          />
+
+          <HeaderButton
+            icon={TbBrandX}
+            iconSize="w-7 h-7"
+            url="https://x.com/chat360fun"
+            width="w-[140px]"
+          />
+          </div>
         </div>
       </div>
 

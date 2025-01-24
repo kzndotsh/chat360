@@ -4,8 +4,6 @@ import type { PartyControlsProps } from '@/lib/types/components/props';
 
 import React from 'react';
 
-import { AVATARS } from '@/lib/constants';
-import { useFormStore } from '@/lib/stores/useFormStore';
 import { useModalStore } from '@/lib/stores/useModalStore';
 
 export function PartyControls({
@@ -19,7 +17,6 @@ export function PartyControls({
   onRequestMicrophonePermission,
 }: PartyControlsProps) {
   const showModal = useModalStore((state) => state.showModal);
-  const setFormData = useFormStore((state) => state.setFormData);
 
   const buttonClass = (isActive: boolean, isProcessing: boolean) =>
     `flex items-center gap-2 transition-opacity ${
@@ -32,12 +29,10 @@ export function PartyControls({
         {!currentUser && (
           <button
             onClick={() => {
-              const avatar = AVATARS[Math.floor(Math.random() * AVATARS.length)] ?? AVATARS[0]!;
-              setFormData({ avatar });
               showModal('join', {
                 name: '',
-                avatar,
-                game: 'Offline',
+                avatar: '',
+                game: '',
               });
             }}
 
