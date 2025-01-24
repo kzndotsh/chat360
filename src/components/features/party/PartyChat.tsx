@@ -12,6 +12,7 @@ import { ModalManager } from '@/components/features/modals/ModalManager';
 
 import { AVATARS } from '@/lib/constants';
 import { useParty } from '@/lib/contexts/partyContext';
+import { usePartyNotifications } from '@/lib/hooks/usePartyNotifications';
 import { logger } from '@/lib/logger';
 
 import Clock from './Clock';
@@ -80,6 +81,7 @@ const PartyActions = memo(() => {
 PartyActions.displayName = 'PartyActions';
 
 function PartyChat() {
+  usePartyNotifications();
   const { members, join, updateProfile } = useParty();
 
   const handleJoinParty = async (name: string, avatar: string, game: string) => {
@@ -122,11 +124,11 @@ function PartyChat() {
   };
 
   return (
-    <div className="flex min-h-screen w-full items-center justify-center p-2 md:p-4">
+    <div className="flex min-h-screen w-full items-center justify-center p-8 md:p-12">
       <div className="w-full max-w-full md:w-auto">
         <div className="flex flex-col">
           <TopBar />
-          <Card className="flex h-[calc(100vh-160px)] md:min-h-[500px] w-full min-w-[300px] md:min-w-[900px] flex-col rounded-none border-0 bg-[#dce4e7]">
+          <Card className="flex h-[600px] w-full min-w-[300px] md:min-w-[900px] flex-col rounded-none border-0 bg-[#dce4e7]">
             <PartyHeader membersCount={members.length} />
             <div className="overflow-y-auto bg-[#dce4e7]">
               <PartyContent />

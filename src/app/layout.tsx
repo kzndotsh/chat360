@@ -5,6 +5,9 @@ import type { Metadata } from 'next';
 
 import { ReactNode } from 'react';
 
+import { Toaster } from '@/components/ui/toaster';
+
+import { AgoraProvider } from '@/components/providers/AgoraProvider';
 import { ClientProviders } from '@/components/providers/ClientProviders';
 
 import '@/styles/globals.css';
@@ -123,7 +126,10 @@ export default function RootLayout({ children }: RootLayoutProps) {
         className="bg-black"
       >
         <div className="min-h-screen bg-black">
+          <AgoraProvider>
           <ClientProviders>{children}</ClientProviders>
+          </AgoraProvider>
+          <Toaster />
         </div>
       </body>
     </html>
