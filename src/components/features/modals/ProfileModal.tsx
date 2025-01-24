@@ -139,12 +139,12 @@ export function ProfileModal({ onSubmitAction, onCloseAction, initialData }: Pro
                     <FormLabel className="text-sm font-medium text-[#161718]">
                       Select Avatar
                     </FormLabel>
-                    <div className={`grid grid-cols-4 sm:grid-cols-5 gap-2 justify-items-center max-w-[280px] sm:max-w-full mx-auto ${
-                      form.formState.errors.avatar ? 'ring-2 ring-red-500 rounded-md p-2' : ''
+                    <div className={`grid grid-cols-4 gap-3 justify-items-center p-4 mx-auto ${
+                      form.formState.errors.avatar ? 'ring-2 ring-red-500 rounded-md' : ''
                     }`}>
                       {AVATARS.map((avatar, index) => (
                         <button
-                          className={`h-14 w-14 sm:h-12 sm:w-12 overflow-hidden rounded-md transition-all ${
+                          className={`h-16 w-16 overflow-hidden rounded-md transition-all ${
                             field.value === avatar
                               ? 'ring-[3px] ring-[#55b611]'
                               : 'hover:ring-2 hover:ring-[#55b611]/50'
@@ -159,9 +159,9 @@ export function ProfileModal({ onSubmitAction, onCloseAction, initialData }: Pro
                           <Image
                             alt={`Avatar ${index + 1}`}
                             className="h-full w-full object-cover"
-                            height={48}
+                            height={64}
                             src={avatar}
-                            width={48}
+                            width={64}
                           />
                         </button>
                       ))}
@@ -243,7 +243,7 @@ export function ProfileModal({ onSubmitAction, onCloseAction, initialData }: Pro
                 <button
                   onClick={onCloseAction}
 
-                  className="flex items-center gap-0 opacity-80 transition-opacity hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-50 sm:gap-2"
+                  className="flex items-center gap-2 opacity-80 transition-opacity hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={form.formState.isSubmitting}
                   type="button"
                 >
@@ -254,7 +254,7 @@ export function ProfileModal({ onSubmitAction, onCloseAction, initialData }: Pro
                 </button>
 
                 <button
-                  className="flex items-center gap-0 opacity-80 transition-opacity hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-50 sm:gap-2"
+                  className="flex items-center gap-2 opacity-80 transition-opacity hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={form.formState.isSubmitting || !form.formState.isValid}
                   type="submit"
                 >

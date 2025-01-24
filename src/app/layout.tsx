@@ -21,12 +21,6 @@ export const metadata: Metadata = {
     description: 'nostalgia, onchain.',
     images: [
       {
-        url: '/social-1920px-1080px.png',
-        width: 1920,
-        height: 1080,
-        alt: 'Chat360 - nostalgia, onchain.',
-      },
-      {
         url: '/social-1200px-630px.png',
         width: 1200,
         height: 630,
@@ -39,7 +33,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'Chat360',
     description: 'nostalgia, onchain.',
-    images: ['/social-1920px-1080px.png', '/social-1200px-630px.png'],
+    images: ['/social-1200px-630px.png'],
     creator: '@chat360fun',
   },
   icons: {

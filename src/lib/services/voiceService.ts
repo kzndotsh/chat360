@@ -104,6 +104,68 @@ export class VoiceService {
       const updatedMembers = new Set<string>();
       const now = Date.now();
 
+      // Handle local user's volume if we have an audio track
+      if (this.audioTrack && this.client.uid) {
+        const agoraUid = this.client.uid.toString();
+        const memberId = this.getMemberIdFromAgoraUid(agoraUid);
+        if (!memberId) return;
+
+        updatedMembers.add(memberId);
+        const currentState = this.memberVoiceStates.get(memberId);
+
+        // Get raw volume level (0-100) and normalize to 0-1
+        const rawLevel = this.audioTrack.getVolumeLevel();
+        const level = this.smoothVolume(rawLevel / 100);
+
+        // Log volume levels for debugging
+        logger.debug('Volume levels', {
+          component: 'VoiceService',
+          action: 'volume-indicator',
+          metadata: {
+            rawLevel,
+            normalizedLevel: level,
+            threshold: VOICE_CONSTANTS.SPEAKING_THRESHOLD,
+            holdThreshold: VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD
+          }
+        });
+
+        // Determine voice status based on volume level and previous state
+        let voice_status: VoiceStatus = this._isMuted ? 'muted' : 'silent';
+
+        if (!this._isMuted) {
+          if (level >= VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
+            voice_status = 'speaking';
+          } else if (
+            currentState?.voice_status === 'speaking' &&
+            level >= VOICE_CONSTANTS.SPEAKING_THRESHOLD / 2 &&
+            now - (currentState.timestamp || 0) < VOICE_CONSTANTS.SPEAKING_TIMEOUT
+          ) {
+            voice_status = 'speaking';
+          }
+        }
+
+        const voiceState: VoiceMemberState = {
+          id: memberId,
+          level,
+          voice_status,
+          muted: this._isMuted,
+          is_deafened: false,
+          agora_uid: agoraUid,
+          timestamp: now
+        };
+
+        // Only update state if there's a meaningful change
+        const shouldUpdate = !currentState ||
+          currentState.voice_status !== voice_status ||
+          currentState.muted !== this._isMuted ||
+          Math.abs(currentState.level - level) > (voice_status === 'speaking' ? 0.05 : VOICE_CONSTANTS.SPEAKING_THRESHOLD / 2);
+
+        if (shouldUpdate) {
+          this.memberVoiceStates.set(memberId, voiceState);
+          void this.broadcastVoiceUpdate(voiceState);
+        }
+      }
+
       // Handle remote users' volumes
       volumes.forEach((vol) => {
         const agoraUid = vol.uid.toString();
@@ -172,73 +234,6 @@ export class VoiceService {
           void this.broadcastVoiceUpdate(voiceState);
         }
       });
-
-      // Handle local user's volume if we have an audio track
-      if (this.audioTrack && this.client.uid) {
-        const agoraUid = this.client.uid.toString();
-        const memberId = this.getMemberIdFromAgoraUid(agoraUid);
-        if (!memberId) return;
-
-        updatedMembers.add(memberId);
-        const currentState = this.memberVoiceStates.get(memberId);
-
-        // Get raw volume level (0-100) and normalize to 0-1
-        const rawLevel = this.audioTrack.getVolumeLevel();
-        const level = this.smoothVolume(rawLevel / 100);
-
-        // Log volume levels for debugging
-        logger.debug('Volume levels', {
-          component: 'VoiceService',
-          action: 'volume-indicator',
-          metadata: {
-            rawLevel,
-            normalizedLevel: level,
-            threshold: VOICE_CONSTANTS.SPEAKING_THRESHOLD,
-            holdThreshold: VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD
-          }
-        });
-
-        // Determine voice status based on volume level and previous state
-        let voice_status: VoiceStatus = this._isMuted ? 'muted' : 'silent';
-
-        if (!this._isMuted) {
-          if (level >= VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
-            // Volume above main threshold - enter speaking state
-            voice_status = 'speaking';
-          } else if (
-            currentState?.voice_status === 'speaking' &&
-            level >= VOICE_CONSTANTS.SPEAKING_THRESHOLD / 2 &&
-            now - (currentState.timestamp || 0) < VOICE_CONSTANTS.SPEAKING_TIMEOUT
-          ) {
-            // Keep speaking state if:
-            // 1. Currently speaking
-            // 2. Volume above half threshold (to prevent flickering)
-            // 3. Within timeout window
-            voice_status = 'speaking';
-          }
-        }
-
-        const voiceState: VoiceMemberState = {
-          id: memberId,
-          level,
-          voice_status,
-          muted: this._isMuted,
-          is_deafened: false,
-          agora_uid: agoraUid,
-          timestamp: now
-        };
-
-        // Only update state if there's a meaningful change
-        const shouldUpdate = !currentState ||
-          currentState.voice_status !== voice_status ||
-          currentState.muted !== this._isMuted ||
-          Math.abs(currentState.level - level) > (voice_status === 'speaking' ? 0.05 : VOICE_CONSTANTS.SPEAKING_THRESHOLD / 2);
-
-        if (shouldUpdate) {
-          this.memberVoiceStates.set(memberId, voiceState);
-          void this.broadcastVoiceUpdate(voiceState);
-        }
-      }
 
       // Set silent state for members we haven't heard from
       Array.from(this.memberVoiceStates.entries()).forEach(([memberId, state]) => {
@@ -703,35 +698,65 @@ export class VoiceService {
     if (!this.audioTrack) return this._isMuted;
 
     try {
-        // Update audio track first to ensure hardware state change
+      const previousState = this._isMuted;
+      const now = Date.now();
+
+      // First update internal state
+      this._isMuted = !previousState;
+
+      // Create voice state update immediately to reflect UI change
+      const voiceState: VoiceMemberState = {
+        id: this.currentMemberId!,
+        level: 0,
+        voice_status: this._isMuted ? 'muted' : 'silent',
+        muted: this._isMuted,
+        is_deafened: false,
+        agora_uid: this.client.uid?.toString(),
+        timestamp: now
+      };
+
+      // Update state and broadcast immediately for responsive UI
+      this.memberVoiceStates.set(this.currentMemberId!, voiceState);
+      void this.broadcastVoiceUpdate(voiceState);
+
+      // Notify subscribers early
+      if (this.volumeCallback) {
+        this.volumeCallback(Array.from(this.memberVoiceStates.values()));
+      }
+
+      // Then handle audio track state
+      try {
         await this.audioTrack.setEnabled(!this._isMuted);
-
-        // Only update state after successful hardware change
-        this._isMuted = !this._isMuted;
-        const now = Date.now();
-
-        const voiceState: VoiceMemberState = {
-            id: this.currentMemberId!,
-            level: 0,
-            voice_status: this._isMuted ? 'muted' : 'silent',
-            muted: this._isMuted,
-            is_deafened: false,
-            agora_uid: this.client.uid?.toString(),
-            timestamp: now
-        };
-
-        // Batch state updates
-        this.memberVoiceStates.set(this.currentMemberId!, voiceState);
-        void this.broadcastVoiceUpdate(voiceState);
-
-        if (this.volumeCallback) {
-            this.volumeCallback(Array.from(this.memberVoiceStates.values()));
+      } catch (error) {
+        // If enabling fails, try to recover the audio track
+        if (!this._isMuted) {
+          logger.warn('Failed to enable audio track, attempting recovery', {
+            metadata: { error }
+          });
+          await this.recoverAudioTrack();
+        } else {
+          throw error;
         }
+      }
 
-        return this._isMuted;
+      logger.debug('Voice state updated after mute toggle', {
+        component: 'VoiceService',
+        action: 'toggleMute',
+        metadata: {
+          wasMuted: previousState,
+          isMuted: this._isMuted,
+          voiceStatus: voiceState.voice_status,
+          level: 0,
+          audioTrackEnabled: !this._isMuted
+        }
+      });
+
+      return this._isMuted;
     } catch (error) {
-        logger.error('Toggle mute error', { metadata: { error } });
-        return this._isMuted;
+      logger.error('Toggle mute error', { metadata: { error } });
+      // Revert state on error
+      this._isMuted = !this._isMuted;
+      return this._isMuted;
     }
   }
 

@@ -42,15 +42,14 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
       // Get mute state from volumeState
       const isMuted = volumeState?.muted ?? false;
 
-      // Determine voice status with proper precedence
-      let voice_status: VoiceStatus = 'silent';
-      if (isMuted) {
+      // Use volume state's voice status as base, fallback to silent
+      let voice_status: VoiceStatus = volumeState?.voice_status ?? 'silent';
+
+      // Only override if conditions don't match the expected state
+      if (isMuted && voice_status !== 'muted') {
         voice_status = 'muted';
-      } else if (
-        volumeState?.voice_status === 'speaking' ||
-        (volumeState?.level != null && volumeState.level >= VOICE_CONSTANTS.SPEAKING_THRESHOLD)
-      ) {
-        voice_status = 'speaking';
+      } else if (!isMuted && voice_status === 'muted') {
+        voice_status = 'silent';
       }
 
       // Log state changes for debugging

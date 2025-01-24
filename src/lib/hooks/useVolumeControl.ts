@@ -79,11 +79,13 @@ export function useVolumeControl() {
                 return Math.abs(prev.level - curr.level) <
                   (curr.voice_status === 'speaking' ? 0.05 : VOICE_CONSTANTS.SPEAKING_THRESHOLD / 2);
               }),
-              filter((state: VoiceUpdate) =>
-                state.muted ||
-                state.voice_status === 'speaking' ||
-                state.level >= VOICE_CONSTANTS.SPEAKING_THRESHOLD / 4
-              )
+              filter((state: VoiceUpdate) => {
+                const prevState = stateCache.current.get(state.id);
+                return state.muted ||
+                       prevState?.muted || // Allow unmute transitions
+                       state.voice_status === 'speaking' ||
+                       state.level >= VOICE_CONSTANTS.SPEAKING_THRESHOLD / 4;
+              })
             )
           ),
           share(),
@@ -112,7 +114,9 @@ export function useVolumeControl() {
         // Optimized volume change handler
         voiceService.onVolumeChange((volumes) => {
           volumes.forEach(vol => {
-            if (vol.muted || vol.level >= VOICE_CONSTANTS.SPEAKING_THRESHOLD / 4) {
+            const prevState = localStateCache.get(vol.id);
+            if (vol.muted !== prevState?.muted || // Always send mute state changes
+                vol.level >= VOICE_CONSTANTS.SPEAKING_THRESHOLD / 4) {
               localVolumeSubject.next(vol);
             }
           });
