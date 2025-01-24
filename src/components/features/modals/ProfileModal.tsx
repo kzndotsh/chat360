@@ -91,9 +91,9 @@ export function ProfileModal({ onSubmitAction, onCloseAction, initialData }: Pro
 
   return (
     <BaseModal onCloseAction={onCloseAction}>
-      <div className="min-h-[520px] w-[480px] rounded-lg bg-white p-6 shadow-xl">
+      <div className="min-h-[520px] w-[90vw] sm:w-[480px] rounded-lg bg-white p-4 sm:p-6 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-xl font-bold text-[#161718]">
+          <h2 className="text-lg sm:text-xl font-bold text-[#161718]">
             {initialData ? 'Edit Profile' : 'Join Party'}
           </h2>
         </div>
@@ -104,7 +104,7 @@ export function ProfileModal({ onSubmitAction, onCloseAction, initialData }: Pro
 
             className="flex h-full flex-col"
           >
-            <div className="flex-1 space-y-8">
+            <div className="flex-1 space-y-6 sm:space-y-8">
               <FormField
                 render={({ field }) => (
                   <FormItem>
@@ -132,10 +132,10 @@ export function ProfileModal({ onSubmitAction, onCloseAction, initialData }: Pro
                     <FormLabel className="text-sm font-medium text-[#161718]">
                       Select Avatar
                     </FormLabel>
-                    <div className="grid grid-cols-5 gap-2">
+                    <div className="grid grid-cols-4 sm:grid-cols-5 gap-2 justify-items-center max-w-[280px] sm:max-w-full mx-auto">
                       {AVATARS.map((avatar, index) => (
                         <button
-                          className={`h-12 w-12 overflow-hidden rounded-md transition-all ${
+                          className={`h-14 w-14 sm:h-12 sm:w-12 overflow-hidden rounded-md transition-all ${
                             field.value === avatar
                               ? 'ring-[3px] ring-[#55b611]'
                               : 'hover:ring-2 hover:ring-[#55b611]/50'
@@ -227,7 +227,7 @@ export function ProfileModal({ onSubmitAction, onCloseAction, initialData }: Pro
                 </div>
               )}
 
-              <div className="mt-12 flex items-center justify-between">
+              <div className="mt-8 sm:mt-12 flex items-center justify-between">
                 <button
                   onClick={onCloseAction}
 

@@ -30,7 +30,7 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
     if (!members.length) {
       return (
         <div className="flex h-full items-center justify-center">
-          <span className="p-10 text-base text-[#282b2f]">No members in party</span>
+          <span className="p-10 text-base text-[#282b2f]">nostalgia, onchain.</span>
         </div>
       );
     }
