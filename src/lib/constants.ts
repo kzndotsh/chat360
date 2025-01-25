@@ -43,6 +43,7 @@ const AVATARS = [
   'https://i.imgur.com/KACYo9j.png',
   'https://i.imgur.com/toyTkGS.png',
   'https://i.imgur.com/fQ79yoT.png',
+  'https://i.imgur.com/hfZ3u90.jpeg'
 ];
 
 // Party constants
