@@ -54,14 +54,6 @@ const nextConfig: NextConfig = {
             to: '../public/[name][ext]',
           },
           {
-            from: 'node_modules/@ricky0123/vad-web/dist/vad.worklet.bundle.min.js',
-            to: '../public/[name][ext]',
-          },
-          {
-            from: 'node_modules/@ricky0123/vad-web/dist/*.onnx',
-            to: '../public/[name][ext]',
-          },
-          {
             from: 'node_modules/agora-extension-ai-denoiser/external/*.wasm',
             to: '../public/external/[name][ext]',
           },
