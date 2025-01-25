@@ -77,22 +77,31 @@ export class VoiceService {
 
   public static async createInstance(): Promise<VoiceService> {
     // Skip initialization in non-browser environment
-    if (typeof window === 'undefined') {
+    if (typeof window === 'undefined' || typeof self === 'undefined') {
       return {} as VoiceService; // Return empty instance for SSR
     }
 
     if (!VoiceService.instance) {
-      // Dynamically import AgoraRTC only in browser environment
-      const AgoraRTC = (await import('agora-rtc-sdk-ng')).default;
-      const client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
-      VoiceService.instance = new VoiceService(client, supabase);
+      try {
+        // Dynamically import AgoraRTC only in browser environment
+        const AgoraRTC = (await import('agora-rtc-sdk-ng')).default;
+        const client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
+        VoiceService.instance = new VoiceService(client, supabase);
+      } catch (error) {
+        logger.error('Failed to initialize VoiceService', {
+          component: 'VoiceService',
+          action: 'createInstance',
+          metadata: { error }
+        });
+        return {} as VoiceService; // Return empty instance if initialization fails
+      }
     }
     return VoiceService.instance;
   }
 
   public static getInstance(client?: IAgoraRTCClient): VoiceService {
     // Skip initialization in non-browser environment
-    if (typeof window === 'undefined') {
+    if (typeof window === 'undefined' || typeof self === 'undefined') {
       return {} as VoiceService; // Return empty instance for SSR
     }
 
@@ -1274,91 +1283,95 @@ export class VoiceService {
 
   private async createAudioTrack(): Promise<IMicrophoneAudioTrack> {
     // Skip WASM features in non-browser environment
-    if (typeof window === 'undefined') {
-      const AgoraRTC = (await import('agora-rtc-sdk-ng')).default;
-      return AgoraRTC.createMicrophoneAudioTrack({
-        encoderConfig: VOICE_CONSTANTS.AUDIO_PROFILE,
-        AEC: true,
-        AGC: false,
-        ANS: true,
-      });
+    if (typeof window === 'undefined' || typeof self === 'undefined') {
+      logger.info('Skipping audio track creation in non-browser environment');
+      throw new Error('Cannot create audio track in non-browser environment');
     }
 
-    // Dynamically import AgoraRTC in browser environment
-    const AgoraRTC = await import('agora-rtc-sdk-ng').then(mod => mod.default).catch(error => {
-      logger.error('Failed to import AgoraRTC', {
+    try {
+      // Dynamically import AgoraRTC in browser environment
+      const AgoraRTC = await import('agora-rtc-sdk-ng').then(mod => mod.default).catch(error => {
+        logger.error('Failed to import AgoraRTC', {
+          component: 'VoiceService',
+          action: 'createAudioTrack',
+          metadata: { error }
+        });
+        throw error;
+      });
+
+      const track = await AgoraRTC.createMicrophoneAudioTrack({
+        encoderConfig: VOICE_CONSTANTS.AUDIO_PROFILE,
+        AEC: true, // Echo cancellation
+        AGC: false, // Auto gain control
+        ANS: true, // Basic noise suppression
+      });
+
+      try {
+        // Dynamically load AI Denoiser in browser environment
+        const denoiser = (AgoraRTC as { extensionsByName?: Map<string, AIDenoiserExtension> })
+          .extensionsByName?.get('agora-extension-ai-denoiser');
+
+        if (denoiser) {
+          logger.info('Initializing AI Denoiser', {
+            component: 'VoiceService',
+            action: 'createAudioTrack'
+          });
+
+          // Create and configure processor
+          const processor = denoiser.createProcessor();
+          await processor.enable();
+
+          // Set noise suppression mode and level
+          await processor.setMode(AIDenoiserProcessorMode.NSNG);
+          await processor.setLevel(AIDenoiserProcessorLevel.SOFT);
+
+          // Handle overload events
+          processor.onoverload = async (elapsedTime: number) => {
+            logger.warn('AI Denoiser overloaded, switching to stationary mode', {
+              component: 'VoiceService',
+              action: 'createAudioTrack',
+              metadata: { elapsedTime }
+            });
+            await processor.setMode(AIDenoiserProcessorMode.STATIONARY_NS);
+          };
+
+          // Inject the processor into the audio pipeline
+          track.pipe(processor).pipe(track.processorDestination);
+
+          logger.info('AI Denoiser initialized successfully', {
+            component: 'VoiceService',
+            action: 'createAudioTrack'
+          });
+        } else {
+          logger.info('AI Denoiser not available, using basic noise suppression', {
+            component: 'VoiceService',
+            action: 'createAudioTrack'
+          });
+        }
+      } catch (error) {
+        logger.error('Failed to initialize AI Denoiser, falling back to basic noise suppression', {
+          component: 'VoiceService',
+          action: 'createAudioTrack',
+          metadata: { error }
+        });
+      }
+
+      // Set initial volume
+      await track.setVolume(100);
+      return track;
+    } catch (error) {
+      logger.error('Failed to create audio track', {
         component: 'VoiceService',
         action: 'createAudioTrack',
         metadata: { error }
       });
       throw error;
-    });
-
-    const track = await AgoraRTC.createMicrophoneAudioTrack({
-      encoderConfig: VOICE_CONSTANTS.AUDIO_PROFILE,
-      AEC: true, // Echo cancellation
-      AGC: false, // Auto gain control
-      ANS: true, // Basic noise suppression
-    });
-
-    try {
-      // Dynamically load AI Denoiser in browser environment
-      const denoiser = (AgoraRTC as { extensionsByName?: Map<string, AIDenoiserExtension> })
-        .extensionsByName?.get('agora-extension-ai-denoiser');
-
-      if (denoiser) {
-        logger.info('Initializing AI Denoiser', {
-          component: 'VoiceService',
-          action: 'createAudioTrack'
-        });
-
-        // Create and configure processor
-        const processor = denoiser.createProcessor();
-        await processor.enable();
-
-        // Set noise suppression mode and level
-        await processor.setMode(AIDenoiserProcessorMode.NSNG);
-        await processor.setLevel(AIDenoiserProcessorLevel.SOFT);
-
-        // Handle overload events
-        processor.onoverload = async (elapsedTime: number) => {
-          logger.warn('AI Denoiser overloaded, switching to stationary mode', {
-            component: 'VoiceService',
-            action: 'createAudioTrack',
-            metadata: { elapsedTime }
-          });
-          await processor.setMode(AIDenoiserProcessorMode.STATIONARY_NS);
-        };
-
-        // Inject the processor into the audio pipeline
-        track.pipe(processor).pipe(track.processorDestination);
-
-        logger.info('AI Denoiser initialized successfully', {
-          component: 'VoiceService',
-          action: 'createAudioTrack'
-        });
-      } else {
-        logger.info('AI Denoiser not available, using basic noise suppression', {
-          component: 'VoiceService',
-          action: 'createAudioTrack'
-        });
-      }
-    } catch (error) {
-      logger.error('Failed to initialize AI Denoiser, falling back to basic noise suppression', {
-        component: 'VoiceService',
-        action: 'createAudioTrack',
-        metadata: { error }
-      });
     }
-
-    // Set initial volume
-    await track.setVolume(100);
-    return track;
   }
 
   private async initializeVAD(): Promise<void> {
     // Skip VAD initialization in non-browser environment
-    if (typeof window === 'undefined') {
+    if (typeof window === 'undefined' || typeof self === 'undefined') {
       logger.info('Skipping VAD initialization in non-browser environment');
       return;
     }
@@ -1367,7 +1380,7 @@ export class VoiceService {
       logger.info('Initializing VAD');
 
       // Dynamically import VAD only in browser environment
-      const { MicVAD } = await import('@ricky0123/vad-web').catch(error => {
+      const { MicVAD } = await import('@ricky0123/vad-web').catch((error: Error) => {
         logger.error('Failed to import VAD module', {
           component: 'VoiceService',
           action: 'initializeVAD',
@@ -1394,12 +1407,28 @@ export class VoiceService {
           logger.warn('VAD misfire detected');
         },
         minSpeechFrames: 4,
+      }).catch((error: Error) => {
+        logger.error('Failed to initialize VAD instance', {
+          component: 'VoiceService',
+          action: 'initializeVAD',
+          metadata: { error }
+        });
+        return null;
       });
 
       // Start VAD processing if initialization succeeded
       if (this.vad) {
-        await this.vad.start();
-        logger.info('VAD initialized successfully');
+        try {
+          await this.vad.start();
+          logger.info('VAD initialized successfully');
+        } catch (error) {
+          logger.error('Failed to start VAD', {
+            component: 'VoiceService',
+            action: 'initializeVAD',
+            metadata: { error }
+          });
+          this.vad = null;
+        }
       }
     } catch (error) {
       logger.error('Failed to initialize VAD', {
@@ -1414,7 +1443,7 @@ export class VoiceService {
 
   private updateVadHistory(isSpeaking: boolean): boolean {
     // Skip VAD processing in non-browser environment
-    if (typeof window === 'undefined') {
+    if (typeof window === 'undefined' || typeof self === 'undefined') {
       return false;
     }
 
