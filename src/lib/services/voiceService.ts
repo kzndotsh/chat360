@@ -1285,7 +1285,15 @@ export class VoiceService {
     }
 
     // Dynamically import AgoraRTC in browser environment
-    const AgoraRTC = (await import('agora-rtc-sdk-ng')).default;
+    const AgoraRTC = await import('agora-rtc-sdk-ng').then(mod => mod.default).catch(error => {
+      logger.error('Failed to import AgoraRTC', {
+        component: 'VoiceService',
+        action: 'createAudioTrack',
+        metadata: { error }
+      });
+      throw error;
+    });
+
     const track = await AgoraRTC.createMicrophoneAudioTrack({
       encoderConfig: VOICE_CONSTANTS.AUDIO_PROFILE,
       AEC: true, // Echo cancellation
@@ -1350,7 +1358,7 @@ export class VoiceService {
 
   private async initializeVAD(): Promise<void> {
     // Skip VAD initialization in non-browser environment
-    if (typeof window === 'undefined' || typeof self === 'undefined') {
+    if (typeof window === 'undefined') {
       logger.info('Skipping VAD initialization in non-browser environment');
       return;
     }
@@ -1359,7 +1367,19 @@ export class VoiceService {
       logger.info('Initializing VAD');
 
       // Dynamically import VAD only in browser environment
-      const { MicVAD } = await import('@ricky0123/vad-web');
+      const { MicVAD } = await import('@ricky0123/vad-web').catch(error => {
+        logger.error('Failed to import VAD module', {
+          component: 'VoiceService',
+          action: 'initializeVAD',
+          metadata: { error }
+        });
+        return { MicVAD: null };
+      });
+
+      if (!MicVAD) {
+        logger.warn('VAD module not available');
+        return;
+      }
 
       this.vad = await MicVAD.new({
         onSpeechStart: () => {
@@ -1373,7 +1393,7 @@ export class VoiceService {
         onVADMisfire: () => {
           logger.warn('VAD misfire detected');
         },
-        minSpeechFrames: 4, // Minimum frames of speech needed to trigger a speech event
+        minSpeechFrames: 4,
       });
 
       // Start VAD processing if initialization succeeded
@@ -1394,7 +1414,7 @@ export class VoiceService {
 
   private updateVadHistory(isSpeaking: boolean): boolean {
     // Skip VAD processing in non-browser environment
-    if (typeof window === 'undefined' || typeof self === 'undefined') {
+    if (typeof window === 'undefined') {
       return false;
     }
 
