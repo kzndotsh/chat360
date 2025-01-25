@@ -908,29 +908,26 @@ export class PresenceService {
       agora_uid: member.agora_uid || existingMember?.agora_uid,
     });
 
+    // Preserve voice state from VoiceService if available
+    const voiceService = (await import('./voiceService')).VoiceService.getInstance();
+    const isMuted = member.id ? voiceService?.getMemberMuteState(member.id) : undefined;
+
     // Merge states while preserving important fields
     const updatedMember: PresenceMemberState = {
       ...trackedMember,
       ...member,
       status: member.status || existingMember?.status || 'active',
       voice_status: member.voice_status || existingMember?.voice_status || 'silent',
-      muted: member.muted ?? existingMember?.muted ?? false,
+      // Use VoiceService mute state if available, otherwise fallback to member state
+      muted: isMuted ?? member.muted ?? existingMember?.muted ?? false,
       is_deafened: member.is_deafened ?? existingMember?.is_deafened ?? false,
       level: member.level ?? existingMember?.level ?? 0,
       is_active: member.is_active ?? existingMember?.is_active ?? true,
       last_seen: member.last_seen || new Date().toISOString(),
     };
 
-    // Update member in map
+    // Update member state
     this.members.set(member.id, updatedMember);
-
-    // If this is current member, update current member state
-    if (this.currentMember && member.id === this.currentMember.id) {
-      this.currentMember = updatedMember;
-    }
-
-    // Clean up any persisted state
-    this.persistedMembers.delete(member.id);
 
     // Notify listeners of state change
     this.notifyListeners();

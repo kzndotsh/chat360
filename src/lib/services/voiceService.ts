@@ -146,37 +146,48 @@ export class VoiceService {
         await this.client.subscribe(user, mediaType);
 
         if (mediaType === 'audio') {
-          // Play the remote audio track
+          // Get member ID and check mute state before playing
+          const memberId = this.getMemberIdFromAgoraUid(user.uid.toString());
+          const isLocallyMuted = memberId ? this.memberMuteStates.get(memberId) || false : false;
+
+          // Always stop any existing audio track first to ensure clean state
           if (user.audioTrack) {
-            user.audioTrack.play();
+            user.audioTrack.stop();
+            user.audioTrack.setVolume(0);
 
-            logger.info('Remote user audio subscribed and playing', {
-              component: 'VoiceService',
-              action: 'userPublished',
-              metadata: {
-                userId: user.uid,
-                mediaType,
-                hasAudio: true,
-                audioLevel: user.audioTrack.getVolumeLevel(),
-              },
-            });
-
-            // Set initial voice state for remote user
-            const memberId = this.getMemberIdFromAgoraUid(user.uid.toString());
-            if (memberId) {
-              const voiceState: VoiceMemberState = {
-                id: memberId,
-                level: 0,
-                voice_status: 'silent',
-                muted: !user.hasAudio,
-                is_deafened: false,
-                agora_uid: user.uid.toString(),
-                timestamp: Date.now(),
-              };
-
-              this.memberVoiceStates.set(memberId, voiceState);
-              void this.broadcastVoiceUpdate(voiceState);
+            // Only play if the user is not muted locally and has audio enabled
+            if (!isLocallyMuted && user.hasAudio) {
+              user.audioTrack.setVolume(100);
+              user.audioTrack.play();
+              logger.info('Remote user audio playing', {
+                component: 'VoiceService',
+                action: 'userPublished',
+                metadata: { userId: user.uid, memberId, isLocallyMuted }
+              });
+            } else {
+              user.hasAudio = false;
+              logger.info('Remote user audio muted', {
+                component: 'VoiceService',
+                action: 'userPublished',
+                metadata: { userId: user.uid, memberId, isLocallyMuted }
+              });
             }
+          }
+
+          // Set initial voice state for remote user
+          if (memberId) {
+            const voiceState: VoiceMemberState = {
+              id: memberId,
+              level: 0,
+              voice_status: isLocallyMuted ? 'muted' : 'silent',
+              muted: isLocallyMuted || !user.hasAudio,
+              is_deafened: false,
+              agora_uid: user.uid.toString(),
+              timestamp: Date.now(),
+            };
+
+            this.memberVoiceStates.set(memberId, voiceState);
+            void this.broadcastVoiceUpdate(voiceState);
           }
         }
       } catch (error) {
@@ -190,10 +201,38 @@ export class VoiceService {
       try {
         if (mediaType === 'audio') {
           // Stop the remote audio track
-          user.audioTrack?.stop();
+          if (user.audioTrack) {
+            user.audioTrack.stop();
+            await this.client.unsubscribe(user, 'audio');
+          }
+          // Fully unsubscribe from the user
+          await this.client.unsubscribe(user);
+
+          // Update voice state if needed
+          const memberId = this.getMemberIdFromAgoraUid(user.uid.toString());
+          if (memberId) {
+            const currentState = this.memberVoiceStates.get(memberId);
+            if (currentState) {
+              const updatedState: VoiceMemberState = {
+                ...currentState,
+                level: 0,
+                voice_status: 'silent',
+                timestamp: Date.now()
+              };
+              this.memberVoiceStates.set(memberId, updatedState);
+              void this.broadcastVoiceUpdate(updatedState);
+            }
+          }
         }
-        await this.client.unsubscribe(user, mediaType);
-        logger.info('Unsubscribe success', { metadata: { userId: user.uid, mediaType } });
+        logger.info('Unsubscribe success', {
+          component: 'VoiceService',
+          action: 'userUnpublished',
+          metadata: {
+            userId: user.uid,
+            mediaType,
+            memberId: this.getMemberIdFromAgoraUid(user.uid.toString())
+          }
+        });
       } catch (error) {
         logger.error('Failed to unsubscribe from remote user', {
           metadata: { userId: user.uid, mediaType, error },
@@ -780,12 +819,13 @@ export class VoiceService {
           this.broadcastChannel = null;
         }
 
-        // Stop and unpublish all remote audio tracks
+        // Stop all remote audio tracks first
         if (this.client) {
           for (const user of this.client.remoteUsers) {
             try {
               if (user.audioTrack) {
                 user.audioTrack.stop();
+                await this.client.unsubscribe(user, 'audio');
               }
               await this.client.unsubscribe(user);
             } catch (error) {
@@ -804,6 +844,7 @@ export class VoiceService {
             // Ensure track is stopped and unpublished
             if (this.client) {
               try {
+                this.audioTrack.stop();
                 await this.client.unpublish(this.audioTrack);
               } catch (error) {
                 logger.warn('Error unpublishing audio track', {
@@ -1101,112 +1142,54 @@ export class VoiceService {
   }
 
   private handleVolumeUpdate(memberId: string, level: number, isMuted: boolean): void {
-    // Check if this member is muted by the local user - preserve this state
-    const isLocallyMuted = this.memberMuteStates.get(memberId) ?? false;
+    // Check if member is muted - if so, force level to 0
+    const isLocallyMuted = this.memberMuteStates.get(memberId) || false;
     if (isLocallyMuted) {
-      // If locally muted, always keep muted state regardless of incoming updates
-      const existingState = this.memberVoiceStates.get(memberId);
-      const voiceState: VoiceMemberState = {
-        id: memberId,
-        level: 0,
-        voice_status: 'muted',
-        muted: true,
-        is_deafened: false,
-        agora_uid: existingState?.agora_uid ?? this.getAgoraUidFromMemberId(memberId),
-        timestamp: Date.now(),
-      };
-
-      this.memberVoiceStates.set(memberId, voiceState);
-      void this.broadcastVoiceUpdate(voiceState);
-      if (this.volumeCallback) {
-        this.volumeCallback(Array.from(this.memberVoiceStates.values()));
-      }
-      return;
+      level = 0;
     }
 
-    // Skip processing if member is muted (but not locally)
-    if (isMuted || (memberId === this.currentMemberId && this._isMuted)) {
-      logger.debug('Member is muted, setting muted state', {
-        component: 'VoiceService',
-        action: 'handleVolumeUpdate',
-        metadata: {
-          memberId,
-          isMuted,
-          isCurrentUser: memberId === this.currentMemberId,
-          internalMuteState: this._isMuted,
-        },
-      });
-
-      // Get existing state to preserve agora_uid
-      const existingState = this.memberVoiceStates.get(memberId);
-      const voiceState: VoiceMemberState = {
-        id: memberId,
-        level: 0,
-        voice_status: 'muted',
-        muted: true,
-        is_deafened: false,
-        agora_uid: existingState?.agora_uid ?? this.getAgoraUidFromMemberId(memberId),
-        timestamp: Date.now(),
-      };
-
-      this.memberVoiceStates.set(memberId, voiceState);
-      void this.broadcastVoiceUpdate(voiceState);
-      if (this.volumeCallback) {
-        this.volumeCallback(Array.from(this.memberVoiceStates.values()));
-      }
-      return;
-    }
-
-    // Process volume for unmuted members (level is already 0-1)
-    const smoothedLevel = this.smoothVolume(level);
-    const isLoudEnough = smoothedLevel >= VOICE_CONSTANTS.SPEAKING_THRESHOLD;
+    const isCurrentUser = memberId === this.currentMemberId;
+    const rawLevel = level;
+    const smoothedLevel = isCurrentUser ? rawLevel : this.smoothVolume(rawLevel);
+    const isLoudEnough = smoothedLevel > VOICE_CONSTANTS.SPEAKING_THRESHOLD;
 
     logger.debug('Processing volume update', {
       component: 'VoiceService',
       action: 'handleVolumeUpdate',
       metadata: {
         memberId,
-        rawLevel: level,
+        rawLevel,
         smoothedLevel,
         isLoudEnough,
         speakingThreshold: VOICE_CONSTANTS.SPEAKING_THRESHOLD,
-        isCurrentUser: memberId === this.currentMemberId,
-        vadSpeaking: this.isVadSpeaking,
-      },
+        isCurrentUser,
+        vadSpeaking: this.isVadSpeaking
+      }
     });
 
-    // Determine voice status
-    let voice_status: VoiceStatus = 'silent';
-
-    // For local user, prioritize VAD results
-    if (memberId === this.currentMemberId) {
-      // Require both VAD and volume threshold for more strict detection
-      if (this.isVadSpeaking && smoothedLevel >= VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
-        voice_status = 'speaking';
-      }
-    } else {
-      // For remote users, use volume threshold only
-      if (isLoudEnough || smoothedLevel >= VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD) {
-        voice_status = 'speaking';
-      }
+    // Get or create voice state
+    let currentState = this.memberVoiceStates.get(memberId);
+    if (!currentState) {
+      currentState = {
+        id: memberId,
+        level: 0,
+        voice_status: isMuted ? 'muted' : 'silent',
+        muted: isMuted,
+        is_deafened: false,
+        agora_uid: this.getAgoraUidFromMemberId(memberId),
+        timestamp: Date.now()
+      };
+      this.memberVoiceStates.set(memberId, currentState);
     }
 
-    // Get existing state to preserve agora_uid
-    const existingState = this.memberVoiceStates.get(memberId);
-    const voiceState: VoiceMemberState = {
-      id: memberId,
-      level: smoothedLevel,
-      voice_status,
-      muted: false,
-      is_deafened: false,
-      agora_uid: existingState?.agora_uid ?? this.getAgoraUidFromMemberId(memberId),
-      timestamp: Date.now(),
-    };
+    // Determine new voice status
+    const oldState = currentState.voice_status;
+    const newState = isMuted ? 'muted' :
+                    isLoudEnough ? 'speaking' : 'silent';
 
-    // Always update state and broadcast if volume changes significantly or status changes
-    const currentState = this.memberVoiceStates.get(memberId);
-    const volumeChanged = !currentState || Math.abs(currentState.level - smoothedLevel) > 0.02;
-    const statusChanged = !currentState || currentState.voice_status !== voice_status;
+    // Update state if changed
+    const volumeChanged = Math.abs(currentState.level - smoothedLevel) > 0.01;
+    const statusChanged = oldState !== newState;
 
     if (volumeChanged || statusChanged) {
       logger.debug('Voice state changed', {
@@ -1214,21 +1197,31 @@ export class VoiceService {
         action: 'handleVolumeUpdate',
         metadata: {
           memberId,
-          oldState: currentState?.voice_status,
-          newState: voice_status,
+          oldState,
+          newState,
           level: smoothedLevel,
           isLoudEnough,
           volumeChanged,
           statusChanged,
-          vadSpeaking: memberId === this.currentMemberId ? this.isVadSpeaking : undefined,
-        },
+          vadSpeaking: this.isVadSpeaking
+        }
       });
 
-      this.memberVoiceStates.set(memberId, voiceState);
-      void this.broadcastVoiceUpdate(voiceState);
-      if (this.volumeCallback) {
-        this.volumeCallback(Array.from(this.memberVoiceStates.values()));
-      }
+      const updatedState: VoiceMemberState = {
+        ...currentState,
+        level: smoothedLevel,
+        voice_status: newState,
+        muted: isMuted,
+        timestamp: Date.now()
+      };
+
+      this.memberVoiceStates.set(memberId, updatedState);
+      void this.broadcastVoiceUpdate(updatedState);
+    }
+
+    // Notify volume callback if set
+    if (this.volumeCallback) {
+      this.volumeCallback(Array.from(this.memberVoiceStates.values()));
     }
   }
 
@@ -1384,12 +1377,14 @@ export class VoiceService {
         encoderConfig: {
           sampleRate: 48000,
           stereo: false,
-          bitrate: 64,
+          bitrate: 128,
         },
         // Only use echo cancellation when not using AI denoiser
-        AEC: !this.aiDenoiserProcessor,
+        // AEC: !this.aiDenoiserProcessor,
+        AEC: true,
         // Disable built-in noise suppression when using AI denoiser
-        ANS: !this.aiDenoiserProcessor,
+        // ANS: !this.aiDenoiserProcessor,
+        ANS: true,
         // Keep auto gain control enabled for consistent volume
         AGC: true,
       });
@@ -1592,15 +1587,40 @@ export class VoiceService {
     // Store the mute state for this member
     this.memberMuteStates.set(memberId, muted);
 
+    // Find the Agora user associated with this member
+    const agoraUid = this.getAgoraUidFromMemberId(memberId);
+    if (agoraUid) {
+      const user = this.client.remoteUsers.find(u => u.uid.toString() === agoraUid);
+      if (user?.audioTrack) {
+        if (muted) {
+          // When muting: First set volume to 0, then stop playback
+          await user.audioTrack.setVolume(0);
+          user.audioTrack.stop();
+          user.hasAudio = false;
+        } else {
+          // When unmuting: First mark as enabled, set volume, then play if needed
+          user.hasAudio = true;
+          await user.audioTrack.setVolume(100);
+          if (!user.audioTrack.isPlaying) {
+            user.audioTrack.play();
+          }
+        }
+      }
+    }
+
     // Get or create a voice state for this member
-    const currentState = this.memberVoiceStates.get(memberId);
+    let currentState = this.memberVoiceStates.get(memberId);
     if (!currentState) {
-      logger.warn('No current voice state found for member', {
-        component: 'VoiceService',
-        action: 'setMemberMuted',
-        metadata: { memberId },
-      });
-      return;
+      currentState = {
+        id: memberId,
+        level: 0,
+        voice_status: 'silent',
+        muted: false,
+        is_deafened: false,
+        agora_uid: agoraUid,
+        timestamp: Date.now(),
+      };
+      this.memberVoiceStates.set(memberId, currentState);
     }
 
     // Update the voice state with the new mute state
@@ -1608,51 +1628,18 @@ export class VoiceService {
       ...currentState,
       muted,
       level: muted ? 0 : currentState.level,
-      voice_status: muted
-        ? 'muted'
-        : currentState.level > VOICE_CONSTANTS.SPEAKING_THRESHOLD
-          ? 'speaking'
-          : 'silent',
+      voice_status: muted ? 'muted' : 'silent',
+      timestamp: Date.now(),
     };
 
-    // Update the state and broadcast
+    // Update local state
     this.memberVoiceStates.set(memberId, updatedState);
-    void this.broadcastVoiceUpdate(updatedState);
-    if (this.volumeCallback) {
-      this.volumeCallback(Array.from(this.memberVoiceStates.values()));
-    }
 
-    // Control remote audio stream by unsubscribing/subscribing
-    const agoraUid = this.getAgoraUidFromMemberId(memberId);
-    if (agoraUid) {
-      const remoteUser = this.client?.remoteUsers.find((user) => user.uid.toString() === agoraUid);
-      if (remoteUser) {
-        logger.debug('Setting remote user mute state', {
-          component: 'VoiceService',
-          action: 'toggleMemberMute',
-          metadata: { memberId, agoraUid, muted },
-        });
+    // Broadcast the update
+    await this.broadcastVoiceUpdate(updatedState);
+  }
 
-        try {
-          if (muted) {
-            // Unsubscribe from audio to mute
-            await this.client.unsubscribe(remoteUser, 'audio');
-          } else {
-            // Subscribe to audio to unmute
-            await this.client.subscribe(remoteUser, 'audio');
-            // Play the audio track after subscribing
-            if (remoteUser.audioTrack) {
-              remoteUser.audioTrack.play();
-            }
-          }
-        } catch (error) {
-          logger.error('Failed to control remote audio stream', {
-            component: 'VoiceService',
-            action: 'toggleMemberMute',
-            metadata: { memberId, agoraUid, muted, error },
-          });
-        }
-      }
-    }
+  public getMemberMuteState(memberId: string): boolean {
+    return this.memberMuteStates.get(memberId) || false;
   }
 }
