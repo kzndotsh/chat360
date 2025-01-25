@@ -598,7 +598,7 @@ export class VoiceService {
       return;
     }
 
-    // Check if this member is locally muted
+    // Check if this member is locally muted - this takes precedence over remote state
     const isLocallyMuted = this.memberMuteStates.get(update.id) ?? false;
 
     // For local user updates, ignore our own broadcasts to prevent feedback loops
@@ -614,7 +614,7 @@ export class VoiceService {
     // Get existing state to preserve agora_uid if needed
     const existingState = this.memberVoiceStates.get(update.id);
 
-    // If member is locally muted, override the incoming state but preserve other properties
+    // If member is locally muted, maintain muted state regardless of remote updates
     if (isLocallyMuted) {
       const voiceState: VoiceMemberState = {
         ...update, // Preserve all incoming properties
@@ -628,6 +628,15 @@ export class VoiceService {
       this.memberVoiceStates.set(update.id, voiceState);
       if (this.volumeCallback) {
         this.volumeCallback(Array.from(this.memberVoiceStates.values()));
+      }
+
+      // Ensure audio remains stopped for locally muted users
+      const agoraUid = this.getAgoraUidFromMemberId(update.id);
+      if (agoraUid) {
+        const remoteUser = this.client.remoteUsers.find(user => user.uid.toString() === agoraUid);
+        if (remoteUser?.audioTrack) {
+          remoteUser.audioTrack.stop();
+        }
       }
       return;
     }
@@ -1467,12 +1476,15 @@ export class VoiceService {
       return;
     }
 
-    // Find remote user
-    const remoteUser = this.client.remoteUsers.find(user => user.uid.toString() === agoraUid);
-
     try {
+      // Update local mute state first to prevent race conditions
+      this.memberMuteStates.set(memberId, newMuteState);
+
+      // Find remote user
+      const remoteUser = this.client.remoteUsers.find(user => user.uid.toString() === agoraUid);
+
       if (newMuteState) {
-        // Muting - always possible even if user not found
+        // Muting - always stop audio track first
         if (remoteUser?.audioTrack) {
           remoteUser.audioTrack.stop();
           await this.client.unsubscribe(remoteUser, 'audio');
@@ -1500,9 +1512,6 @@ export class VoiceService {
         }
       }
 
-      // Update local mute state
-      this.memberMuteStates.set(memberId, newMuteState);
-
       // Update local voice state
       const voiceState: VoiceMemberState = {
         id: memberId,
@@ -1516,7 +1525,7 @@ export class VoiceService {
 
       this.memberVoiceStates.set(memberId, voiceState);
 
-      // Update UI only for the local user
+      // Update UI
       if (this.volumeCallback) {
         this.volumeCallback(Array.from(this.memberVoiceStates.values()));
       }
