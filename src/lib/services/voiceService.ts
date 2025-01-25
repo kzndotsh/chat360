@@ -511,20 +511,18 @@ export class VoiceService {
       }
     });
 
-    // Ignore our own broadcasts to prevent feedback loops
-    if (update.source === 'local_broadcast') {
-      logger.debug('Ignoring own broadcast', {
-        component: 'VoiceService',
-        action: 'handleVoiceUpdate',
-        metadata: { update }
-      });
-      return;
-    }
-
-    // For local user, we should ONLY process our own updates
+    // For local user updates, ignore our own broadcasts to prevent feedback loops
     if (update.id === this.currentMemberId) {
+      if (update.source === 'local_broadcast') {
+        logger.debug('Ignoring own broadcast', {
+          component: 'VoiceService',
+          action: 'handleVoiceUpdate',
+          metadata: { update }
+        });
+        return;
+      }
+
       // Validate that this update came from our own client
-      // by checking if the agora_uid matches our current one
       const ourAgoraUid = this.client.uid?.toString();
       if (update.agora_uid !== ourAgoraUid) {
         logger.warn('Rejected voice update - unauthorized modification attempt', {
@@ -572,7 +570,8 @@ export class VoiceService {
       metadata: {
         memberId: update.id,
         newState: voiceState,
-        totalMembersTracked: this.memberVoiceStates.size
+        totalMembersTracked: this.memberVoiceStates.size,
+        isRemoteUser: update.id !== this.currentMemberId
       }
     });
 
@@ -1022,11 +1021,8 @@ export class VoiceService {
         component: 'VoiceService',
         action: 'setVolume',
         metadata: {
-          requestedVolume: volume,
-          agoraVolume,
-          currentVolume: this.audioTrack.getVolumeLevel(),
-          isMuted: this._isMuted,
-          audioTrackMuted: this.audioTrack.muted
+          volume,
+          agoraVolume
         }
       });
 
@@ -1172,13 +1168,8 @@ export class VoiceService {
         agora_uid: this.getAgoraUidFromMemberId(memberId),
         timestamp: Date.now()
       };
-
-      // Only update state if it's changed
-      const currentState = this.memberVoiceStates.get(memberId);
-      if (!currentState || currentState.voice_status !== 'muted') {
-        this.memberVoiceStates.set(memberId, voiceState);
-        void this.broadcastVoiceUpdate(voiceState);
-      }
+      this.memberVoiceStates.set(memberId, voiceState);
+      void this.broadcastVoiceUpdate(voiceState);
       return;
     }
 
@@ -1200,39 +1191,19 @@ export class VoiceService {
       }
     });
 
-    // Determine voice status using both VAD and volume level
+    // Determine voice status
     let voice_status: VoiceStatus = 'silent';
 
     // For local user, use VAD results
     if (memberId === this.currentMemberId) {
-      const vadSpeaking = this.updateVadHistory(this.isVadSpeaking);
-      voice_status = (isLoudEnough && vadSpeaking) ? 'speaking' : 'silent';
-
-      logger.debug('Local user voice status determined', {
-        component: 'VoiceService',
-        action: 'handleVolumeUpdate',
-        metadata: {
-          memberId,
-          voice_status,
-          isLoudEnough,
-          vadSpeaking,
-          smoothedLevel
-        }
-      });
+      if (isLoudEnough || this.isVadSpeaking) {
+        voice_status = 'speaking';
+      }
     } else {
-      // For remote users, fall back to just volume threshold
-      voice_status = isLoudEnough ? 'speaking' : 'silent';
-
-      logger.debug('Remote user voice status determined', {
-        component: 'VoiceService',
-        action: 'handleVolumeUpdate',
-        metadata: {
-          memberId,
-          voice_status,
-          isLoudEnough,
-          smoothedLevel
-        }
-      });
+      // For remote users, use volume threshold only
+      if (isLoudEnough) {
+        voice_status = 'speaking';
+      }
     }
 
     const voiceState: VoiceMemberState = {
@@ -1245,11 +1216,27 @@ export class VoiceService {
       timestamp: Date.now()
     };
 
-    // Only update and broadcast if state has changed meaningfully
+    // Always update state and broadcast if volume changes significantly
     const currentState = this.memberVoiceStates.get(memberId);
-    if (!currentState ||
-        currentState.voice_status !== voice_status ||
-        Math.abs(currentState.level - smoothedLevel) > 0.1) {
+    const volumeChanged = !currentState || Math.abs(currentState.level - smoothedLevel) > 0.05;
+    const statusChanged = !currentState || currentState.voice_status !== voice_status;
+
+    if (volumeChanged || statusChanged) {
+      logger.debug('Voice state changed', {
+        component: 'VoiceService',
+        action: 'handleVolumeUpdate',
+        metadata: {
+          memberId,
+          oldState: currentState?.voice_status,
+          newState: voice_status,
+          level: smoothedLevel,
+          isLoudEnough,
+          volumeChanged,
+          statusChanged,
+          vadSpeaking: memberId === this.currentMemberId ? this.isVadSpeaking : undefined
+        }
+      });
+
       this.memberVoiceStates.set(memberId, voiceState);
       void this.broadcastVoiceUpdate(voiceState);
     }
@@ -1370,17 +1357,36 @@ export class VoiceService {
 
       this.vad = await MicVAD.new({
         onSpeechStart: () => {
-          logger.debug('VAD speech start detected');
+          logger.debug('VAD speech start detected', {
+            component: 'VoiceService',
+            action: 'vadSpeechStart'
+          });
           this.isVadSpeaking = true;
         },
         onSpeechEnd: () => {
-          logger.debug('VAD speech end detected');
+          logger.debug('VAD speech end detected', {
+            component: 'VoiceService',
+            action: 'vadSpeechEnd'
+          });
           this.isVadSpeaking = false;
         },
         onVADMisfire: () => {
-          logger.warn('VAD misfire detected');
+          logger.warn('VAD misfire detected', {
+            component: 'VoiceService',
+            action: 'vadMisfire'
+          });
+          // Reset VAD state on misfire
+          this.isVadSpeaking = false;
+          this.vadSpeakingHistory = [];
         },
+        // Recommended settings from VAD docs
+        positiveSpeechThreshold: 0.5,
+        negativeSpeechThreshold: 0.35,
+        redemptionFrames: 8,
         minSpeechFrames: 4,
+        preSpeechPadFrames: 1,
+        // Use more frames for better accuracy
+        frameSamples: 1024
       }).catch((error: Error) => {
         logger.error('Failed to initialize VAD instance', {
           component: 'VoiceService',
