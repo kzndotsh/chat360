@@ -19,13 +19,10 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
     voice: { isMuted: storeIsMuted },
   } = usePartyStore();
 
-  const handleVolumeClick = useCallback(
+  const handleMemberMute = useCallback(
     async (memberId: string) => {
-      const voiceService = VoiceService.getInstance();
-      if (!voiceService) return;
-
-      const isMuted = volumeLevels[memberId]?.muted ?? false;
-      await voiceService.toggleMemberMute(memberId, !isMuted);
+      const voiceService = await VoiceService.createInstance();
+      await voiceService.toggleMemberMute(memberId);
     },
     [volumeLevels]
   );
@@ -100,7 +97,7 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
           <div className="flex w-[140px] items-center gap-1.5 sm:gap-2 md:w-[440px]">
             {/* Voice status with volume indicator */}
             <div
-              onClick={() => !isCurrentUser && handleVolumeClick(member.id)}
+              onClick={() => !isCurrentUser && handleMemberMute(member.id)}
 
               className="relative -ml-2 sm:-ml-5 cursor-pointer"
               title={isCurrentUser ? "Can't mute yourself" : isMuted ? 'Unmute user' : 'Mute user'}
@@ -151,7 +148,7 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
         </div>
       );
     });
-  }, [members, currentUserId, volumeLevels, storeIsMuted, handleVolumeClick]);
+  }, [members, currentUserId, volumeLevels, storeIsMuted, handleMemberMute]);
 
   return (
     <div className="flex h-full flex-col">
