@@ -7,6 +7,7 @@ export function usePartyNotifications() {
   const { toast } = useToast();
   const { members, currentMember } = useParty();
   const prevMembersRef = useRef<typeof members>([]);
+  const achievementShownRef = useRef<boolean>(false);
 
   useEffect(() => {
     // Get the set of member IDs from previous state
@@ -18,18 +19,22 @@ export function usePartyNotifications() {
       member.is_active &&
       member.status === 'active' &&
       // Must not be in previous state
-      !prevMemberIds.has(member.id) &&
-      // Must not be the current user
-      member.id !== currentMember?.id
+      !prevMemberIds.has(member.id)
     );
 
-    // Show notifications for new members
-    newMembers.forEach(member => {
-      toast({
-        description: `${member.name} has joined the party`,
-        duration: 2000,
-      });
-    });
+    // Show achievement only for current user's first join
+    if (currentMember &&
+        newMembers.some(m => m.id === currentMember.id) &&
+        !achievementShownRef.current) {
+      achievementShownRef.current = true;
+      // Small delay to ensure modal is closed
+      setTimeout(() => {
+        toast({
+          description: 'Achievement Unlocked: Joined the Party!',
+          duration: 2000,
+        });
+      }, 500);
+    }
 
     // Update previous members reference
     prevMembersRef.current = members;
