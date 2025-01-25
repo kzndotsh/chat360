@@ -1,13 +1,11 @@
 import type { VoiceMemberState, VoiceStatus } from '@/lib/types/party/member';
-import type { MicVAD } from '@ricky0123/vad-web';
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 import type { IMicrophoneAudioTrack, IAgoraRTCClient } from 'agora-rtc-sdk-ng';
 
 import { AIDenoiserExtension, AIDenoiserProcessorMode, AIDenoiserProcessorLevel, IAIDenoiserProcessor } from "agora-extension-ai-denoiser";
-import { VADExtension, IVADProcessor, VADResultMessageData } from "agora-extension-vad";
 import AgoraRTC from 'agora-rtc-sdk-ng';
 
-import { VOICE_CONSTANTS, VAD_CONFIG } from '@/lib/constants/voice';
+import { VOICE_CONSTANTS } from '@/lib/constants/voice';
 import { logger } from '@/lib/logger';
 import { PresenceService } from '@/lib/services/presenceService';
 import { supabase } from '@/lib/supabase';
@@ -48,30 +46,22 @@ export class VoiceService {
   private memberIdToAgoraUid: Map<string, string> = new Map();
   private agoraUidToMemberId: Map<string, string> = new Map();
   private currentMemberId: string | null = null;
-
-  // Add VAD-related properties
-  private vad: MicVAD | null = null;
-  private vadSpeakingHistory: boolean[] = [];
   private isVadSpeaking: boolean = false;
-
   private memberMuteStates: Map<string, boolean> = new Map();
-
   private aiDenoiserProcessor: IAIDenoiserProcessor | null = null;
-  private vadProcessor: IVADProcessor | null = null;
 
   constructor(client: IAgoraRTCClient, supabase: SupabaseClient) {
     this.client = client;
     this.supabase = supabase;
     this.setupEventHandlers();
     this.setupAIDenoiser();
-    this.setupVAD();
 
-    // Enable volume indicator with more frequent updates
-    // @ts-expect-error - I need to put something here for now.
+    // Enable volume indicator
+    // @ts-expect-error - Type definitions don't match Agora SDK's actual API
     this.client.enableAudioVolumeIndicator({
-      interval: 100,
+      interval: 200,
       smooth: 3,
-      enableVad: true,
+      enableVad: true
     });
 
     // Listen for client state changes
@@ -86,6 +76,27 @@ export class VoiceService {
       if (curState === 'CONNECTED' && this.client.uid && !this.broadcastChannel) {
         void this.initializeBroadcastChannel();
       }
+
+      // Synchronize member mappings on reconnection and connection
+      if (curState === 'CONNECTED') {
+        void this.synchronizeMemberMappings();
+      }
+    });
+
+    // Set up more frequent member mapping synchronization
+    setInterval(() => {
+      if (this._isJoined) {
+        void this.synchronizeMemberMappings();
+      }
+    }, 5000); // Check every 5 seconds instead of 30
+
+    // Additional sync when remote users change
+    this.client.on('user-joined', () => {
+      void this.synchronizeMemberMappings();
+    });
+
+    this.client.on('user-left', () => {
+      void this.synchronizeMemberMappings();
     });
   }
 
@@ -150,16 +161,105 @@ export class VoiceService {
     this.client.on('user-published', async (user, mediaType) => {
       try {
         if (mediaType === 'audio') {
-          // Get member ID and check mute state before subscribing
-          const memberId = this.getMemberIdFromAgoraUid(user.uid.toString());
-          const isLocallyMuted = memberId ? this.memberMuteStates.get(memberId) || false : false;
+          // Immediately sync mappings when a user publishes
+          await this.synchronizeMemberMappings();
 
-          // If user is muted, don't even subscribe to their audio
+          // Get member ID from presence service with retries
+          const maxRetries = 5; // Increased from 3
+          let member = null;
+          let retryCount = 0;
+
+          const findMember = async () => {
+            const presenceService = PresenceService.getInstance();
+            const members = presenceService.getMembers();
+
+            // First try to find by Agora UID
+            let found = members.find(m => m.agora_uid === user.uid.toString());
+
+            // If not found and we have an existing mapping, try that
+            if (!found) {
+              const existingMemberId = this.getMemberIdFromAgoraUid(user.uid.toString());
+              if (existingMemberId) {
+                found = members.find(m => m.id === existingMemberId);
+              }
+            }
+
+            return found;
+          };
+
+          while (!member && retryCount < maxRetries) {
+            member = await findMember();
+            if (!member) {
+              retryCount++;
+              if (retryCount < maxRetries) {
+                logger.debug('Retrying to find member for Agora UID', {
+                  component: 'VoiceService',
+                  action: 'userPublished',
+                  metadata: {
+                    attempt: retryCount,
+                    agoraUid: user.uid,
+                  }
+                });
+                // Exponential backoff with max of 2s
+                const delay = Math.min(Math.pow(2, retryCount) * 200, 2000);
+                await new Promise(resolve => setTimeout(resolve, delay));
+
+                // Try syncing again before next retry
+                await this.synchronizeMemberMappings();
+              }
+            }
+          }
+
+          if (!member) {
+            logger.warn('No member found for Agora UID after retries', {
+              component: 'VoiceService',
+              action: 'userPublished',
+              metadata: {
+                agoraUid: user.uid,
+                retryAttempts: retryCount,
+                availableMembers: PresenceService.getInstance().getMembers().map(m => ({
+                  id: m.id,
+                  agora_uid: m.agora_uid,
+                  currentMappings: {
+                    memberToUid: Array.from(this.memberIdToAgoraUid.entries()),
+                    uidToMember: Array.from(this.agoraUidToMemberId.entries())
+                  }
+                }))
+              }
+            });
+            return;
+          }
+
+          // Establish the mapping
+          this.setMemberMapping(member.id, user.uid);
+
+          // Verify mapping was established
+          const mappedMemberId = this.getMemberIdFromAgoraUid(user.uid.toString());
+          if (!mappedMemberId) {
+            logger.error('Failed to establish member mapping', {
+              component: 'VoiceService',
+              action: 'userPublished',
+              metadata: {
+                memberId: member.id,
+                agoraUid: user.uid,
+                currentMappings: {
+                  memberToUid: Array.from(this.memberIdToAgoraUid.entries()),
+                  uidToMember: Array.from(this.agoraUidToMemberId.entries())
+                }
+              }
+            });
+            return;
+          }
+
+          // Now check mute state
+          const isLocallyMuted = this.memberMuteStates.get(mappedMemberId) || false;
+
+          // If user is muted, don't subscribe to their audio
           if (isLocallyMuted) {
             logger.info('Skipping subscription for muted user', {
               component: 'VoiceService',
               action: 'userPublished',
-              metadata: { userId: user.uid, memberId }
+              metadata: { userId: user.uid, memberId: mappedMemberId }
             });
             return;
           }
@@ -172,32 +272,30 @@ export class VoiceService {
             user.audioTrack.stop();
             await user.audioTrack.setVolume(0);
 
-            // Play audio since we know they're not muted (we would have returned earlier if they were)
+            // Play audio since we know they're not muted
             await user.audioTrack.setVolume(100);
             user.audioTrack.play();
 
             logger.info('Playing remote user audio', {
               component: 'VoiceService',
               action: 'userPublished',
-              metadata: { userId: user.uid, memberId }
+              metadata: { userId: user.uid, memberId: mappedMemberId }
             });
           }
 
           // Set initial voice state for remote user
-          if (memberId) {
-            const voiceState: VoiceMemberState = {
-              id: memberId,
-              level: 0,
-              voice_status: isLocallyMuted ? 'muted' : 'silent',
-              muted: isLocallyMuted,
-              is_deafened: false,
-              agora_uid: user.uid.toString(),
-              timestamp: Date.now(),
-            };
+          const voiceState: VoiceMemberState = {
+            id: mappedMemberId,
+            level: 0,
+            voice_status: isLocallyMuted ? 'muted' : 'silent',
+            muted: isLocallyMuted,
+            is_deafened: false,
+            agora_uid: user.uid.toString(),
+            timestamp: Date.now(),
+          };
 
-            this.memberVoiceStates.set(memberId, voiceState);
-            void this.broadcastVoiceUpdate(voiceState);
-          }
+          this.memberVoiceStates.set(mappedMemberId, voiceState);
+          void this.broadcastVoiceUpdate(voiceState);
         }
       } catch (error) {
         logger.error('Failed to handle remote user publish', {
@@ -227,7 +325,16 @@ export class VoiceService {
       volumes.forEach((vol) => {
         const agoraUid = vol.uid.toString();
         const memberId = this.getMemberIdFromAgoraUid(agoraUid);
-        if (!memberId) return;
+
+        // Skip if no valid mapping exists
+        if (!memberId) {
+          logger.debug('Skipping volume update - no member mapping', {
+            component: 'VoiceService',
+            action: 'volumeIndicator',
+            metadata: { agoraUid },
+          });
+          return;
+        }
 
         const level = vol.level / 100; // Convert Agora's 0-100 level to 0-1
         const isMuted = this._isMuted && memberId === this.currentMemberId;
@@ -438,6 +545,24 @@ export class VoiceService {
     }
   }
 
+  private validateVoiceUpdate(update: VoiceUpdate): boolean {
+    // For local user updates
+    if (update.id === this.currentMemberId) {
+      const ourAgoraUid = this.client.uid?.toString();
+      return update.agora_uid === ourAgoraUid;
+    }
+
+    // For remote user updates, if we don't have a mapping yet, allow it to establish one
+    if (!this.memberIdToAgoraUid.has(update.id) && update.agora_uid) {
+      this.setMemberMapping(update.id, update.agora_uid);
+      return true;
+    }
+
+    // For existing mappings, verify they match
+    const mappedAgoraUid = this.getAgoraUidFromMemberId(update.id);
+    return mappedAgoraUid === update.agora_uid;
+  }
+
   private handleVoiceUpdate(update: VoiceUpdate) {
     logger.debug('Received voice update', {
       component: 'VoiceService',
@@ -451,47 +576,30 @@ export class VoiceService {
       },
     });
 
+    // Validate voice update
+    if (!this.validateVoiceUpdate(update)) {
+      logger.warn('Rejected voice update - unauthorized modification attempt', {
+        component: 'VoiceService',
+        action: 'handleVoiceUpdate',
+        metadata: {
+          updateAgoraUid: update.agora_uid,
+          memberId: update.id,
+        },
+      });
+      return;
+    }
+
     // Check if this member is locally muted
     const isLocallyMuted = this.memberMuteStates.get(update.id) ?? false;
 
     // For local user updates, ignore our own broadcasts to prevent feedback loops
-    if (update.id === this.currentMemberId) {
-      if (update.source === 'local_broadcast') {
-        logger.debug('Ignoring own broadcast', {
-          component: 'VoiceService',
-          action: 'handleVoiceUpdate',
-          metadata: { update },
-        });
-        return;
-      }
-
-      // Validate that this update came from our own client
-      const ourAgoraUid = this.client.uid?.toString();
-      if (update.agora_uid !== ourAgoraUid) {
-        logger.warn('Rejected voice update - unauthorized modification attempt', {
-          component: 'VoiceService',
-          action: 'handleVoiceUpdate',
-          metadata: {
-            updateAgoraUid: update.agora_uid,
-            ourAgoraUid,
-            memberId: update.id,
-          },
-        });
-        // Re-broadcast our current state to override the unauthorized update
-        if (this.audioTrack) {
-          const voiceState: VoiceMemberState = {
-            id: this.currentMemberId,
-            level: this.audioTrack.getVolumeLevel(),
-            voice_status: this._isMuted ? 'muted' : 'silent',
-            muted: this._isMuted,
-            is_deafened: false,
-            agora_uid: ourAgoraUid,
-            timestamp: Date.now(),
-          };
-          void this.broadcastVoiceUpdate(voiceState);
-        }
-        return;
-      }
+    if (update.id === this.currentMemberId && update.source === 'local_broadcast') {
+      logger.debug('Ignoring own broadcast', {
+        component: 'VoiceService',
+        action: 'handleVoiceUpdate',
+        metadata: { update },
+      });
+      return;
     }
 
     // Get existing state to preserve agora_uid if needed
@@ -662,9 +770,8 @@ export class VoiceService {
   public async join(channelName: string, memberId: string): Promise<void> {
     return this.withJoinMutex(async () => {
       try {
-        // Initialize VAD before joining
-        await this.initializeVAD();
-
+        // Clean up any existing mapping before joining
+        this.cleanupMemberMapping(memberId);
         this.currentMemberId = memberId;
 
         // Get token from backend with proper error handling
@@ -696,10 +803,8 @@ export class VoiceService {
         // Publish the audio track
         await this.client.publish(this.audioTrack);
 
-        // Map the Agora UID to member ID
-        const agoraUid = uid.toString();
-        this.memberIdToAgoraUid.set(memberId, agoraUid);
-        this.agoraUidToMemberId.set(agoraUid, memberId);
+        // Set up member mapping with new Agora UID
+        this.setMemberMapping(memberId, uid);
 
         // Set joined state before broadcasting initial state
         this._isJoined = true;
@@ -725,135 +830,51 @@ export class VoiceService {
           metadata: { channelName, memberId },
         });
       } catch (error) {
-        // Clean up VAD if join fails
-        if (this.vad) {
-          this.vad.pause();
-          this.vad = null;
-        }
+        // Clean up on error
+        this.cleanupMemberMapping(memberId);
         this._isJoined = false;
-        logger.error('Join error', { metadata: { error } });
         throw error;
       }
     });
   }
 
   public async leave(): Promise<void> {
-    return this.withJoinMutex(async () => {
-      logger.info('Leaving voice service');
+    if (!this._isJoined) return;
 
-      // Set joined state to false first to prevent any new operations
-      this._isJoined = false;
-
-      try {
-        // Stop VAD first to prevent any new voice updates
-        if (this.vad) {
-          try {
-            this.vad.pause();
-            this.vad = null;
-            this.vadSpeakingHistory = [];
-            this.isVadSpeaking = false;
-          } catch (error) {
-            logger.warn('Error stopping VAD', {
-              component: 'VoiceService',
-              action: 'leave',
-              metadata: { error },
-            });
-          }
-        }
-
-        // Clear voice state before cleaning up connections
-        this.memberVoiceStates.clear();
-        this.memberMuteStates.clear();
-        this.memberIdToAgoraUid.clear();
-        this.agoraUidToMemberId.clear();
-        this.currentMemberId = null;
-        this.volumeCallback = null;
-        this.lastVolume = 0;
-        this.lowAudioCount = 0;
-
-        // Clean up broadcast channel first
-        if (this.broadcastChannel) {
-          try {
-            await this.broadcastChannel.unsubscribe();
-          } catch (error) {
-            logger.warn('Error unsubscribing from broadcast channel', {
-              component: 'VoiceService',
-              action: 'leave',
-              metadata: { error },
-            });
-          }
-          this.broadcastChannel = null;
-        }
-
-        // Stop all remote audio tracks first
-        if (this.client) {
-          for (const user of this.client.remoteUsers) {
-            try {
-              if (user.audioTrack) {
-                user.audioTrack.stop();
-                await this.client.unsubscribe(user, 'audio');
-              }
-              await this.client.unsubscribe(user);
-            } catch (error) {
-              logger.warn('Error stopping remote audio track', {
-                component: 'VoiceService',
-                action: 'leave',
-                metadata: { userId: user.uid, error },
-              });
-            }
-          }
-        }
-
-        // Clean up local audio track
-        if (this.audioTrack) {
-          try {
-            // Ensure track is stopped and unpublished
-            if (this.client) {
-              try {
-                this.audioTrack.stop();
-                await this.client.unpublish(this.audioTrack);
-              } catch (error) {
-                logger.warn('Error unpublishing audio track', {
-                  component: 'VoiceService',
-                  action: 'leave',
-                  metadata: { error },
-                });
-              }
-            }
-            this.audioTrack.close();
-            this.audioTrack = null;
-          } catch (error) {
-            logger.warn('Error closing audio track', {
-              component: 'VoiceService',
-              action: 'leave',
-              metadata: { error },
-            });
-          }
-        }
-
-        // Leave the channel last
-        if (this.client) {
-          try {
-            await this.client.leave();
-          } catch (error) {
-            logger.warn('Error leaving channel', {
-              component: 'VoiceService',
-              action: 'leave',
-              metadata: { error },
-            });
-          }
-        }
-
-        logger.info('Left voice service successfully');
-      } catch (error) {
-        logger.error('Error during voice service cleanup', {
-          component: 'VoiceService',
-          action: 'leave',
-          metadata: { error },
-        });
-        throw error;
+    try {
+      // Clean up member mapping if we have a current member
+      if (this.currentMemberId) {
+        this.cleanupMemberMapping(this.currentMemberId);
       }
-    });
+
+      // Clean up audio track
+      if (this.audioTrack) {
+        this.audioTrack.stop();
+        this.audioTrack.close();
+        this.audioTrack = null;
+      }
+
+      // Leave the channel
+      await this.client.leave();
+
+      // Reset state
+      this._isJoined = false;
+      this.currentMemberId = null;
+      this.memberVoiceStates.clear();
+      this.memberMuteStates.clear();
+
+      logger.info('Left voice channel', {
+        component: 'VoiceService',
+        action: 'leave',
+      });
+    } catch (error) {
+      logger.error('Error leaving voice channel', {
+        component: 'VoiceService',
+        action: 'leave',
+        metadata: { error },
+      });
+      throw error;
+    }
   }
 
   public async toggleMute(): Promise<boolean> {
@@ -1098,13 +1119,181 @@ export class VoiceService {
     return this.lastVolume;
   }
 
-  private getMemberIdFromAgoraUid(agoraUid: number | string): string {
+  private async cleanupMemberMapping(memberId: string) {
+    const agoraUid = this.memberIdToAgoraUid.get(memberId);
+    if (agoraUid) {
+        // Clean up both mappings
+        this.memberIdToAgoraUid.delete(memberId);
+        this.agoraUidToMemberId.delete(agoraUid);
+
+        // Also cleanup voice states
+        this.memberVoiceStates.delete(memberId);
+        this.memberMuteStates.delete(memberId);
+
+        // If this was the current member, clear that too
+        if (memberId === this.currentMemberId) {
+            this.currentMemberId = null;
+        }
+
+        logger.debug('Cleaned up member mappings', {
+            component: 'VoiceService',
+            action: 'cleanupMemberMapping',
+            metadata: { memberId, agoraUid }
+        });
+    }
+  }
+
+  private setMemberMapping(memberId: string, agoraUid: number | string) {
+    // Clean up any existing mapping first
+    this.cleanupMemberMapping(memberId);
+
+    const uidStr = agoraUid.toString();
+
+    // Check for any existing reverse mapping conflicts
+    const existingMemberId = this.agoraUidToMemberId.get(uidStr);
+    if (existingMemberId && existingMemberId !== memberId) {
+        // Clean up the conflicting mapping
+        this.cleanupMemberMapping(existingMemberId);
+    }
+
+    this.memberIdToAgoraUid.set(memberId, uidStr);
+    this.agoraUidToMemberId.set(uidStr, memberId);
+
+    logger.debug('Set member mapping', {
+        component: 'VoiceService',
+        action: 'setMemberMapping',
+        metadata: { memberId, agoraUid: uidStr }
+    });
+  }
+
+  private async synchronizeMemberMappings() {
+    logger.debug('Starting member mapping synchronization', {
+      component: 'VoiceService',
+      action: 'synchronizeMemberMappings',
+      metadata: {
+        currentMappings: {
+          memberToUid: Object.fromEntries(this.memberIdToAgoraUid),
+          uidToMember: Object.fromEntries(this.agoraUidToMemberId)
+        }
+      }
+    });
+
+    try {
+      // Get current presence service data
+      const presenceService = PresenceService.getInstance();
+      const members = presenceService.getMembers();
+
+      // Get all remote users currently in the channel
+      const remoteUsers = this.client.remoteUsers;
+
+      // Create a set of valid Agora UIDs (including local user)
+      const validAgoraUids = new Set(
+        [this.client.uid?.toString()].concat(
+          remoteUsers.map(u => u.uid.toString())
+        ).filter(Boolean)
+      );
+
+      // First pass: establish mappings from presence service data
+      for (const member of members) {
+        if (member.agora_uid && validAgoraUids.has(member.agora_uid)) {
+          const currentUid = this.memberIdToAgoraUid.get(member.id);
+          if (currentUid !== member.agora_uid) {
+            this.setMemberMapping(member.id, member.agora_uid);
+          }
+        }
+      }
+
+      // Second pass: clean up any mappings for UIDs that are no longer in the channel
+      const currentUidMappings = Array.from(this.agoraUidToMemberId.entries());
+      for (const [agoraUid, memberId] of currentUidMappings) {
+        if (!validAgoraUids.has(agoraUid)) {
+          this.cleanupMemberMapping(memberId);
+        }
+      }
+
+      // Validate all current mappings
+      const currentMemberMappings = Array.from(this.memberIdToAgoraUid.entries());
+      for (const [memberId, agoraUid] of currentMemberMappings) {
+        const member = members.find(m => m.id === memberId);
+        if (!member || !validAgoraUids.has(agoraUid)) {
+          this.cleanupMemberMapping(memberId);
+        }
+      }
+
+      logger.debug('Completed member mapping synchronization', {
+        component: 'VoiceService',
+        action: 'synchronizeMemberMappings',
+        metadata: {
+          validAgoraUids: Array.from(validAgoraUids),
+          updatedMappings: {
+            memberToUid: Object.fromEntries(this.memberIdToAgoraUid),
+            uidToMember: Object.fromEntries(this.agoraUidToMemberId)
+          }
+        }
+      });
+    } catch (error) {
+      logger.error('Failed to synchronize member mappings', {
+        component: 'VoiceService',
+        action: 'synchronizeMemberMappings',
+        metadata: { error }
+      });
+    }
+  }
+
+  private getMemberIdFromAgoraUid(agoraUid: number | string): string | undefined {
     const uid = agoraUid.toString();
-    return this.agoraUidToMemberId.get(uid) || uid;
+    return this.agoraUidToMemberId.get(uid);
   }
 
   private getAgoraUidFromMemberId(memberId: string): string | undefined {
     return this.memberIdToAgoraUid.get(memberId);
+  }
+
+  private async setupAIDenoiser() {
+    try {
+      const extension = new AIDenoiserExtension({
+        assetsPath: '/external',
+      });
+
+      AgoraRTC.registerExtensions([extension]);
+
+      if (!extension.checkCompatibility()) {
+        logger.warn('AI Denoiser not supported on this browser', {
+          component: 'VoiceService',
+          action: 'setupAIDenoiser',
+        });
+        return;
+      }
+
+      const processor = extension.createProcessor();
+
+      if (!processor) {
+        logger.error('Failed to create AI Denoiser processor', {
+          component: 'VoiceService',
+          action: 'setupAIDenoiser',
+        });
+        return;
+      }
+
+      this.aiDenoiserProcessor = processor;
+
+      logger.info('AI Denoiser setup complete', {
+        component: 'VoiceService',
+        action: 'setupAIDenoiser',
+        metadata: {
+          processorCreated: true,
+          initialMode: 'NSNG',
+          initialLevel: 'AGGRESSIVE',
+        }
+      });
+
+    } catch (error) {
+      logger.error('Error setting up AI Denoiser', {
+        component: 'VoiceService',
+        action: 'setupAIDenoiser',
+        metadata: { error },
+      });
+    }
   }
 
   private handleVolumeUpdate(memberId: string, level: number, isMuted: boolean): void {
@@ -1191,149 +1380,6 @@ export class VoiceService {
     }
   }
 
-  private async withProcessorMutex<T>(operation: () => Promise<T>): Promise<T> {
-    const current = VoiceService.processorMutex;
-    let resolve: () => void;
-    VoiceService.processorMutex = new Promise<void>((r) => (resolve = r));
-    try {
-      await current;
-      return await operation();
-    } finally {
-      resolve!();
-    }
-  }
-
-  private isValidProcessor(
-    processor: unknown
-  ): processor is { enabled: boolean; disable: () => Promise<void> } {
-    return (
-      processor !== null &&
-      typeof processor === 'object' &&
-      'enabled' in processor &&
-      typeof (processor as { disable?: unknown }).disable === 'function'
-    );
-  }
-
-  private async setupAIDenoiser() {
-    try {
-      const extension = new AIDenoiserExtension({
-        assetsPath: '/external',
-      });
-
-      AgoraRTC.registerExtensions([extension]);
-
-      if (!extension.checkCompatibility()) {
-        logger.warn('AI Denoiser not supported on this browser', {
-          component: 'VoiceService',
-          action: 'setupAIDenoiser',
-        });
-        return;
-      }
-
-      const processor = extension.createProcessor();
-
-      if (!processor) {
-        logger.error('Failed to create AI Denoiser processor', {
-          component: 'VoiceService',
-          action: 'setupAIDenoiser',
-        });
-        return;
-      }
-
-      this.aiDenoiserProcessor = processor;
-
-      logger.info('AI Denoiser setup complete', {
-        component: 'VoiceService',
-        action: 'setupAIDenoiser',
-        metadata: {
-          processorCreated: true,
-          initialMode: 'NSNG',
-          initialLevel: 'AGGRESSIVE',
-        }
-      });
-
-    } catch (error) {
-      logger.error('Error setting up AI Denoiser', {
-        component: 'VoiceService',
-        action: 'setupAIDenoiser',
-        metadata: { error },
-      });
-    }
-  }
-
-  private async setupVAD() {
-    try {
-      // Create VAD extension instance
-      const extension = new VADExtension({
-        assetsPath: "/external/",
-      });
-
-      // Check compatibility
-      if (!extension.checkCompatibility()) {
-        logger.warn('VAD extension is not supported in this environment', {
-          component: 'VoiceService',
-          action: 'setupVAD',
-        });
-        return;
-      }
-
-
-      // Register extension
-      AgoraRTC.registerExtensions([extension]);
-
-      // Create processor
-      const processor = extension.createProcessor();
-      this.vadProcessor = processor;
-
-
-      // Handle processor overload
-      processor.on("overload", () => {
-        logger.warn('VAD processor overload detected', {
-          component: 'VoiceService',
-          action: 'setupVAD',
-        });
-      });
-      // Handle VAD results
-      processor.on("result", (result: VADResultMessageData) => {
-        const isVoiceProb = result.voiceProb > VOICE_CONSTANTS.SPEAKING_THRESHOLD;
-        const isNotMusic = result.musicProb < VOICE_CONSTANTS.MUSIC_THRESHOLD;
-        const isValidPitch = result.pitchFreq >= VOICE_CONSTANTS.MIN_PITCH_FREQ &&
-                           result.pitchFreq <= VOICE_CONSTANTS.MAX_PITCH_FREQ;
-
-        const isSpeaking = isVoiceProb && isNotMusic && isValidPitch;
-
-        if (this.isVadSpeaking !== isSpeaking) {
-          this.isVadSpeaking = isSpeaking;
-          logger.debug('VAD state changed', {
-            component: 'VoiceService',
-            action: 'vadResult',
-            metadata: {
-              isSpeaking,
-              voiceProb: result.voiceProb,
-              musicProb: result.musicProb,
-              pitchFreq: result.pitchFreq,
-              isVoiceProb,
-              isNotMusic,
-              isValidPitch,
-              threshold: VOICE_CONSTANTS.SPEAKING_THRESHOLD,
-              musicThreshold: VOICE_CONSTANTS.MUSIC_THRESHOLD,
-              minPitchFreq: VOICE_CONSTANTS.MIN_PITCH_FREQ,
-              maxPitchFreq: VOICE_CONSTANTS.MAX_PITCH_FREQ
-            },
-          });
-        }
-      });
-
-      logger.info('VAD setup complete');
-    } catch (error) {
-      logger.error('Failed to setup VAD', {
-        component: 'VoiceService',
-        action: 'setupVAD',
-        metadata: { error },
-      });
-    }
-  }
-
   private async createAudioTrack(): Promise<IMicrophoneAudioTrack> {
     let audioTrack: IMicrophoneAudioTrack | null = null;
 
@@ -1345,13 +1391,8 @@ export class VoiceService {
           stereo: false,
           bitrate: 128,
         },
-        // Only use echo cancellation when not using AI denoiser
-        // AEC: !this.aiDenoiserProcessor,
         AEC: true,
-        // Disable built-in noise suppression when using AI denoiser
-        // ANS: !this.aiDenoiserProcessor,
         ANS: true,
-        // Keep auto gain control enabled for consistent volume
         AGC: true,
       });
 
@@ -1364,25 +1405,11 @@ export class VoiceService {
         logger.info('AI Denoiser enabled for audio track');
       }
 
-      // Apply VAD if available
-      if (this.vadProcessor) {
-        if (this.aiDenoiserProcessor) {
-          // If AI Denoiser is active, chain VAD after it
-          this.aiDenoiserProcessor.pipe(this.vadProcessor);
-        } else {
-          // Otherwise pipe directly from audio track
-          audioTrack.pipe(this.vadProcessor).pipe(audioTrack.processorDestination);
-        }
-        await this.vadProcessor.enable();
-        logger.info('VAD enabled for audio track');
-      }
-
       logger.debug('Audio track created successfully', {
         component: 'VoiceService',
         action: 'createAudioTrack',
         metadata: {
           hasAudioTrack: true,
-          hasVAD: !!this.vadProcessor,
           hasAIDenoiser: !!this.aiDenoiserProcessor,
           noiseSuppressionMode: this.aiDenoiserProcessor ? 'AI_DENOISER' : 'BUILT_IN',
         },
@@ -1397,7 +1424,6 @@ export class VoiceService {
           errorMessage: error instanceof Error ? error.message : String(error),
           errorStack: error instanceof Error ? error.stack : undefined,
           hasAudioTrack: !!audioTrack,
-          hasVAD: !!this.vadProcessor,
           hasAIDenoiser: !!this.aiDenoiserProcessor,
         },
       });
@@ -1409,260 +1435,95 @@ export class VoiceService {
     }
   }
 
-  private async initializeVAD(): Promise<void> {
-    if (typeof window === 'undefined' || typeof self === 'undefined') {
-      logger.info('Skipping VAD initialization in non-browser environment');
-      return;
-    }
-
-    try {
-      const { MicVAD } = await import('@ricky0123/vad-web');
-
-      this.vad = await MicVAD.new({
-        onSpeechStart: () => {
-          this.isVadSpeaking = true;
-          logger.debug('VAD speech start detected', {
-            component: 'VoiceService',
-            action: 'vadSpeechStart',
-          });
-        },
-        onSpeechEnd: () => {
-          this.isVadSpeaking = false;
-          logger.debug('VAD speech end detected', {
-            component: 'VoiceService',
-            action: 'vadSpeechEnd',
-          });
-        },
-        onVADMisfire: () => {
-          logger.debug('VAD misfire detected', {
-            component: 'VoiceService',
-            action: 'vadMisfire',
-          });
-        },
-        // Use optimized VAD settings from Silero docs
-        frameSamples: VAD_CONFIG.FRAME_SAMPLES,
-        positiveSpeechThreshold: VAD_CONFIG.POSITIVE_SPEECH_THRESHOLD,
-        negativeSpeechThreshold: VAD_CONFIG.NEGATIVE_SPEECH_THRESHOLD,
-        redemptionFrames: VAD_CONFIG.REDEMPTION_FRAMES,
-        preSpeechPadFrames: VAD_CONFIG.PRE_SPEECH_PAD_FRAMES,
-        minSpeechFrames: VAD_CONFIG.MIN_SPEECH_FRAMES,
-      });
-
-      this.vad.start();
-
-      logger.info('VAD initialized successfully', {
-        component: 'VoiceService',
-        action: 'initializeVAD',
-      });
-    } catch (error) {
-      logger.error('Failed to initialize VAD', {
-        component: 'VoiceService',
-        action: 'initializeVAD',
-        metadata: { error },
-      });
-    }
+  public getMemberMuteState(memberId: string): boolean {
+    return this.memberMuteStates.get(memberId) || false;
   }
 
-  private updateVadHistory(isSpeaking: boolean): boolean {
-    // Skip VAD processing in non-browser environment
-    if (typeof window === 'undefined' || typeof self === 'undefined') {
-      return false;
-    }
+  public async toggleMemberMute(memberId: string): Promise<void> {
+    const currentState = this.memberMuteStates.get(memberId) || false;
+    const newMuteState = !currentState;
 
-    // Add current state to history
-    this.vadSpeakingHistory.push(isSpeaking);
-
-    // Keep only recent history
-    if (this.vadSpeakingHistory.length > VOICE_CONSTANTS.VAD_SPEAKING_HISTORY) {
-      this.vadSpeakingHistory.shift();
-    }
-
-    // Calculate ratio of speaking frames
-    const speakingFrames = this.vadSpeakingHistory.filter(Boolean).length;
-    const speakingRatio = speakingFrames / this.vadSpeakingHistory.length;
-
-    return speakingRatio >= VOICE_CONSTANTS.VAD_SPEAKING_RATIO_THRESHOLD;
-  }
-
-  private determineVoiceStatus(audioLevel: number): VoiceStatus {
-    if (this._isMuted) return 'muted';
-
-    // Use VAD to help filter out noise
-    const isVadConfidentSpeech = this.updateVadHistory(this.isVadSpeaking);
-
-    // Consider it speaking if either VAD or volume indicates clear speech
-    if (isVadConfidentSpeech || (audioLevel >= VOICE_CONSTANTS.SPEAKING_THRESHOLD * 1.2)) {
-      return 'speaking';
-    }
-
-    // If volume is moderate and VAD indicates speech, still consider it speaking
-    if (isVadConfidentSpeech && audioLevel >= VOICE_CONSTANTS.SPEAKING_THRESHOLD * 0.8) {
-      return 'speaking';
-    }
-
-    // If volume is very low, consider it silent
-    if (audioLevel < VOICE_CONSTANTS.SPEAKING_THRESHOLD * 0.3) {
-      return 'silent';
-    }
-
-    // Otherwise return silent
-    return 'silent';
-  }
-
-  private async vadSpeechStart() {
-    logger.debug('VAD speech start detected', {
-      component: 'VoiceService',
-      action: 'vadSpeechStart',
-    });
-    this.isVadSpeaking = true;
-
-    // Force a volume update to reflect the speaking state
-    if (this.currentMemberId && this.audioTrack) {
-      this.handleVolumeUpdate(
-        this.currentMemberId,
-        this.audioTrack.getVolumeLevel(),
-        this._isMuted
-      );
-    }
-  }
-
-  private async vadSpeechEnd() {
-    logger.debug('VAD speech end detected', {
-      component: 'VoiceService',
-      action: 'vadSpeechEnd',
-    });
-    this.isVadSpeaking = false;
-
-    // Force a volume update to reflect the silent state
-    if (this.currentMemberId && this.audioTrack) {
-      this.handleVolumeUpdate(
-        this.currentMemberId,
-        this.audioTrack.getVolumeLevel(),
-        this._isMuted
-      );
-    }
-  }
-
-  public async toggleMemberMute(memberId: string, muted: boolean) {
-    logger.debug('Toggling member mute state', {
-      component: 'VoiceService',
-      action: 'toggleMemberMute',
-      metadata: { memberId, muted },
-    });
-
-    // Store the mute state for this member
-    this.memberMuteStates.set(memberId, muted);
-
-    // Find the Agora user associated with this member
+    // Get Agora UID for this member
     const agoraUid = this.getAgoraUidFromMemberId(memberId);
     if (!agoraUid) {
       logger.warn('No Agora UID found for member', {
         component: 'VoiceService',
         action: 'toggleMemberMute',
-        metadata: { memberId, muted },
+        metadata: { memberId }
       });
       return;
     }
 
-    const user = this.client.remoteUsers.find(u => u.uid.toString() === agoraUid);
-    if (!user) {
-      logger.warn('No remote user found for Agora UID', {
+    // Find remote user
+    const remoteUser = this.client.remoteUsers.find(user => user.uid.toString() === agoraUid);
+    if (!remoteUser) {
+      logger.warn('Remote user not found', {
         component: 'VoiceService',
         action: 'toggleMemberMute',
-        metadata: { memberId, agoraUid, muted },
+        metadata: { memberId, agoraUid }
       });
       return;
     }
 
     try {
-      if (muted) {
-        // When muting: First stop playback, then unsubscribe
-        if (user.audioTrack) {
-          // Stop playback first
-          user.audioTrack.stop();
-          // Set volume to 0 as extra precaution
-          await user.audioTrack.setVolume(0);
-          // Unsubscribe from audio track
-          await this.client.unsubscribe(user, 'audio');
+      if (newMuteState) {
+        // Muting
+        if (remoteUser.audioTrack) {
+          remoteUser.audioTrack.stop();
+          await this.client.unsubscribe(remoteUser, 'audio');
         }
-
-        logger.info('Muted remote user audio', {
-          component: 'VoiceService',
-          action: 'toggleMemberMute',
-          metadata: { memberId, agoraUid },
-        });
       } else {
-        // When unmuting: First subscribe, verify track exists, then play
-        await this.client.subscribe(user, 'audio');
-
-        if (user.audioTrack) {
-          // Ensure track is stopped and volume is 0 before making changes
-          user.audioTrack.stop();
-          await user.audioTrack.setVolume(0);
-
-          // Check if track is actually playing before attempting to play
-          if (!user.audioTrack.isPlaying) {
-            // Set volume before playing to avoid audio spikes
-            await user.audioTrack.setVolume(100);
-            user.audioTrack.play();
-
-            logger.info('Unmuted and playing remote user audio', {
-              component: 'VoiceService',
-              action: 'toggleMemberMute',
-              metadata: { memberId, agoraUid },
-            });
-          } else {
-            logger.warn('Audio track already playing', {
-              component: 'VoiceService',
-              action: 'toggleMemberMute',
-              metadata: { memberId, agoraUid },
-            });
-          }
-        } else {
-          logger.warn('No audio track available after subscribe', {
-            component: 'VoiceService',
-            action: 'toggleMemberMute',
-            metadata: { memberId, agoraUid },
-          });
+        // Unmuting
+        await this.client.subscribe(remoteUser, 'audio');
+        if (remoteUser.audioTrack) {
+          remoteUser.audioTrack.play();
         }
       }
 
-      // Update voice state
-      const currentState = this.memberVoiceStates.get(memberId) || {
+      // Update mute state after successful audio operations
+      this.memberMuteStates.set(memberId, newMuteState);
+
+      // Update and broadcast state
+      const voiceState: VoiceMemberState = {
         id: memberId,
         level: 0,
-        voice_status: 'silent',
-        muted: false,
+        voice_status: newMuteState ? 'muted' : 'silent',
+        muted: newMuteState,
         is_deafened: false,
         agora_uid: agoraUid,
         timestamp: Date.now(),
       };
 
-      const updatedState: VoiceMemberState = {
-        ...currentState,
-        muted,
-        level: muted ? 0 : currentState.level,
-        voice_status: muted ? 'muted' : 'silent',
-        timestamp: Date.now(),
-      };
+      this.memberVoiceStates.set(memberId, voiceState);
 
-      // Update local state
-      this.memberVoiceStates.set(memberId, updatedState);
+      // Ensure UI is updated immediately
+      if (this.volumeCallback) {
+        this.volumeCallback(Array.from(this.memberVoiceStates.values()));
+      }
 
       // Broadcast the update
-      await this.broadcastVoiceUpdate(updatedState);
+      await this.broadcastVoiceUpdate(voiceState);
 
+      logger.debug('Member mute state toggled', {
+        component: 'VoiceService',
+        action: 'toggleMemberMute',
+        metadata: {
+          memberId,
+          agoraUid,
+          newMuteState,
+          hasAudioTrack: !!remoteUser.audioTrack
+        }
+      });
     } catch (error) {
       logger.error('Failed to toggle member mute state', {
         component: 'VoiceService',
         action: 'toggleMemberMute',
-        metadata: { memberId, muted, error },
+        metadata: { memberId, agoraUid, error }
       });
-      // Don't rethrow - we want to keep the mute state even if the audio operations fail
+      // Revert mute state on error
+      this.memberMuteStates.set(memberId, currentState);
+      throw error;
     }
   }
 
-  public getMemberMuteState(memberId: string): boolean {
-    return this.memberMuteStates.get(memberId) || false;
-  }
 }
