@@ -79,17 +79,17 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
     const setupVoiceService = async () => {
       // Skip in non-browser environment
       if (typeof window === 'undefined' || typeof self === 'undefined') {
-        return;
+        return () => {}; // Return no-op cleanup function
       }
 
       const client = await getClient();
-      if (!client) return;
+      if (!client) return () => {}; // Return no-op cleanup function
 
       try {
         // Dynamically import VoiceService
         const { VoiceService } = await import('@/lib/services/voiceService');
         const voiceService = VoiceService.getInstance(client);
-        if (!voiceService) return;
+        if (!voiceService) return () => {}; // Return no-op cleanup function
 
         const handleVolumeChange = (volumes: VoiceMemberState[]) => {
           volumes.forEach(vol => {
@@ -105,6 +105,7 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
           action: 'setupVoiceService',
           metadata: { error }
         });
+        return () => {}; // Return no-op cleanup function on error
       }
     };
 
