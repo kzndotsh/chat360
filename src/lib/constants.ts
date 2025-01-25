@@ -45,4 +45,7 @@ const AVATARS = [
   'https://i.imgur.com/fQ79yoT.png',
 ];
 
+// Party constants
+export const MAIN_PARTY_ID = '11111111-1111-1111-1111-111111111111';
+
 export { AVATARS, STATUSES, BACKGROUND_VIDEO_URL, INTRO_VIDEO_URL };

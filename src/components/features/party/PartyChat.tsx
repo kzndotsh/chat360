@@ -1,6 +1,6 @@
 'use client';
 
-import type { VoiceStatus } from '@/lib/types/party/member';
+import type { VoiceStatus, MemberStatus } from '@/lib/types/party/member';
 
 import React, { memo } from 'react';
 
@@ -70,6 +70,7 @@ function PartyChat() {
       created_at: new Date().toISOString(),
       last_seen: new Date().toISOString(),
       is_active: true,
+      status: 'active' as MemberStatus,
       voice_status: 'silent' as VoiceStatus,
       volumeLevel: 0,
       muted: false,

@@ -6,6 +6,7 @@ import type { PresenceServiceState } from '@/lib/types/party/service';
 import { useCallback, useEffect, useState } from 'react';
 
 import { PresenceService } from '@/lib/services/presenceService';
+import { usePartyStore } from '@/lib/stores/partyStore';
 
 type PresenceHookState = {
   currentMember: (PartyMember & Partial<VoiceMemberState>) | null;
@@ -77,17 +78,19 @@ export function usePresence(): PresenceHookState & {
 
   const cleanup = useCallback(async () => {
     const presenceService = PresenceService.getInstance();
+    const partyStore = usePartyStore.getState();
+
     try {
       await presenceService.cleanup();
-      // Reset state after cleanup
-      setMembers([]);
+      // Use the store's subscribeAsVisitor instead of direct service call
+      await partyStore.subscribeAsVisitor();
+      // Only clear current member and status, keep members list
       setCurrentMember(null);
       setStatus('idle');
-      setError(null); // Also reset any error state
+      setError(null);
     } catch (err) {
       setError(err instanceof Error ? err : new Error(String(err)));
       // Still reset state even if there was an error
-      setMembers([]);
       setCurrentMember(null);
       setStatus('idle');
     }

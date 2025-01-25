@@ -14,6 +14,35 @@ export const createPresenceMiddleware = (): StateCreator<Store, [], [], Presence
   // Store presence listener for cleanup
   let presenceListener: ((members: PartyMember[]) => void) | null = null;
 
+  // Set up presence listener to keep state in sync
+  const setupPresenceListener = () => {
+    // Remove existing listener first to prevent duplicates
+    if (presenceListener) {
+      presenceService.removeListener(presenceListener);
+      presenceListener = null;
+    }
+
+    // Create new listener
+    presenceListener = (members: PartyMember[]) => {
+      // Update state with new member list
+      set((state: Store) => ({
+        ...state,
+        presence: {
+          ...state.presence,
+          members: new Map(members.map(m => [m.id, m])),
+        },
+      }));
+
+      logger.debug('Presence listener updated state', {
+        action: 'presenceListener',
+        metadata: { memberCount: members.length },
+      });
+    };
+
+    // Register new listener
+    presenceService.addListener(presenceListener);
+  };
+
   return {
     // Initial presence state
     presence: {
@@ -52,36 +81,8 @@ export const createPresenceMiddleware = (): StateCreator<Store, [], [], Presence
           },
         }));
 
-        // Clean up any existing listener
-        if (presenceListener) {
-          presenceService.removeListener(presenceListener);
-        }
-
-        // Set up presence listener to keep state in sync
-        presenceListener = (members: PartyMember[]) => {
-          set((state: Store) => {
-            const currentMember = state.presence.currentMember;
-            if (!currentMember) return state;
-
-            // Create new members map
-            const membersMap = new Map(members.map((m) => [m.id, m]));
-
-            // Ensure current member is preserved
-            if (!membersMap.has(currentMember.id)) {
-              membersMap.set(currentMember.id, currentMember);
-            }
-
-            return {
-              ...state,
-              presence: {
-                ...state.presence,
-                members: membersMap,
-              },
-            };
-          });
-        };
-
-        presenceService.addListener(presenceListener);
+        // Set up presence listener
+        setupPresenceListener();
 
         logger.debug('Initialized presence', {
           action: 'initializePresence',
@@ -100,20 +101,41 @@ export const createPresenceMiddleware = (): StateCreator<Store, [], [], Presence
       }
     },
 
+    subscribeAsVisitor: async () => {
+      try {
+        // Subscribe to presence updates first
+        await PresenceService.subscribeAsVisitor();
+
+        // Set up presence listener after successful subscription
+        setupPresenceListener();
+
+        logger.debug('Subscribed as visitor', {
+          action: 'subscribeAsVisitor',
+        });
+      } catch (error) {
+        logger.error('Failed to subscribe as visitor', {
+          action: 'subscribeAsVisitor',
+          metadata: { error },
+        });
+        throw error;
+      }
+    },
+
     cleanupPresence: async () => {
       try {
-        // Remove presence listener first
+        // Remove presence listener first to prevent race conditions
         if (presenceListener) {
           presenceService.removeListener(presenceListener);
           presenceListener = null;
         }
 
+        // Cleanup presence service before state reset
         await presenceService.cleanup();
 
+        // Reset state after cleanup to ensure clean slate
         set((state: Store) => ({
           ...state,
           presence: {
-            ...state.presence,
             members: new Map(),
             currentMember: null,
             status: 'idle',

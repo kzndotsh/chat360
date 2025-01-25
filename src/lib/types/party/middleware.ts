@@ -66,5 +66,5 @@ export type PartySlice = Pick<
 // Presence middleware types
 export type PresenceSlice = Pick<
   Store,
-  'cleanupPresence' | 'initializePresence' | 'presence' | 'updatePresence'
+  'cleanupPresence' | 'initializePresence' | 'presence' | 'subscribeAsVisitor' | 'updatePresence'
 >;

@@ -111,9 +111,8 @@ export default function RootLayout({ children }: RootLayoutProps) {
       <body
         suppressHydrationWarning
 
-        className="bg-black"
       >
-        <div className="min-h-screen bg-black">
+        <div className="min-h-screen">
           <ClientLayout>{children}</ClientLayout>
         </div>
       </body>

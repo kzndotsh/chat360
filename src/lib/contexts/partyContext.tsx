@@ -55,6 +55,7 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
   } = usePartyStore();
 
   const [volumeLevels, setVolumeLevels] = useState<Record<string, VoiceMemberState>>({});
+  const [isSubscribed, setIsSubscribed] = useState(false);
 
   const { getClient } = useAgoraContext();
 
@@ -138,6 +139,32 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
 
     void setupVoiceService();
   }, [handleVolumeChange, getClient]);
+
+  // Subscribe as visitor if not joined
+  useEffect(() => {
+    const subscribeVisitor = async () => {
+      if (!currentMember && !isSubscribed) {
+        try {
+          const { subscribeAsVisitor } = usePartyStore.getState();
+          await subscribeAsVisitor();
+          setIsSubscribed(true);
+
+          logger.debug('Subscribed as visitor', {
+            component: 'PartyContext',
+            action: 'subscribeVisitor',
+          });
+        } catch (error) {
+          logger.error('Failed to subscribe as visitor', {
+            component: 'PartyContext',
+            action: 'subscribeVisitor',
+            metadata: { error },
+          });
+        }
+      }
+    };
+
+    void subscribeVisitor();
+  }, [currentMember, isSubscribed]);
 
   const { initializePresence, cleanupPresence, updatePresence } = usePartyStore();
 

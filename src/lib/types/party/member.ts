@@ -19,7 +19,9 @@ export interface PartyMember {
   is_active: boolean;
   last_seen: string;
   name: string;
+  status: MemberStatus;
   agora_uid?: string;
+  partyId?: string;  // Optional party ID for dynamic channel assignment
 }
 
 // Voice-specific member state
@@ -30,6 +32,15 @@ export interface VoiceMemberState {
   muted: boolean;
   voice_status: VoiceStatus;
   agora_uid?: string;
+  timestamp?: number;
+}
+
+// Combined presence member state
+export interface PresenceMemberState extends PartyMember {
+  is_deafened: boolean;
+  level: number;
+  muted: boolean;
+  voice_status: VoiceStatus;
   prev_state?: VoiceMemberState; // Previous state for hysteresis
   timestamp?: number; // Optional timestamp for tracking update order
 }
@@ -43,6 +54,8 @@ export function createPartyMember(data: Partial<PartyMember>): PartyMember {
     created_at: data.created_at || new Date().toISOString(),
     last_seen: data.last_seen || new Date().toISOString(),
     is_active: data.is_active ?? true,
+    status: data.status || 'active',
     agora_uid: data.agora_uid,
+    partyId: data.partyId,
   };
 }

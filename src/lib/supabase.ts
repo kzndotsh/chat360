@@ -19,48 +19,66 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
   realtime: {
     params: {
       log_level: 'debug',
-      eventsPerSecond: 100,
+      eventsPerSecond: 200,
     },
   },
 });
 
-// Connect immediately
-supabase.realtime.connect();
+// Don't connect immediately, let services manage their own connections
+// supabase.realtime.connect();
 
-// Simple connection check
+// Enhanced connection check with retry
 export const ensureRealtimeConnection = async () => {
   // If already connected, return immediately
   if (supabase.realtime.isConnected()) {
     return;
   }
 
-  // If not connected, try to connect
-  if (!supabase.realtime.isConnected()) {
-    logger.debug('Connecting to realtime service', {
-      component: 'SupabaseClient',
-    });
-    supabase.realtime.connect();
-  }
+  // If not connected, try to connect with retry
+  let retryCount = 0;
+  const maxRetries = 3;
+  const baseDelay = 1000;
 
-  // Wait for connection with a simple timeout
-  await new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(new Error('Connection timeout'));
-    }, 10000);
-
-    const checkConnection = () => {
-      if (supabase.realtime.isConnected()) {
-        clearTimeout(timeout);
-        logger.debug('Connected to realtime service', {
+  while (retryCount < maxRetries) {
+    try {
+      if (!supabase.realtime.isConnected()) {
+        logger.debug('Connecting to realtime service', {
           component: 'SupabaseClient',
-          metadata: { connectionState: 'connected' },
+          metadata: { retryCount },
         });
-        resolve();
-      } else {
-        setTimeout(checkConnection, 100);
+        supabase.realtime.connect();
       }
-    };
 
-    checkConnection();
-  });
+      // Wait for connection with timeout
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('Connection timeout'));
+        }, 10000);
+
+        const checkConnection = () => {
+          if (supabase.realtime.isConnected()) {
+            clearTimeout(timeout);
+            logger.debug('Connected to realtime service', {
+              component: 'SupabaseClient',
+              metadata: { connectionState: 'connected', retryCount },
+            });
+            resolve();
+          } else {
+            setTimeout(checkConnection, 100);
+          }
+        };
+
+        checkConnection();
+      });
+
+      return; // Connection successful
+    } catch (error) {
+      retryCount++;
+      if (retryCount === maxRetries) {
+        throw error;
+      }
+      // Wait with exponential backoff
+      await new Promise(resolve => setTimeout(resolve, Math.min(baseDelay * Math.pow(2, retryCount), 10000)));
+    }
+  }
 };

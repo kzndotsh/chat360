@@ -32,7 +32,12 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
 
   // Memoize member rendering to prevent unnecessary recalculations
   const renderedMembers = useMemo(() => {
-    if (!members.length) {
+    // Filter out inactive or left members
+    const activeMembers = members.filter(member =>
+      member.is_active && member.status !== 'left'
+    );
+
+    if (!activeMembers.length) {
       return (
         <div className="flex h-full items-center justify-center">
           <span className="p-10 text-base text-[#282b2f]">nostalgia, onchain.</span>
@@ -41,10 +46,20 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
     }
 
     // Sort members to ensure current user is first
-    const sortedMembers = [...members].sort((a, b) => {
+    const sortedMembers = [...activeMembers].sort((a, b) => {
       if (a.id === currentUserId) return -1;
       if (b.id === currentUserId) return 1;
       return 0;
+    });
+
+    logger.debug('Rendering member list', {
+      component: 'MemberList',
+      action: 'render',
+      metadata: {
+        totalMembers: members.length,
+        activeMembers: activeMembers.length,
+        sortedMembers,
+      },
     });
 
     return sortedMembers.map((member) => {
@@ -53,17 +68,18 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
       const isMuted = isCurrentUser ? storeIsMuted : (volumeState?.muted ?? false);
       const volumeLevel = volumeState?.level ?? 0;
 
-      // Log initial state for debugging
-      logger.debug('Processing member voice state', {
+      // Log member state for debugging
+      logger.debug('Processing member state', {
         component: 'MemberList',
-        action: 'processVoiceState',
+        action: 'processMemberState',
         metadata: {
           memberId: member.id,
           isCurrentUser,
           volumeLevel,
           isMuted,
           volumeState,
-          storeIsMuted: isCurrentUser ? storeIsMuted : undefined,
+          memberStatus: member.status,
+          isActive: member.is_active,
         },
       });
 
@@ -74,25 +90,6 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
       if (isMuted) {
         voice_status = 'muted';
       }
-
-      // Log final voice status
-      logger.debug('Final voice status determined', {
-        component: 'MemberList',
-        action: 'finalVoiceStatus',
-        metadata: {
-          memberId: member.id,
-          finalStatus: voice_status,
-          volumeLevel,
-          isMuted,
-          volumeState: volumeState
-            ? {
-                level: volumeState.level,
-                voice_status: volumeState.voice_status,
-                muted: volumeState.muted,
-              }
-            : 'none',
-        },
-      });
 
       return (
         <div

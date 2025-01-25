@@ -33,6 +33,7 @@ export interface Store {
   // Voice actions
   setVoiceStatus: (status: VoiceConnectionStatus) => void;
   setVolume: (volume: number) => void;
+  subscribeAsVisitor: () => Promise<void>;
   updatePresence: (updates: Partial<PartyMember>) => Promise<void>;
   updateRemoteUsers: (users: Set<string>) => void;
 }

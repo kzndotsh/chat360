@@ -670,18 +670,19 @@ export class VoiceService {
         // Initialize broadcast channel now that we have a valid UID
         await this.initializeBroadcastChannel();
 
-        // Set initial voice state and broadcast it
+        // Create initial state if none exists
         const initialState: VoiceMemberState = {
           id: memberId,
           level: 0,
           voice_status: 'silent',
           muted: false,
           is_deafened: false,
-          agora_uid: agoraUid,
+          agora_uid: this.getAgoraUidFromMemberId(memberId),
           timestamp: Date.now(),
         };
+
         this.memberVoiceStates.set(memberId, initialState);
-        await this.broadcastVoiceUpdate(initialState);
+        void this.broadcastVoiceUpdate(initialState);
 
         logger.info('Join channel success', {
           metadata: { channelName, memberId },
@@ -703,26 +704,36 @@ export class VoiceService {
     return this.withJoinMutex(async () => {
       logger.info('Leaving voice service');
 
-      // Stop VAD
-      if (this.vad) {
-        try {
-          this.vad.pause();
-          this.vad = null;
-          this.vadSpeakingHistory = [];
-          this.isVadSpeaking = false;
-        } catch (error) {
-          logger.warn('Error stopping VAD', {
-            component: 'VoiceService',
-            action: 'leave',
-            metadata: { error },
-          });
-        }
-      }
-
       // Set joined state to false first to prevent any new operations
       this._isJoined = false;
 
       try {
+        // Stop VAD first to prevent any new voice updates
+        if (this.vad) {
+          try {
+            this.vad.pause();
+            this.vad = null;
+            this.vadSpeakingHistory = [];
+            this.isVadSpeaking = false;
+          } catch (error) {
+            logger.warn('Error stopping VAD', {
+              component: 'VoiceService',
+              action: 'leave',
+              metadata: { error },
+            });
+          }
+        }
+
+        // Clear voice state before cleaning up connections
+        this.memberVoiceStates.clear();
+        this.memberMuteStates.clear();
+        this.memberIdToAgoraUid.clear();
+        this.agoraUidToMemberId.clear();
+        this.currentMemberId = null;
+        this.volumeCallback = null;
+        this.lastVolume = 0;
+        this.lowAudioCount = 0;
+
         // Clean up broadcast channel first
         if (this.broadcastChannel) {
           try {
@@ -781,7 +792,7 @@ export class VoiceService {
           }
         }
 
-        // Leave the channel
+        // Leave the channel last
         if (this.client) {
           try {
             await this.client.leave();
@@ -793,16 +804,6 @@ export class VoiceService {
             });
           }
         }
-
-        // Clear all state
-        this.memberVoiceStates.clear();
-        this.memberMuteStates.clear();
-        this.memberIdToAgoraUid.clear();
-        this.agoraUidToMemberId.clear();
-        this.currentMemberId = null;
-        this.volumeCallback = null;
-        this.lastVolume = 0;
-        this.lowAudioCount = 0;
 
         logger.info('Left voice service successfully');
       } catch (error) {
@@ -1415,23 +1416,14 @@ export class VoiceService {
     this.memberMuteStates.set(memberId, muted);
 
     // Get or create a voice state for this member
-    let currentState = this.memberVoiceStates.get(memberId);
+    const currentState = this.memberVoiceStates.get(memberId);
     if (!currentState) {
-      // Create initial state if none exists
-      currentState = {
-        id: memberId,
-        level: 0,
-        voice_status: 'silent',
-        muted: false,
-        is_deafened: false,
-        agora_uid: this.getAgoraUidFromMemberId(memberId),
-        timestamp: Date.now(),
-      };
-      logger.debug('Created initial voice state for member', {
+      logger.warn('No current voice state found for member', {
         component: 'VoiceService',
-        action: 'toggleMemberMute',
-        metadata: { memberId, initialState: currentState },
+        action: 'setMemberMuted',
+        metadata: { memberId },
       });
+      return;
     }
 
     // Update the voice state with the new mute state
