@@ -122,15 +122,37 @@ export class VoiceService {
 
         if (mediaType === 'audio') {
           // Play the remote audio track
-          user.audioTrack?.play();
+          if (user.audioTrack) {
+            user.audioTrack.play();
 
-          logger.info('Remote user audio subscribed and playing', {
-            metadata: {
-              userId: user.uid,
-              mediaType,
-              hasAudio: !!user.audioTrack
+            logger.info('Remote user audio subscribed and playing', {
+              component: 'VoiceService',
+              action: 'userPublished',
+              metadata: {
+                userId: user.uid,
+                mediaType,
+                hasAudio: true,
+                audioLevel: user.audioTrack.getVolumeLevel()
+              }
+            });
+
+            // Set initial voice state for remote user
+            const memberId = this.getMemberIdFromAgoraUid(user.uid.toString());
+            if (memberId) {
+              const voiceState: VoiceMemberState = {
+                id: memberId,
+                level: 0,
+                voice_status: 'silent',
+                muted: !user.hasAudio,
+                is_deafened: false,
+                agora_uid: user.uid.toString(),
+                timestamp: Date.now()
+              };
+
+              this.memberVoiceStates.set(memberId, voiceState);
+              void this.broadcastVoiceUpdate(voiceState);
             }
-          });
+          }
         }
       } catch (error) {
         logger.error('Failed to subscribe to remote user', {
@@ -156,7 +178,6 @@ export class VoiceService {
 
     // Volume indicator events will be enabled when joining
     this.client.on('volume-indicator', (volumes) => {
-      // Log the event first for debugging
       logger.debug('Volume indicator event received', {
         component: 'VoiceService',
         action: 'volumeIndicator',
@@ -165,135 +186,18 @@ export class VoiceService {
           isMuted: this._isMuted,
           audioTrackMuted: this.audioTrack?.muted,
           isJoined: this._isJoined,
-          volumes: volumes.map(v => ({ uid: v.uid, level: v.level }))
+          volumes
         }
       });
 
-      // Early return if not joined
-      if (!this._isJoined) {
-        logger.debug('Ignoring volume indicator - not joined', {
-          component: 'VoiceService',
-          action: 'volumeIndicator'
-        });
-        return;
-      }
+      // Process all volumes, including local and remote users
+      const volumeUpdates = new Map<string, number>();
 
-      // Handle local user's volume
-      if (this.audioTrack && this.client.uid) {
-        const agoraUid = this.client.uid.toString();
-        const memberId = this.getMemberIdFromAgoraUid(agoraUid);
-        if (memberId) {
-          // Skip volume updates if muted
-          if (this._isMuted) {
-            logger.debug('Skipping volume update for muted local user', {
-              component: 'VoiceService',
-              action: 'volumeIndicator',
-              metadata: {
-                memberId,
-                internalMuteState: this._isMuted,
-                audioTrackMuted: this.audioTrack.muted,
-                rawVolume: this.audioTrack.getVolumeLevel()
-              }
-            });
-            const voiceState: VoiceMemberState = {
-              id: memberId,
-              level: 0,
-              voice_status: 'muted',
-              muted: true,
-              is_deafened: false,
-              agora_uid: agoraUid,
-              timestamp: Date.now()
-            };
-            this.memberVoiceStates.set(memberId, voiceState);
-            // Only broadcast if state changed
-            const currentState = this.memberVoiceStates.get(memberId);
-            if (!currentState || currentState.voice_status !== 'muted') {
-              void this.broadcastVoiceUpdate(voiceState);
-            }
-            // Ensure volume callback is called even when muted
-            if (this.volumeCallback) {
-              this.volumeCallback([voiceState]);
-            }
-            return;
-          }
-
-          const level = this.audioTrack.getVolumeLevel();
-          const smoothedLevel = this.smoothVolume(level);
-
-          logger.debug('Processing local user volume', {
-            component: 'VoiceService',
-            action: 'volumeIndicator',
-            metadata: {
-              memberId,
-              rawLevel: level,
-              smoothedLevel,
-              lastVolume: this.lastVolume,
-              isMuted: this._isMuted,
-              audioTrackMuted: this.audioTrack.muted,
-              speakingThreshold: VOICE_CONSTANTS.SPEAKING_THRESHOLD
-            }
-          });
-
-          // Determine voice status based on smoothed level
-          let voice_status: VoiceStatus = 'silent';
-          if (smoothedLevel >= VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
-            voice_status = 'speaking';
-            logger.debug('Local user speaking detected', {
-              component: 'VoiceService',
-              action: 'volumeIndicator',
-              metadata: {
-                memberId,
-                smoothedLevel,
-                threshold: VOICE_CONSTANTS.SPEAKING_THRESHOLD,
-                rawLevel: level
-              }
-            });
-          }
-
-          const voiceState: VoiceMemberState = {
-            id: memberId,
-            level: smoothedLevel,
-            voice_status,
-            muted: this._isMuted,
-            is_deafened: false,
-            agora_uid: agoraUid,
-            timestamp: Date.now()
-          };
-
-          // Only broadcast if voice status changed or significant volume change
-          const currentState = this.memberVoiceStates.get(memberId);
-          const volumeChanged = !currentState || Math.abs(currentState.level - voiceState.level) > 0.1;
-          const statusChanged = !currentState || currentState.voice_status !== voiceState.voice_status;
-
-          if (volumeChanged || statusChanged) {
-            this.memberVoiceStates.set(memberId, voiceState);
-            void this.broadcastVoiceUpdate(voiceState);
-
-            logger.debug('Voice state updated', {
-              component: 'VoiceService',
-              action: 'volumeIndicator',
-              metadata: {
-                oldState: currentState,
-                newState: voiceState,
-                volumeChanged,
-                statusChanged
-              }
-            });
-          }
-
-          // Always call volume callback to ensure UI updates
-          if (this.volumeCallback) {
-            this.volumeCallback(Array.from(this.memberVoiceStates.values()));
-          }
-        }
-      }
-
-      // Handle remote users' volumes
       volumes.forEach((vol) => {
         const agoraUid = vol.uid.toString();
         const memberId = this.getMemberIdFromAgoraUid(agoraUid);
         if (!memberId) {
-          logger.debug('No member ID found for remote volume update', {
+          logger.debug('No member ID found for volume update', {
             component: 'VoiceService',
             action: 'volumeIndicator',
             metadata: { agoraUid }
@@ -303,49 +207,37 @@ export class VoiceService {
 
         const remoteUser = this.client.remoteUsers.find((u) => u.uid === vol.uid);
         const isMuted = remoteUser ? !remoteUser.hasAudio : false;
+        const level = vol.level / 100; // Convert Agora's 0-100 level to 0-1
 
-        logger.debug('Processing remote user volume', {
-          component: 'VoiceService',
-          action: 'volumeIndicator',
-          metadata: {
-            memberId,
-            agoraUid,
-            rawLevel: vol.level,
-            normalizedLevel: vol.level / 100,
-            isMuted,
-            hasRemoteUser: !!remoteUser,
-            hasAudio: remoteUser?.hasAudio
-          }
-        });
-
-        // Skip volume updates if muted
-        if (isMuted) {
-          const voiceState: VoiceMemberState = {
-            id: memberId,
-            level: 0,
-            voice_status: 'muted',
-            muted: true,
-            is_deafened: false,
-            agora_uid: agoraUid,
-            timestamp: Date.now()
-          };
-          // Only broadcast if state changed
-          const currentState = this.memberVoiceStates.get(memberId);
-          if (!currentState || currentState.voice_status !== 'muted') {
-            this.memberVoiceStates.set(memberId, voiceState);
-            void this.broadcastVoiceUpdate(voiceState);
-          }
-          return;
+        // Get actual volume from remote audio track if available
+        let actualLevel = level;
+        if (remoteUser?.audioTrack) {
+          actualLevel = remoteUser.audioTrack.getVolumeLevel();
+          logger.debug('Remote user actual volume level', {
+            component: 'VoiceService',
+            action: 'volumeIndicator',
+            metadata: {
+              memberId,
+              indicatorLevel: level,
+              actualLevel,
+              difference: Math.abs(level - actualLevel),
+              isRemote: true
+            }
+          });
         }
 
-        const level = vol.level / 100; // Convert Agora's 0-100 remote level to 0-1
-        const smoothedLevel = this.smoothVolume(level);
+        const smoothedLevel = this.smoothVolume(actualLevel);
 
-        // Determine voice status based on level
+        // Always update volume levels for both local and remote users
+        volumeUpdates.set(memberId, smoothedLevel);
+
+        // Determine voice status based on level and mute state
         let voice_status: VoiceStatus = 'silent';
-        if (smoothedLevel >= VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
+        if (isMuted) {
+          voice_status = 'muted';
+        } else if (smoothedLevel >= VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
           voice_status = 'speaking';
-          logger.debug('Remote user speaking detected', {
+          logger.debug('User speaking detected', {
             component: 'VoiceService',
             action: 'volumeIndicator',
             metadata: {
@@ -353,7 +245,8 @@ export class VoiceService {
               smoothedLevel,
               threshold: VOICE_CONSTANTS.SPEAKING_THRESHOLD,
               rawLevel: vol.level,
-              normalizedLevel: level
+              normalizedLevel: level,
+              isRemote: !!remoteUser
             }
           });
         }
@@ -368,16 +261,15 @@ export class VoiceService {
           timestamp: Date.now()
         };
 
-        // Only broadcast if voice status changed or significant volume change
-        const currentState = this.memberVoiceStates.get(memberId);
-        const volumeChanged = !currentState || Math.abs(currentState.level - voiceState.level) > 0.1;
-        const statusChanged = !currentState || currentState.voice_status !== voiceState.voice_status;
-
-        if (volumeChanged || statusChanged) {
-          this.memberVoiceStates.set(memberId, voiceState);
-          void this.broadcastVoiceUpdate(voiceState);
-        }
+        // Always update state and broadcast for all users
+        this.memberVoiceStates.set(memberId, voiceState);
+        void this.broadcastVoiceUpdate(voiceState);
       });
+
+      // Call volume callback with all updated volumes
+      if (this.volumeCallback && volumeUpdates.size > 0) {
+        this.volumeCallback(Array.from(this.memberVoiceStates.values()));
+      }
     });
 
     // Add audio quality monitoring
@@ -868,7 +760,7 @@ export class VoiceService {
       } catch (error) {
         // Clean up VAD if join fails
         if (this.vad) {
-          await this.vad.pause();
+          this.vad.pause();
           this.vad = null;
         }
         this._isJoined = false;
@@ -885,7 +777,7 @@ export class VoiceService {
       // Stop VAD
       if (this.vad) {
         try {
-          await this.vad.pause();
+          this.vad.pause();
           this.vad = null;
           this.vadSpeakingHistory = [];
           this.isVadSpeaking = false;
@@ -1114,7 +1006,7 @@ export class VoiceService {
         }
       });
 
-      await this.audioTrack.setVolume(agoraVolume);
+      this.audioTrack.setVolume(agoraVolume);
 
       const actualVolume = this.audioTrack.getVolumeLevel();
       logger.debug('Volume set result', {
@@ -1237,6 +1129,16 @@ export class VoiceService {
   private handleVolumeUpdate(memberId: string, level: number, isMuted: boolean): void {
     // Skip processing if member is muted
     if (isMuted || (memberId === this.currentMemberId && this._isMuted)) {
+      logger.debug('Member is muted, setting muted state', {
+        component: 'VoiceService',
+        action: 'handleVolumeUpdate',
+        metadata: {
+          memberId,
+          isMuted,
+          isCurrentUser: memberId === this.currentMemberId,
+          internalMuteState: this._isMuted
+        }
+      });
       const voiceState: VoiceMemberState = {
         id: memberId,
         level: 0,
@@ -1258,18 +1160,55 @@ export class VoiceService {
 
     // Process volume for unmuted members (level is already 0-1)
     const smoothedLevel = this.smoothVolume(level);
+    const isLoudEnough = smoothedLevel >= VOICE_CONSTANTS.SPEAKING_THRESHOLD;
+
+    logger.debug('Processing volume update', {
+      component: 'VoiceService',
+      action: 'handleVolumeUpdate',
+      metadata: {
+        memberId,
+        rawLevel: level,
+        smoothedLevel,
+        isLoudEnough,
+        speakingThreshold: VOICE_CONSTANTS.SPEAKING_THRESHOLD,
+        isCurrentUser: memberId === this.currentMemberId,
+        vadSpeaking: this.isVadSpeaking
+      }
+    });
 
     // Determine voice status using both VAD and volume level
     let voice_status: VoiceStatus = 'silent';
-    const isLoudEnough = smoothedLevel >= VOICE_CONSTANTS.SPEAKING_THRESHOLD;
 
     // For local user, use VAD results
     if (memberId === this.currentMemberId) {
       const vadSpeaking = this.updateVadHistory(this.isVadSpeaking);
       voice_status = (isLoudEnough && vadSpeaking) ? 'speaking' : 'silent';
+
+      logger.debug('Local user voice status determined', {
+        component: 'VoiceService',
+        action: 'handleVolumeUpdate',
+        metadata: {
+          memberId,
+          voice_status,
+          isLoudEnough,
+          vadSpeaking,
+          smoothedLevel
+        }
+      });
     } else {
       // For remote users, fall back to just volume threshold
       voice_status = isLoudEnough ? 'speaking' : 'silent';
+
+      logger.debug('Remote user voice status determined', {
+        component: 'VoiceService',
+        action: 'handleVolumeUpdate',
+        metadata: {
+          memberId,
+          voice_status,
+          isLoudEnough,
+          smoothedLevel
+        }
+      });
     }
 
     const voiceState: VoiceMemberState = {
@@ -1368,7 +1307,7 @@ export class VoiceService {
       }
 
       // Set initial volume
-      await track.setVolume(100);
+      track.setVolume(100);
       return track;
     } catch (error) {
       logger.error('Failed to create audio track', {
@@ -1430,7 +1369,7 @@ export class VoiceService {
       // Start VAD processing if initialization succeeded
       if (this.vad) {
         try {
-          await this.vad.start();
+          this.vad.start();
           logger.info('VAD initialized successfully');
         } catch (error) {
           logger.error('Failed to start VAD', {
