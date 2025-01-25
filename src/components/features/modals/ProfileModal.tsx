@@ -151,15 +151,15 @@ const FormFields = React.memo(
     <div className="flex-1 space-y-6 sm:space-y-8">
       <FormField
         render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-sm font-semibold text-[#161718]">Username</FormLabel>
+          <FormItem className="w-full max-w-[280px] sm:max-w-none">
+            <FormLabel className="text-sm font-semibold text-[#161718] block">Username</FormLabel>
             <FormControl>
               <Input
                 {...field}
                 autoComplete="off"
                 className="w-full rounded-md border border-[#5D626D] bg-white px-3 py-2 text-black transition-colors focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={isSubmitting}
-                placeholder="Enter your name"
+                placeholder="Enter your username"
               />
             </FormControl>
             <FormMessage />
@@ -172,10 +172,12 @@ const FormFields = React.memo(
 
       <FormField
         render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-sm font-semibold text-[#161718]">Select Avatar</FormLabel>
+          <FormItem className="w-full max-w-[280px] sm:max-w-none">
+            <FormLabel className="text-sm font-semibold text-[#161718] block">
+              Select Avatar
+            </FormLabel>
             <div
-              className={`grid w-full grid-cols-4 justify-items-center gap-2 sm:grid-cols-7 sm:gap-4 ${!!errors.avatar ? 'rounded-md ring-2 ring-red-500' : ''}`}
+              className={`flex flex-wrap justify-center gap-2 sm:grid sm:grid-cols-7 sm:gap-4 ${!!errors.avatar ? 'rounded-md ring-2 ring-red-500' : ''}`}
             >
               {AVATARS.map((avatar, index) => (
                 <button
@@ -204,8 +206,10 @@ const FormFields = React.memo(
 
       <FormField
         render={({ field }) => (
-          <FormItem className="mb-6">
-            <FormLabel className="text-sm font-semibold text-[#161718]">Current Game</FormLabel>
+          <FormItem className="w-full max-w-[280px] sm:max-w-none mb-6">
+            <FormLabel className="text-sm font-semibold text-[#161718] block">
+              Current Game
+            </FormLabel>
             <GameSelect
               field={field}
               hasError={!!errors.game}
@@ -243,7 +247,7 @@ export function ProfileModal({ onSubmitAction, onCloseAction, initialData }: Pro
             avatar: AVATARS[Math.floor(Math.random() * AVATARS.length)] ?? AVATARS[0]!,
             game: STATUSES[Math.floor(Math.random() * STATUSES.length)] ?? STATUSES[0]!,
           },
-    mode: 'onSubmit',
+    mode: 'onChange',
     criteriaMode: 'all',
   });
 
@@ -290,7 +294,7 @@ export function ProfileModal({ onSubmitAction, onCloseAction, initialData }: Pro
       preventOutsideClick={true}
     >
       <div className="min-h-[520px] w-[90vw] rounded-lg bg-[#F7FFFF] p-2 sm:p-6 lg:w-[700px]">
-        <div className="mb-2 flex items-center justify-between sm:mb-4">
+        <div className="mb-2 flex items-center justify-center sm:mb-4">
           <h2 className="text-base font-bold text-[#161718] sm:text-xl">
             {initialData ? 'Edit Profile' : 'Join Party'}
           </h2>
@@ -302,11 +306,11 @@ export function ProfileModal({ onSubmitAction, onCloseAction, initialData }: Pro
 
             className="flex h-full flex-col"
           >
-            <div className="flex-1 space-y-4 sm:space-y-6">
+            <div className="flex flex-col items-center flex-1 space-y-4 sm:space-y-6 sm:items-stretch">
               <FormField
                 render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-sm font-semibold text-[#161718]">Username</FormLabel>
+                  <FormItem className="w-full max-w-[280px] sm:max-w-none">
+                    <FormLabel className="text-sm font-semibold text-[#161718] block">Username</FormLabel>
                     <FormControl>
                       <Input
                         {...field}
@@ -326,12 +330,12 @@ export function ProfileModal({ onSubmitAction, onCloseAction, initialData }: Pro
 
               <FormField
                 render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-sm font-semibold text-[#161718]">
+                  <FormItem className="w-full max-w-[280px] sm:max-w-none">
+                    <FormLabel className="text-sm font-semibold text-[#161718] block">
                       Select Avatar
                     </FormLabel>
                     <div
-                      className={`grid w-full grid-cols-4 justify-items-center gap-2 sm:grid-cols-7 sm:gap-4 ${!!errors.avatar ? 'rounded-md ring-2 ring-red-500' : ''}`}
+                      className={`flex flex-wrap justify-center gap-2 sm:grid sm:grid-cols-7 sm:gap-4 ${!!errors.avatar ? 'rounded-md ring-2 ring-red-500' : ''}`}
                     >
                       {AVATARS.map((avatar, index) => (
                         <button
@@ -360,8 +364,8 @@ export function ProfileModal({ onSubmitAction, onCloseAction, initialData }: Pro
 
               <FormField
                 render={({ field }) => (
-                  <FormItem className="mb-6">
-                    <FormLabel className="text-sm font-semibold text-[#161718]">
+                  <FormItem className="w-full max-w-[280px] sm:max-w-none mb-6">
+                    <FormLabel className="text-sm font-semibold text-[#161718] block">
                       Current Game
                     </FormLabel>
                     <GameSelect
@@ -403,7 +407,7 @@ export function ProfileModal({ onSubmitAction, onCloseAction, initialData }: Pro
               </div>
             )}
 
-            <div className="mt-5 flex items-center justify-between sm:mt-8">
+            <div className="mt-5 flex items-center justify-between px-8 sm:mt-8 sm:px-12">
               <button
                 onClick={onCloseAction}
 
