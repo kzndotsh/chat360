@@ -7,7 +7,6 @@ import { useAgoraContext } from '@/components/providers/AgoraProvider';
 
 import { useVolumeControl } from '@/lib/hooks/useVolumeControl';
 import { logger } from '@/lib/logger';
-import { VoiceService } from '@/lib/services/voiceService';
 import { usePartyStore } from '@/lib/stores/partyStore';
 
 interface PartyContextType {
@@ -78,20 +77,35 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
   // Set up volume update handler
   useEffect(() => {
     const setupVoiceService = async () => {
+      // Skip in non-browser environment
+      if (typeof window === 'undefined' || typeof self === 'undefined') {
+        return;
+      }
+
       const client = await getClient();
       if (!client) return;
 
-      const voiceService = VoiceService.getInstance(client);
-      if (!voiceService) return;
+      try {
+        // Dynamically import VoiceService
+        const { VoiceService } = await import('@/lib/services/voiceService');
+        const voiceService = VoiceService.getInstance(client);
+        if (!voiceService) return;
 
-      const handleVolumeChange = (volumes: VoiceMemberState[]) => {
-        volumes.forEach(vol => {
-          updateVolume(vol.level);
+        const handleVolumeChange = (volumes: VoiceMemberState[]) => {
+          volumes.forEach(vol => {
+            updateVolume(vol.level);
+          });
+        };
+
+        voiceService.onVolumeChange(handleVolumeChange);
+        return () => voiceService.onVolumeChange(null);
+      } catch (error) {
+        logger.error('Failed to setup voice service', {
+          component: 'PartyContext',
+          action: 'setupVoiceService',
+          metadata: { error }
         });
-      };
-
-      voiceService.onVolumeChange(handleVolumeChange);
-      return () => voiceService.onVolumeChange(null);
+      }
     };
 
     void setupVoiceService();
@@ -105,11 +119,19 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
         // Initialize presence first
         await initializePresence(member);
 
+        // Skip voice initialization in non-browser environment
+        if (typeof window === 'undefined' || typeof self === 'undefined') {
+          return;
+        }
+
         // Initialize voice client
         const voiceClient = await getClient();
         if (!voiceClient) {
           throw new Error('Voice client not initialized');
         }
+
+        // Dynamically import VoiceService
+        const { VoiceService } = await import('@/lib/services/voiceService');
 
         // Create voice service instance
         const voiceService = VoiceService.getInstance(voiceClient);
@@ -131,9 +153,15 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
 
   const leave = useCallback(async () => {
     try {
+      // Skip in non-browser environment
+      if (typeof window === 'undefined' || typeof self === 'undefined') {
+        return;
+      }
+
       // Get voice client and cleanup voice connection first
       const client = await getClient();
       if (client) {
+        const { VoiceService } = await import('@/lib/services/voiceService');
         const voiceService = VoiceService.getInstance(client);
         await voiceService.leave();
       }
@@ -158,12 +186,18 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
 
   const toggleMute = useCallback(async () => {
     try {
+      // Skip in non-browser environment
+      if (typeof window === 'undefined' || typeof self === 'undefined') {
+        return;
+      }
+
       const client = await getClient();
       if (!client) {
         logger.error('Voice client not initialized');
         return;
       }
 
+      const { VoiceService } = await import('@/lib/services/voiceService');
       const voiceService = VoiceService.getInstance(client);
       const newMuteState = await voiceService.toggleMute();
 
