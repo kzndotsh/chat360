@@ -951,7 +951,7 @@ export class VoiceService {
         // Update local state and notify UI immediately
         this.memberVoiceStates.set(this.currentMemberId, voiceState);
         if (this.volumeCallback) {
-          this.volumeCallback([voiceState]);
+          this.volumeCallback(Array.from(this.memberVoiceStates.values()));
         }
 
         // Ensure state is broadcast before returning
@@ -1456,34 +1456,41 @@ export class VoiceService {
 
     // Find remote user
     const remoteUser = this.client.remoteUsers.find(user => user.uid.toString() === agoraUid);
-    if (!remoteUser) {
-      logger.warn('Remote user not found', {
-        component: 'VoiceService',
-        action: 'toggleMemberMute',
-        metadata: { memberId, agoraUid }
-      });
-      return;
-    }
 
     try {
       if (newMuteState) {
-        // Muting
-        if (remoteUser.audioTrack) {
+        // Muting - always possible even if user not found
+        if (remoteUser?.audioTrack) {
           remoteUser.audioTrack.stop();
           await this.client.unsubscribe(remoteUser, 'audio');
         }
       } else {
-        // Unmuting
-        await this.client.subscribe(remoteUser, 'audio');
-        if (remoteUser.audioTrack) {
-          remoteUser.audioTrack.play();
+        // Unmuting - only try to subscribe if user is found and publishing
+        if (remoteUser) {
+          try {
+            await this.client.subscribe(remoteUser, 'audio');
+            if (remoteUser.audioTrack) {
+              remoteUser.audioTrack.play();
+            }
+          } catch (error: unknown) {
+            // If subscription fails because user is not publishing, just update local state
+            if (error && typeof error === 'object' && 'code' in error && error.code === 'INVALID_REMOTE_USER') {
+              logger.info('Remote user not currently publishing audio', {
+                component: 'VoiceService',
+                action: 'toggleMemberMute',
+                metadata: { memberId, agoraUid }
+              });
+            } else {
+              throw error; // Re-throw other errors
+            }
+          }
         }
       }
 
-      // Update mute state after successful audio operations
+      // Update local mute state
       this.memberMuteStates.set(memberId, newMuteState);
 
-      // Update and broadcast state
+      // Update local voice state
       const voiceState: VoiceMemberState = {
         id: memberId,
         level: 0,
@@ -1496,22 +1503,19 @@ export class VoiceService {
 
       this.memberVoiceStates.set(memberId, voiceState);
 
-      // Ensure UI is updated immediately
+      // Update UI only for the local user
       if (this.volumeCallback) {
         this.volumeCallback(Array.from(this.memberVoiceStates.values()));
       }
 
-      // Broadcast the update
-      await this.broadcastVoiceUpdate(voiceState);
-
-      logger.debug('Member mute state toggled', {
+      logger.debug('Member mute state toggled locally', {
         component: 'VoiceService',
         action: 'toggleMemberMute',
         metadata: {
           memberId,
           agoraUid,
           newMuteState,
-          hasAudioTrack: !!remoteUser.audioTrack
+          hasAudioTrack: !!remoteUser?.audioTrack
         }
       });
     } catch (error) {
