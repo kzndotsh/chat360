@@ -140,38 +140,47 @@ export class VoiceService {
   }
 
   private setupEventHandlers() {
+    this.client.on('user-unpublished', async (user, mediaType) => {
+      if (mediaType === 'audio' && user.audioTrack) {
+        user.audioTrack.stop();
+        await this.client.unsubscribe(user, mediaType);
+      }
+    });
+
     this.client.on('user-published', async (user, mediaType) => {
       try {
-        // Subscribe to the remote user
-        await this.client.subscribe(user, mediaType);
-
         if (mediaType === 'audio') {
-          // Get member ID and check mute state before playing
+          // Get member ID and check mute state before subscribing
           const memberId = this.getMemberIdFromAgoraUid(user.uid.toString());
           const isLocallyMuted = memberId ? this.memberMuteStates.get(memberId) || false : false;
 
-          // Always stop any existing audio track first to ensure clean state
-          if (user.audioTrack) {
-            user.audioTrack.stop();
-            user.audioTrack.setVolume(0);
+          // If user is muted, don't even subscribe to their audio
+          if (isLocallyMuted) {
+            logger.info('Skipping subscription for muted user', {
+              component: 'VoiceService',
+              action: 'userPublished',
+              metadata: { userId: user.uid, memberId }
+            });
+            return;
+          }
 
-            // Only play if the user is not muted locally and has audio enabled
-            if (!isLocallyMuted && user.hasAudio) {
-              user.audioTrack.setVolume(100);
-              user.audioTrack.play();
-              logger.info('Remote user audio playing', {
-                component: 'VoiceService',
-                action: 'userPublished',
-                metadata: { userId: user.uid, memberId, isLocallyMuted }
-              });
-            } else {
-              user.hasAudio = false;
-              logger.info('Remote user audio muted', {
-                component: 'VoiceService',
-                action: 'userPublished',
-                metadata: { userId: user.uid, memberId, isLocallyMuted }
-              });
-            }
+          // Subscribe only if not muted
+          await this.client.subscribe(user, mediaType);
+
+          if (user.audioTrack) {
+            // Ensure clean state
+            user.audioTrack.stop();
+            await user.audioTrack.setVolume(0);
+
+            // Play audio since we know they're not muted (we would have returned earlier if they were)
+            await user.audioTrack.setVolume(100);
+            user.audioTrack.play();
+
+            logger.info('Playing remote user audio', {
+              component: 'VoiceService',
+              action: 'userPublished',
+              metadata: { userId: user.uid, memberId }
+            });
           }
 
           // Set initial voice state for remote user
@@ -180,7 +189,7 @@ export class VoiceService {
               id: memberId,
               level: 0,
               voice_status: isLocallyMuted ? 'muted' : 'silent',
-              muted: isLocallyMuted || !user.hasAudio,
+              muted: isLocallyMuted,
               is_deafened: false,
               agora_uid: user.uid.toString(),
               timestamp: Date.now(),
@@ -191,50 +200,7 @@ export class VoiceService {
           }
         }
       } catch (error) {
-        logger.error('Failed to subscribe to remote user', {
-          metadata: { userId: user.uid, mediaType, error },
-        });
-      }
-    });
-
-    this.client.on('user-unpublished', async (user, mediaType) => {
-      try {
-        if (mediaType === 'audio') {
-          // Stop the remote audio track
-          if (user.audioTrack) {
-            user.audioTrack.stop();
-            await this.client.unsubscribe(user, 'audio');
-          }
-          // Fully unsubscribe from the user
-          await this.client.unsubscribe(user);
-
-          // Update voice state if needed
-          const memberId = this.getMemberIdFromAgoraUid(user.uid.toString());
-          if (memberId) {
-            const currentState = this.memberVoiceStates.get(memberId);
-            if (currentState) {
-              const updatedState: VoiceMemberState = {
-                ...currentState,
-                level: 0,
-                voice_status: 'silent',
-                timestamp: Date.now()
-              };
-              this.memberVoiceStates.set(memberId, updatedState);
-              void this.broadcastVoiceUpdate(updatedState);
-            }
-          }
-        }
-        logger.info('Unsubscribe success', {
-          component: 'VoiceService',
-          action: 'userUnpublished',
-          metadata: {
-            userId: user.uid,
-            mediaType,
-            memberId: this.getMemberIdFromAgoraUid(user.uid.toString())
-          }
-        });
-      } catch (error) {
-        logger.error('Failed to unsubscribe from remote user', {
+        logger.error('Failed to handle remote user publish', {
           metadata: { userId: user.uid, mediaType, error },
         });
       }
@@ -1589,29 +1555,80 @@ export class VoiceService {
 
     // Find the Agora user associated with this member
     const agoraUid = this.getAgoraUidFromMemberId(memberId);
-    if (agoraUid) {
-      const user = this.client.remoteUsers.find(u => u.uid.toString() === agoraUid);
-      if (user?.audioTrack) {
-        if (muted) {
-          // When muting: First set volume to 0, then stop playback
-          await user.audioTrack.setVolume(0);
-          user.audioTrack.stop();
-          user.hasAudio = false;
-        } else {
-          // When unmuting: First mark as enabled, set volume, then play if needed
-          user.hasAudio = true;
-          await user.audioTrack.setVolume(100);
-          if (!user.audioTrack.isPlaying) {
-            user.audioTrack.play();
-          }
-        }
-      }
+    if (!agoraUid) {
+      logger.warn('No Agora UID found for member', {
+        component: 'VoiceService',
+        action: 'toggleMemberMute',
+        metadata: { memberId, muted },
+      });
+      return;
     }
 
-    // Get or create a voice state for this member
-    let currentState = this.memberVoiceStates.get(memberId);
-    if (!currentState) {
-      currentState = {
+    const user = this.client.remoteUsers.find(u => u.uid.toString() === agoraUid);
+    if (!user) {
+      logger.warn('No remote user found for Agora UID', {
+        component: 'VoiceService',
+        action: 'toggleMemberMute',
+        metadata: { memberId, agoraUid, muted },
+      });
+      return;
+    }
+
+    try {
+      if (muted) {
+        // When muting: First stop playback, then unsubscribe
+        if (user.audioTrack) {
+          // Stop playback first
+          user.audioTrack.stop();
+          // Set volume to 0 as extra precaution
+          await user.audioTrack.setVolume(0);
+          // Unsubscribe from audio track
+          await this.client.unsubscribe(user, 'audio');
+        }
+
+        logger.info('Muted remote user audio', {
+          component: 'VoiceService',
+          action: 'toggleMemberMute',
+          metadata: { memberId, agoraUid },
+        });
+      } else {
+        // When unmuting: First subscribe, verify track exists, then play
+        await this.client.subscribe(user, 'audio');
+
+        if (user.audioTrack) {
+          // Ensure track is stopped and volume is 0 before making changes
+          user.audioTrack.stop();
+          await user.audioTrack.setVolume(0);
+
+          // Check if track is actually playing before attempting to play
+          if (!user.audioTrack.isPlaying) {
+            // Set volume before playing to avoid audio spikes
+            await user.audioTrack.setVolume(100);
+            user.audioTrack.play();
+
+            logger.info('Unmuted and playing remote user audio', {
+              component: 'VoiceService',
+              action: 'toggleMemberMute',
+              metadata: { memberId, agoraUid },
+            });
+          } else {
+            logger.warn('Audio track already playing', {
+              component: 'VoiceService',
+              action: 'toggleMemberMute',
+              metadata: { memberId, agoraUid },
+            });
+          }
+        } else {
+          logger.warn('No audio track available after subscribe', {
+            component: 'VoiceService',
+            action: 'toggleMemberMute',
+            metadata: { memberId, agoraUid },
+          });
+        }
+      }
+
+      // Update voice state
+      const currentState = this.memberVoiceStates.get(memberId) || {
         id: memberId,
         level: 0,
         voice_status: 'silent',
@@ -1620,23 +1637,29 @@ export class VoiceService {
         agora_uid: agoraUid,
         timestamp: Date.now(),
       };
-      this.memberVoiceStates.set(memberId, currentState);
+
+      const updatedState: VoiceMemberState = {
+        ...currentState,
+        muted,
+        level: muted ? 0 : currentState.level,
+        voice_status: muted ? 'muted' : 'silent',
+        timestamp: Date.now(),
+      };
+
+      // Update local state
+      this.memberVoiceStates.set(memberId, updatedState);
+
+      // Broadcast the update
+      await this.broadcastVoiceUpdate(updatedState);
+
+    } catch (error) {
+      logger.error('Failed to toggle member mute state', {
+        component: 'VoiceService',
+        action: 'toggleMemberMute',
+        metadata: { memberId, muted, error },
+      });
+      // Don't rethrow - we want to keep the mute state even if the audio operations fail
     }
-
-    // Update the voice state with the new mute state
-    const updatedState: VoiceMemberState = {
-      ...currentState,
-      muted,
-      level: muted ? 0 : currentState.level,
-      voice_status: muted ? 'muted' : 'silent',
-      timestamp: Date.now(),
-    };
-
-    // Update local state
-    this.memberVoiceStates.set(memberId, updatedState);
-
-    // Broadcast the update
-    await this.broadcastVoiceUpdate(updatedState);
   }
 
   public getMemberMuteState(memberId: string): boolean {
