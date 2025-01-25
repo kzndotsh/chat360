@@ -959,6 +959,10 @@ export class VoiceService {
 
         // Update local state and notify UI immediately
         this.memberVoiceStates.set(this.currentMemberId, voiceState);
+
+        // Remove any existing mute state for self to ensure we don't show red icon
+        this.memberMuteStates.delete(this.currentMemberId);
+
         if (this.volumeCallback) {
           this.volumeCallback(Array.from(this.memberVoiceStates.values()));
         }
