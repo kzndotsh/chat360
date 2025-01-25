@@ -945,13 +945,15 @@ export class VoiceService {
       // Create and broadcast voice state
       if (this.currentMemberId) {
         const level = !newMuteState ? this.audioTrack.getVolumeLevel() : 0;
-        const voice_status: VoiceStatus = newMuteState ? 'muted' : 'silent';
+        // Check if we're muted by others
+        const isMutedByOthers = this.memberMuteStates.get(this.currentMemberId) || false;
+        const voice_status: VoiceStatus = (newMuteState || isMutedByOthers) ? 'muted' : 'silent';
 
         const voiceState: VoiceMemberState = {
           id: this.currentMemberId,
           level,
           voice_status,
-          muted: newMuteState,
+          muted: newMuteState || isMutedByOthers,
           is_deafened: false,
           agora_uid: this.getAgoraUidFromMemberId(this.currentMemberId),
           timestamp: Date.now(),
@@ -959,9 +961,6 @@ export class VoiceService {
 
         // Update local state and notify UI immediately
         this.memberVoiceStates.set(this.currentMemberId, voiceState);
-
-        // Remove any existing mute state for self to ensure we don't show red icon
-        this.memberMuteStates.delete(this.currentMemberId);
 
         if (this.volumeCallback) {
           this.volumeCallback(Array.from(this.memberVoiceStates.values()));
@@ -979,6 +978,7 @@ export class VoiceService {
             audioTrackMuted: this.audioTrack.muted,
             voiceStatus: voice_status,
             level,
+            isMutedByOthers
           },
         });
       }
