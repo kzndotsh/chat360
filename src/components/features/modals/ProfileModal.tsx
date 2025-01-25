@@ -61,7 +61,7 @@ const GameSelect = React.memo(
       value={field.value}
     >
       <SelectTrigger
-        className={`w-full rounded-md border bg-white px-3 py-2 text-black transition-colors focus:outline-none ${hasError ? 'border-red-500' : 'border-gray-300'}`}
+        className={`w-full rounded-md border bg-white px-3 py-2 text-black transition-colors focus:outline-none ${hasError ? 'border-red-500' : 'border-[#5D626D]'}`}
       >
         <SelectValue
           className="text-black"
@@ -71,7 +71,7 @@ const GameSelect = React.memo(
       <SelectContent className="border border-gray-300 bg-white shadow-lg">
         {STATUSES.map((status) => (
           <SelectItem
-            className="cursor-pointer text-black hover:bg-[#f3f4f6] focus:bg-[#f3f4f6] focus:text-black"
+            className="cursor-pointer text-black text-lg font-semibold hover:bg-[#60B801] focus:bg-[#60B801] focus:text-black rounded-none"
             key={status}
             value={status}
           >
@@ -85,10 +85,10 @@ const GameSelect = React.memo(
 
 GameSelect.displayName = 'GameSelect';
 
-const AvatarImage = memo(({ src, index }: { src: string; index: number }) => (
+const AvatarImage = memo(({ src, index, className }: { src: string; index: number; className?: string }) => (
   <Image
     alt={`Avatar ${index + 1}`}
-    className="h-full w-full object-cover"
+    className={className || "h-full w-full object-cover"}
     height={80}
     src={src}
     width={80}
@@ -112,7 +112,7 @@ const AvatarGrid = memo(
           <button
             onClick={() => field.onChange(avatar)}
 
-            className={`h-20 w-20 overflow-hidden rounded-md transition-all ${field.value === avatar ? 'ring-[3px] ring-[#55b611]' : 'hover:ring-2 hover:ring-[#55b611]/50'}`}
+            className={`h-20 w-20 overflow-hidden rounded-sm transition-all ${field.value === avatar ? 'ring-[5px] ring-[#55b611]' : 'hover:ring-5 hover:ring-[#55b611]'}`}
             disabled={isSubmitting}
             key={index}
             type="button"
@@ -152,12 +152,12 @@ const FormFields = React.memo(
       <FormField
         render={({ field }) => (
           <FormItem>
-            <FormLabel className="text-sm font-medium text-[#161718]">Username</FormLabel>
+            <FormLabel className="text-sm font-semibold text-[#161718]">Username</FormLabel>
             <FormControl>
               <Input
                 {...field}
                 autoComplete="off"
-                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-black transition-colors focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                className="w-full rounded-md border border-[#5D626D] bg-white px-3 py-2 text-black transition-colors focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={isSubmitting}
                 placeholder="Enter your name"
               />
@@ -173,7 +173,7 @@ const FormFields = React.memo(
       <FormField
         render={({ field }) => (
           <FormItem>
-            <FormLabel className="text-sm font-medium text-[#161718]">Select Avatar</FormLabel>
+            <FormLabel className="text-sm font-semibold text-[#161718]">Select Avatar</FormLabel>
             <div
               className={`grid w-full grid-cols-4 justify-items-center gap-2 sm:grid-cols-7 sm:gap-4 ${!!errors.avatar ? 'rounded-md ring-2 ring-red-500' : ''}`}
             >
@@ -187,6 +187,7 @@ const FormFields = React.memo(
                   type="button"
                 >
                   <AvatarImage
+                    className="h-full w-full object-cover shadow-[inset_0_2px_4px_rgba(0,0,0,0.2),inset_0_-2px_4px_rgba(0,0,0,0.1)]"
                     index={index}
                     src={avatar}
                   />
@@ -204,7 +205,7 @@ const FormFields = React.memo(
       <FormField
         render={({ field }) => (
           <FormItem className="mb-6">
-            <FormLabel className="text-sm font-medium text-[#161718]">Current Game</FormLabel>
+            <FormLabel className="text-sm font-semibold text-[#161718]">Current Game</FormLabel>
             <GameSelect
               field={field}
               hasError={!!errors.game}
@@ -242,7 +243,7 @@ export function ProfileModal({ onSubmitAction, onCloseAction, initialData }: Pro
             avatar: AVATARS[Math.floor(Math.random() * AVATARS.length)] ?? AVATARS[0]!,
             game: STATUSES[Math.floor(Math.random() * STATUSES.length)] ?? STATUSES[0]!,
           },
-    mode: 'all',
+    mode: 'onSubmit',
     criteriaMode: 'all',
   });
 
@@ -256,11 +257,6 @@ export function ProfileModal({ onSubmitAction, onCloseAction, initialData }: Pro
   );
 
   const { isSubmitting, isValid, errors } = formState;
-
-  React.useEffect(() => {
-    // Trigger validation on mount
-    form.trigger();
-  }, [form]);
 
   const onSubmitForm = async (data: FormData) => {
     try {
@@ -293,7 +289,7 @@ export function ProfileModal({ onSubmitAction, onCloseAction, initialData }: Pro
 
       preventOutsideClick={true}
     >
-      <div className="min-h-[520px] w-[90vw] rounded-lg bg-white p-2 sm:p-6 lg:w-[900px]">
+      <div className="min-h-[520px] w-[90vw] rounded-lg bg-[#F7FFFF] p-2 sm:p-6 lg:w-[700px]">
         <div className="mb-2 flex items-center justify-between sm:mb-4">
           <h2 className="text-base font-bold text-[#161718] sm:text-xl">
             {initialData ? 'Edit Profile' : 'Join Party'}
@@ -306,18 +302,18 @@ export function ProfileModal({ onSubmitAction, onCloseAction, initialData }: Pro
 
             className="flex h-full flex-col"
           >
-            <div className="flex-1 space-y-4 sm:space-y-8">
+            <div className="flex-1 space-y-4 sm:space-y-6">
               <FormField
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-sm font-medium text-[#161718]">Username</FormLabel>
+                    <FormLabel className="text-sm font-semibold text-[#161718]">Username</FormLabel>
                     <FormControl>
                       <Input
                         {...field}
                         autoComplete="off"
-                        className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-black transition-colors focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                        className="w-full rounded-md border border-[#5D626D] bg-white px-3 py-2 text-black transition-colors focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                         disabled={isSubmitting}
-                        placeholder="Enter your name"
+                        placeholder="Enter your username"
                       />
                     </FormControl>
                     <FormMessage />
@@ -331,7 +327,7 @@ export function ProfileModal({ onSubmitAction, onCloseAction, initialData }: Pro
               <FormField
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-sm font-medium text-[#161718]">
+                    <FormLabel className="text-sm font-semibold text-[#161718]">
                       Select Avatar
                     </FormLabel>
                     <div
@@ -347,6 +343,7 @@ export function ProfileModal({ onSubmitAction, onCloseAction, initialData }: Pro
                           type="button"
                         >
                           <AvatarImage
+                            className="h-full w-full object-cover shadow-[inset_0_2px_4px_rgba(0,0,0,0.2),inset_0_-2px_4px_rgba(0,0,0,0.1)]"
                             index={index}
                             src={avatar}
                           />
@@ -364,7 +361,7 @@ export function ProfileModal({ onSubmitAction, onCloseAction, initialData }: Pro
               <FormField
                 render={({ field }) => (
                   <FormItem className="mb-6">
-                    <FormLabel className="text-sm font-medium text-[#161718]">
+                    <FormLabel className="text-sm font-semibold text-[#161718]">
                       Current Game
                     </FormLabel>
                     <GameSelect
@@ -417,7 +414,7 @@ export function ProfileModal({ onSubmitAction, onCloseAction, initialData }: Pro
                 <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#ae1228] text-xs font-bold text-white">
                   B
                 </div>
-                <span className="text-sm text-[#161718] sm:text-base">Cancel</span>
+                <span className="text-sm text-[#161718] sm:text-base font-semibold">Cancel</span>
               </button>
 
               <button
@@ -428,7 +425,7 @@ export function ProfileModal({ onSubmitAction, onCloseAction, initialData }: Pro
                 <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#55b611] text-xs font-bold text-white">
                   A
                 </div>
-                <span className="text-sm text-[#161718] sm:text-base">
+                <span className="text-sm text-[#161718] sm:text-base font-semibold">
                   {isSubmitting ? 'Saving...' : initialData ? 'Save Changes' : 'Join Party'}
                 </span>
               </button>
