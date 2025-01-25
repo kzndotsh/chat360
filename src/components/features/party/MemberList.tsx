@@ -11,10 +11,19 @@ import { VoiceStatusIcon } from '@/components/features/party/icons/VoiceStatusIc
 
 import { AVATARS } from '@/lib/constants';
 import { logger } from '@/lib/logger';
+import { VoiceService } from '@/lib/services/voiceService';
 import { usePartyStore } from '@/lib/stores/partyStore';
 
 export function MemberList({ members, currentUserId, volumeLevels = {} }: MemberListProps) {
   const { voice: { isMuted: storeIsMuted } } = usePartyStore();
+
+  const handleVolumeClick = async (memberId: string) => {
+    const voiceService = VoiceService.getInstance();
+    if (!voiceService) return;
+
+    const isMuted = volumeLevels[memberId]?.muted ?? false;
+    await voiceService.toggleMemberMute(memberId, !isMuted);
+  };
 
   // Memoize member rendering to prevent unnecessary recalculations
   const renderedMembers = useMemo(() => {
@@ -86,7 +95,12 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
           {/* Column 1: Username section */}
           <div className="flex w-[440px] items-center gap-2">
             {/* Voice status with volume indicator */}
-            <div className="relative -ml-4">
+            <div
+              onClick={() => !isCurrentUser && handleVolumeClick(member.id)}
+
+              className="relative -ml-4 cursor-pointer"
+              title={isCurrentUser ? "Can't mute yourself" : isMuted ? "Unmute user" : "Mute user"}
+            >
               <VoiceStatusIcon
                 className="h-8 w-8"
                 status={voice_status}

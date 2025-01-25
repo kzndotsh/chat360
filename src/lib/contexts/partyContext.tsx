@@ -56,7 +56,7 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
 
   const [volumeLevels, setVolumeLevels] = useState<Record<string, VoiceMemberState>>({});
 
-  const { getClient } = useAgoraContext();
+  const { getClient, denoiser } = useAgoraContext();
 
   const { updateVolume } = useVolumeControl({
     isMuted,
@@ -114,7 +114,7 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
       try {
         // Dynamically import VoiceService
         const { VoiceService } = await import('@/lib/services/voiceService');
-        const voiceService = VoiceService.getInstance(client);
+        const voiceService = VoiceService.getInstance(client, denoiser || undefined);
         if (!voiceService) return () => {}; // Return no-op cleanup function
 
         // Set up voice update handler
@@ -134,7 +134,7 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
     };
 
     void setupVoiceService();
-  }, [handleVolumeChange, getClient]);
+  }, [handleVolumeChange, getClient, denoiser]);
 
   const { initializePresence, cleanupPresence, updatePresence } = usePartyStore();
 

@@ -16,16 +16,16 @@ export function useVoice({ partyState = 'idle', channelName, uid }: Partial<Voic
     isMuted: false,
     volume: 0,
   });
-  const { client } = useAgoraContext();
+  const { client, denoiser } = useAgoraContext();
   const [voiceService, setVoiceService] = useState<VoiceService | null>(null);
 
   // Initialize voice service when client is available
   useEffect(() => {
     if (client) {
-      const service = VoiceService.getInstance(client);
+      const service = VoiceService.getInstance(client, denoiser || undefined);
       setVoiceService(service);
     }
-  }, [client]);
+  }, [client, denoiser]);
 
   useEffect(() => {
     if (partyState === 'joined' && channelName && uid && voiceService) {

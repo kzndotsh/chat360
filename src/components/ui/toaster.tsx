@@ -28,6 +28,7 @@ export function Toaster() {
               className="h-[50px] w-auto"
               height={50}
               src="/achievement.png"
+              unoptimized={true}
               width={50}
             />
             <ToastClose className="absolute right-1.5 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-white" />

@@ -36,6 +36,7 @@ const AgoraContext = createContext<AgoraContextType>({
   cleanupClient: async () => {},
   isInitializing: false,
   error: null,
+  denoiser: null,
 });
 
 export const useAgoraContext = () => useContext(AgoraContext);
@@ -44,122 +45,80 @@ export const useAgoraContext = () => useContext(AgoraContext);
 let AgoraRTC: IAgoraRTC | null = null;
 let denoiser: AIDenoiserExtension | null = null;
 
-async function loadAgoraSDK(): Promise<void> {
-  if (typeof window === 'undefined' || AgoraRTC) return;
+async function loadAgoraSDK(): Promise<{ agora: IAgoraRTC; denoiser: AIDenoiserExtension | null }> {
+  if (typeof window === 'undefined') {
+    throw new Error('Cannot load Agora SDK in non-browser environment');
+  }
+
+  if (AgoraRTC) {
+    return { agora: AgoraRTC, denoiser };
+  }
 
   const mod = await import('agora-rtc-sdk-ng');
   AgoraRTC = mod.default;
-  if (AgoraRTC) {
-    // Configure Agora SDK
-    AgoraRTC.disableLogUpload();
-    AgoraRTC.setLogLevel(0); // Set to INFO level
 
-    // Initialize AI Denoiser
-    denoiser = new AIDenoiserExtension({ assetsPath: '/external' });
+  // Configure Agora SDK
+  AgoraRTC.disableLogUpload();
+  AgoraRTC.setLogLevel(0); // Set to INFO level
 
-    // Check compatibility
-    if (!denoiser.checkCompatibility()) {
-      logger.warn('AI Denoiser not supported in this browser', {
+  // Initialize AI Denoiser with proper assets path
+  const newDenoiser = new AIDenoiserExtension({
+    assetsPath: '/external/agora-denoiser'
+  });
+
+  // Check compatibility and register only if supported
+  if (newDenoiser.checkCompatibility()) {
+    try {
+      // Wait for AudioContext to be ready
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Register extension before checking for errors
+      AgoraRTC.registerExtensions([newDenoiser]);
+
+      // Wait for registration to complete
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Handle loading errors
+      newDenoiser.onloaderror = (err: unknown) => {
+        logger.error('AI Denoiser failed to load', {
+          ...LOG_CONTEXT,
+          action: 'loadSDK',
+          metadata: { error: err }
+        });
+        denoiser = null;
+      };
+
+      // Only set denoiser if no errors occurred during registration
+      denoiser = newDenoiser;
+      logger.info('AI Denoiser initialized successfully', {
         ...LOG_CONTEXT,
         action: 'loadSDK'
       });
-      denoiser = null;
-      return;
-    }
-
-    // Register the extension
-    AgoraRTC.registerExtensions([denoiser]);
-
-    // Listen for load errors
-    denoiser.onloaderror = (error) => {
-      logger.error('AI Denoiser failed to load', {
+    } catch (err) {
+      logger.error('Failed to register AI Denoiser', {
         ...LOG_CONTEXT,
         action: 'loadSDK',
-        metadata: { error }
+        metadata: { error: err }
       });
       denoiser = null;
-    };
-  }
-}
-
-// Initialize SDK loading
-if (typeof window !== 'undefined') {
-  loadAgoraSDK().catch((error) => {
-    logger.error('Failed to load Agora SDK', {
+    }
+  } else {
+    logger.warn('AI Denoiser not compatible with current environment', {
       ...LOG_CONTEXT,
-      action: 'loadSDK',
-      metadata: { error },
+      action: 'loadSDK'
     });
-  });
+  }
+
+  return { agora: AgoraRTC, denoiser };
 }
 
 export function AgoraProvider({ children }: AgoraProviderProps) {
   const [client, setClient] = useState<IAgoraRTCClient | null>(null);
   const [isInitializing, setIsInitializing] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  const [denoiserInstance, setDenoiserInstance] = useState<AIDenoiserExtension | null>(null);
   const mountedRef = useRef(true);
   const retryCountRef = useRef(0);
-
-  const initClient = useCallback(async () => {
-    if (!AgoraRTC) {
-      try {
-        await loadAgoraSDK();
-      } catch (err) {
-        logger.error('Failed to load Agora SDK during init', {
-          ...LOG_CONTEXT,
-          action: 'initClient',
-          metadata: { error: err },
-        });
-        throw err;
-      }
-    }
-
-    if (!AgoraRTC) {
-      throw new Error('Failed to load Agora SDK');
-    }
-
-    const newClient = AgoraRTC.createClient({
-      mode: 'rtc',
-      codec: 'vp8',
-    });
-
-    // Configure client settings
-    await newClient.enableDualStream().catch((err) => {
-      logger.error('Failed to enable dual stream', {
-        ...LOG_CONTEXT,
-        action: 'initClient',
-        metadata: { error: err },
-      });
-    });
-
-    // Enable volume indicator for voice detection
-    await newClient.enableAudioVolumeIndicator();
-
-    return newClient;
-  }, []);
-
-  const cleanupClient = useCallback(async () => {
-    if (!client) return;
-
-    try {
-      // First stop all tracks
-      const localTracks = client.localTracks;
-      await Promise.all(localTracks.map((track) => track.stop()));
-
-      // Then leave the channel
-      await client.leave();
-      logger.debug('Client left channel', LOG_CONTEXT);
-    } catch (err) {
-      logger.error('Error during client cleanup', {
-        ...LOG_CONTEXT,
-        action: 'cleanupClient',
-        metadata: { error: err },
-      });
-    }
-
-    // Add delay to ensure cleanup is complete
-    await new Promise((resolve) => setTimeout(resolve, CLEANUP_DELAY));
-  }, [client]);
 
   const getClient = useCallback(async () => {
     if (client) return client;
@@ -168,9 +127,23 @@ export function AgoraProvider({ children }: AgoraProviderProps) {
     setError(null);
 
     try {
-      const newClient = await initClient();
+      if (!AgoraRTC) {
+        const { agora, denoiser: loadedDenoiser } = await loadAgoraSDK();
+        if (!agora) throw new Error('Failed to load Agora SDK');
+
+        const newClient = agora.createClient({ mode: 'rtc', codec: 'vp8' });
+        if (mountedRef.current) {
+          setClient(newClient);
+          setDenoiserInstance(loadedDenoiser);
+          retryCountRef.current = 0;
+        }
+        return newClient;
+      }
+
+      const newClient = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
       if (mountedRef.current) {
         setClient(newClient);
+        setDenoiserInstance(denoiser);
         retryCountRef.current = 0;
       }
       return newClient;
@@ -203,7 +176,30 @@ export function AgoraProvider({ children }: AgoraProviderProps) {
         setIsInitializing(false);
       }
     }
-  }, [client, initClient]);
+  }, [client]);
+
+  const cleanupClient = useCallback(async () => {
+    if (!client) return;
+
+    try {
+      // First stop all tracks
+      const localTracks = client.localTracks;
+      await Promise.all(localTracks.map((track) => track.stop()));
+
+      // Then leave the channel
+      await client.leave();
+      logger.debug('Client left channel', LOG_CONTEXT);
+    } catch (err) {
+      logger.error('Error during client cleanup', {
+        ...LOG_CONTEXT,
+        action: 'cleanupClient',
+        metadata: { error: err },
+      });
+    }
+
+    // Add delay to ensure cleanup is complete
+    await new Promise((resolve) => setTimeout(resolve, CLEANUP_DELAY));
+  }, [client]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -220,8 +216,9 @@ export function AgoraProvider({ children }: AgoraProviderProps) {
       cleanupClient,
       isInitializing,
       error,
+      denoiser: denoiserInstance,
     }),
-    [client, getClient, cleanupClient, isInitializing, error]
+    [client, getClient, cleanupClient, isInitializing, error, denoiserInstance]
   );
 
   return <AgoraContext.Provider value={contextValue}>{children}</AgoraContext.Provider>;

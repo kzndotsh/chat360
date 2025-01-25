@@ -1,7 +1,7 @@
 export const VOICE_CONSTANTS = {
   // Volume thresholds (0-1)
-  SPEAKING_THRESHOLD: 0.24, // Lower threshold for more sensitive speech detection
-  SPEAKING_HOLD_THRESHOLD: 0.18, // Higher hold threshold for more stable transitions
+  SPEAKING_THRESHOLD: 0.35, // Lower threshold for more sensitive speech detection
+  SPEAKING_HOLD_THRESHOLD: 0.30, // Higher hold threshold for more stable transitions
   VOLUME_SMOOTHING: 0.3,
 
   // Timing constants (ms)
