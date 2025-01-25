@@ -80,29 +80,23 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
     setVolumeLevels(prevLevels => {
       const newLevels = { ...prevLevels };
 
-      // Process all volume updates
       volumes.forEach(vol => {
-        const isCurrentUser = vol.id === currentMember?.id;
-        const hasChanged = JSON.stringify(newLevels[vol.id]) !== JSON.stringify(vol);
+        // Always update volume levels for all users
+        newLevels[vol.id] = vol;
 
-        // Update volume levels if it's a remote user or if local user state changed
-        if (!isCurrentUser || hasChanged) {
-          newLevels[vol.id] = vol;
-
-          // Update local volume only for current user
-          if (isCurrentUser) {
-            updateVolume(vol.level);
-          }
+        // Only update local volume for current user
+        if (vol.id === currentMember?.id) {
+          updateVolume(vol.level);
         }
       });
 
-      return newLevels;
-    });
+      logger.debug('Volume levels updated', {
+        component: 'PartyContext',
+        action: 'handleVolumeChange',
+        metadata: { volumes, newLevels }
+      });
 
-    logger.debug('Volume levels updated', {
-      component: 'PartyContext',
-      action: 'handleVolumeChange',
-      metadata: { volumes }
+      return newLevels;
     });
   }, [currentMember, updateVolume]);
 
