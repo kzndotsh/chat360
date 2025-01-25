@@ -1,7 +1,7 @@
 import type { PartyMember, VoiceMemberState } from '@/lib/types/party/member';
 import type { PartyStatus } from '@/lib/types/party/state';
 
-import { createContext, useCallback, useContext, useMemo, useEffect } from 'react';
+import { createContext, useCallback, useContext, useMemo, useEffect, useState } from 'react';
 
 import { useAgoraContext } from '@/components/providers/AgoraProvider';
 
@@ -54,9 +54,11 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
     setMuted,
   } = usePartyStore();
 
+  const [volumeLevels, setVolumeLevels] = useState<Record<string, VoiceMemberState>>({});
+
   const { getClient } = useAgoraContext();
 
-  const { voiceStatus, updateVolume } = useVolumeControl({
+  const { updateVolume } = useVolumeControl({
     isMuted,
     onVoiceStatusChange: (status) => {
       logger.debug('Voice status changed', {
@@ -73,6 +75,36 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
       });
     }
   });
+
+  const handleVolumeChange = useCallback((volumes: VoiceMemberState[]) => {
+    setVolumeLevels(prevLevels => {
+      const newLevels = { ...prevLevels };
+
+      // Process all volume updates
+      volumes.forEach(vol => {
+        const isCurrentUser = vol.id === currentMember?.id;
+        const hasChanged = JSON.stringify(newLevels[vol.id]) !== JSON.stringify(vol);
+
+        // Update volume levels if it's a remote user or if local user state changed
+        if (!isCurrentUser || hasChanged) {
+          newLevels[vol.id] = vol;
+
+          // Update local volume only for current user
+          if (isCurrentUser) {
+            updateVolume(vol.level);
+          }
+        }
+      });
+
+      return newLevels;
+    });
+
+    logger.debug('Volume levels updated', {
+      component: 'PartyContext',
+      action: 'handleVolumeChange',
+      metadata: { volumes }
+    });
+  }, [currentMember, updateVolume]);
 
   // Set up volume update handler
   useEffect(() => {
@@ -91,14 +123,12 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
         const voiceService = VoiceService.getInstance(client);
         if (!voiceService) return () => {}; // Return no-op cleanup function
 
-        const handleVolumeChange = (volumes: VoiceMemberState[]) => {
-          volumes.forEach(vol => {
-            updateVolume(vol.level);
-          });
-        };
-
+        // Set up voice update handler
         voiceService.onVolumeChange(handleVolumeChange);
-        return () => voiceService.onVolumeChange(null);
+
+        return () => {
+          voiceService.onVolumeChange(null);
+        };
       } catch (error) {
         logger.error('Failed to setup voice service', {
           component: 'PartyContext',
@@ -110,7 +140,7 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
     };
 
     void setupVoiceService();
-  }, [updateVolume, getClient]);
+  }, [handleVolumeChange, getClient]);
 
   const { initializePresence, cleanupPresence, updatePresence } = usePartyStore();
 
@@ -229,45 +259,39 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
     });
   }, [isMuted]);
 
-  const value = useMemo(
+  const contextValue = useMemo<PartyContextType>(
     () => ({
       currentMember,
       error: presenceError || partyError,
-      isLeaving: partyState === 'leaving',
+      isLeaving: false,
       isMuted,
-      join,
-      leave,
       members: Array.from(members.values()),
       micPermissionDenied: false,
       partyState,
+      volumeLevels,
+      join,
+      leave,
       toggleMute,
       updateProfile,
-      volumeLevels: {
-        [currentMember?.id || '']: {
-          id: currentMember?.id || '',
-          level: 0,
-          voice_status: voiceStatus,
-          muted: isMuted,
-          is_deafened: false,
-          agora_uid: currentMember?.agora_uid,
-          timestamp: Date.now(),
-        }
-      },
     }),
     [
       currentMember,
       presenceError,
       partyError,
-      partyState,
       isMuted,
+      members,
+      partyState,
+      volumeLevels,
       join,
       leave,
-      members,
       toggleMute,
       updateProfile,
-      voiceStatus,
     ]
   );
 
-  return <PartyContext.Provider value={value}>{children}</PartyContext.Provider>;
+  return (
+    <PartyContext.Provider value={contextValue}>
+      {children}
+    </PartyContext.Provider>
+  );
 }

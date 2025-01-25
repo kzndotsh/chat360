@@ -508,6 +508,17 @@ export class VoiceService {
       }, 1000);
     });
 
+    // Add handler for voice updates
+    this.broadcastChannel.on('broadcast', { event: 'voice_update' }, ({ payload }) => {
+      logger.debug('Received voice update broadcast', {
+        component: 'VoiceService',
+        action: 'handleBroadcast',
+        metadata: { payload }
+      });
+
+      this.handleVoiceUpdate(payload as VoiceUpdate);
+    });
+
     // Subscribe to channel with timeout promise
     try {
       const subscribePromise = this.broadcastChannel.subscribe((status) => {
@@ -519,7 +530,7 @@ export class VoiceService {
             presenceKey,
             isTemporaryKey,
             clientState,
-            authUserId: this.client.uid
+            userId: this.client.uid
           }
         });
       });
