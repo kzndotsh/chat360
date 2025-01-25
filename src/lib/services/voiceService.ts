@@ -95,7 +95,16 @@ export class VoiceService {
       void this.synchronizeMemberMappings();
     });
 
-    this.client.on('user-left', () => {
+    this.client.on('user-left', (user) => {
+      // Clean up mute state and voice state when user leaves
+      const memberId = this.getMemberIdFromAgoraUid(user.uid.toString());
+      if (memberId) {
+        this.memberMuteStates.delete(memberId);
+        this.memberVoiceStates.delete(memberId);
+        if (this.volumeCallback) {
+          this.volumeCallback(Array.from(this.memberVoiceStates.values()));
+        }
+      }
       void this.synchronizeMemberMappings();
     });
   }
