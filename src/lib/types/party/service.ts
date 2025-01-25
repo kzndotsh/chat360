@@ -1,4 +1,4 @@
-import type { PartyMember, VoiceMemberState } from './member';
+import type { PartyMember, VoiceMemberState, MemberStatus } from './member';
 
 // Service state interfaces
 export interface PresenceServiceState {
@@ -8,11 +8,11 @@ export interface PresenceServiceState {
 
 // Presence member state for tracking
 export interface PresenceMemberState extends PartyMember {
+  status: MemberStatus;
   is_deafened?: boolean;
   level?: number;
   // Voice-related properties
   muted?: boolean;
-  status?: 'active' | 'idle' | 'left';
   voice_status?: VoiceMemberState['voice_status'];
 }
 
