@@ -123,7 +123,7 @@ export function PartyHeader({ membersCount }: PartyHeaderProps) {
       role="banner"
     >
       <div className="flex w-full flex-col sm:flex-row">
-        <div className="order-2 flex h-[50px] flex-1 items-center justify-center bg-[#f7ffff] py-2 sm:order-1 sm:justify-start sm:py-0">
+        <div className="order-2 flex h-[50px] flex-1 items-center justify-center bg-[#f7ffff] pt-1 sm:order-1 sm:justify-start sm:py-0">
           <div className="flex items-center gap-2 sm:pl-[30px]">
             <Chat360Icon className="h-14 w-14 text-[#282b2f] opacity-90" />
             <span className="text-2xl font-semibold text-[#282b2f]">Chat360 Party</span>

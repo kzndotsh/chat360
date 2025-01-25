@@ -93,16 +93,16 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
 
       return (
         <div
-          className="flex h-[48px] items-center border-t border-[#e5e5e5] px-6 transition-colors first:border-t-0 hover:bg-[#f5f5f5]"
+          className="flex h-[48px] items-center border-t border-[#e5e5e5] px-3 sm:px-6 transition-colors first:border-t-0 hover:bg-[#f5f5f5]"
           key={member.id}
         >
           {/* Column 1: Username section */}
-          <div className="flex w-[140px] items-center gap-2 md:w-[440px]">
+          <div className="flex w-[140px] items-center gap-1.5 sm:gap-2 md:w-[440px]">
             {/* Voice status with volume indicator */}
             <div
               onClick={() => !isCurrentUser && handleVolumeClick(member.id)}
 
-              className="relative -ml-5 cursor-pointer"
+              className="relative -ml-2 sm:-ml-5 cursor-pointer"
               title={isCurrentUser ? "Can't mute yourself" : isMuted ? 'Unmute user' : 'Mute user'}
             >
               <VoiceStatusIcon
@@ -112,7 +112,7 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
             </div>
 
             {/* Avatar */}
-            <div className="-ml-1 h-6 w-6 rounded-none md:h-8 md:w-8">
+            <div className="h-6 w-6 rounded-none md:h-8 md:w-8">
               <Image
                 alt={member.name ?? 'Member'}
                 height={32}
@@ -123,15 +123,15 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
             </div>
 
             {/* Name */}
-            <span className="ml-1 flex-1 truncate text-base font-semibold text-[#282b2f] [text-shadow:_0_1px_1px_rgba(0,0,0,0.15)_inset] md:text-2xl">
+            <span className="flex-1 truncate text-base font-semibold text-[#282b2f] [text-shadow:_0_1px_1px_rgba(0,0,0,0.15)_inset] md:text-2xl">
               {member.name ?? 'Unknown'}
             </span>
           </div>
 
           {/* Game status */}
-          <div className="ml-3 flex flex-1 items-center md:-ml-[35px]">
+          <div className="flex flex-1 items-center min-w-0 justify-start sm:ml-3 md:-ml-[35px]">
             {/* Game status icon */}
-            <div className="-ml-2 mr-5 md:mr-2">
+            <div className="flex-shrink-0 flex items-center mr-2 sm:mr-5 md:mr-2">
               <svg
                 className="h-6 w-6 md:h-8 md:w-8"
                 fill="#acd43b"
@@ -142,9 +142,11 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
                 <path d="M2165.59,956.59c183.48-9.01,184.83,221.64,190.49,350.33,17.79,404.09,2.4,809.43,12,1214,2.5,105.19,10.31,288.29-94.24,349.92-38.25,22.55-102.62,29.46-146.86,35.14-99.53,12.79-200.19,23.62-300,34-69.02,7.18-145.2,17.33-213.9,20.1-171.11,6.89-271.76-164.73-351.91-290.25-218.29-341.85-406.95-701.94-617.53-1048.47-50.4-111.32,94.65-228.8,179.02-275.71,29.83-16.58,60.03-23.16,88-42,391.63-108.17,781.28-229.69,1174.92-331.08,26.43-6.81,52.47-14.63,80.02-15.98Z" />
               </svg>
             </div>
-            <span className="ml-[4px] text-base font-semibold text-[#282b2f] [text-shadow:_0_1px_1px_rgba(0,0,0,0.15)_inset] md:ml-[75px] md:text-2xl">
-              {member.game}
-            </span>
+            <div className="flex items-center min-w-0 flex-1">
+              <span className="truncate text-base font-semibold text-[#282b2f] [text-shadow:_0_1px_1px_rgba(0,0,0,0.15)_inset] md:ml-[75px] md:text-2xl">
+                {member.game}
+              </span>
+            </div>
           </div>
         </div>
       );
