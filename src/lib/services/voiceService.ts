@@ -3,6 +3,8 @@ import type { MicVAD } from '@ricky0123/vad-web';
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 import type { IMicrophoneAudioTrack, IAgoraRTCClient } from 'agora-rtc-sdk-ng';
 
+import { AIDenoiserExtension, AIDenoiserProcessorMode, AIDenoiserProcessorLevel, IAIDenoiserProcessor } from "agora-extension-ai-denoiser";
+import { VADExtension, IVADProcessor, VADResultMessageData } from "agora-extension-vad";
 import AgoraRTC from 'agora-rtc-sdk-ng';
 
 import { VOICE_CONSTANTS, VAD_CONFIG } from '@/lib/constants/voice';
@@ -54,16 +56,22 @@ export class VoiceService {
 
   private memberMuteStates: Map<string, boolean> = new Map();
 
+  private aiDenoiserProcessor: IAIDenoiserProcessor | null = null;
+  private vadProcessor: IVADProcessor | null = null;
+
   constructor(client: IAgoraRTCClient, supabase: SupabaseClient) {
     this.client = client;
     this.supabase = supabase;
     this.setupEventHandlers();
+    this.setupAIDenoiser();
+    this.setupVAD();
+
     // Enable volume indicator with more frequent updates
     // @ts-expect-error - I need to put something here for now.
     this.client.enableAudioVolumeIndicator({
-      interval: 100, // Update every 100ms
-      smooth: 3, // Light smoothing
-      enableVad: true, // Enable Voice Activity Detection
+      interval: 100,
+      smooth: 3,
+      enableVad: true,
     });
 
     // Listen for client state changes
@@ -438,6 +446,9 @@ export class VoiceService {
       },
     });
 
+    // Check if this member is locally muted
+    const isLocallyMuted = this.memberMuteStates.get(update.id) ?? false;
+
     // For local user updates, ignore our own broadcasts to prevent feedback loops
     if (update.id === this.currentMemberId) {
       if (update.source === 'local_broadcast') {
@@ -478,14 +489,35 @@ export class VoiceService {
       }
     }
 
-    // For remote users, update their state in our local tracking
+    // Get existing state to preserve agora_uid if needed
+    const existingState = this.memberVoiceStates.get(update.id);
+
+    // If member is locally muted, override the incoming state but preserve other properties
+    if (isLocallyMuted) {
+      const voiceState: VoiceMemberState = {
+        ...update, // Preserve all incoming properties
+        level: 0,
+        voice_status: 'muted',
+        muted: true,
+        agora_uid: update.agora_uid ?? existingState?.agora_uid,
+        timestamp: Date.now(),
+      };
+
+      this.memberVoiceStates.set(update.id, voiceState);
+      if (this.volumeCallback) {
+        this.volumeCallback(Array.from(this.memberVoiceStates.values()));
+      }
+      return;
+    }
+
+    // For non-locally muted members, update with incoming state
     const voiceState: VoiceMemberState = {
       id: update.id,
       level: update.level,
       voice_status: update.voice_status,
       muted: update.muted,
       is_deafened: update.is_deafened,
-      agora_uid: update.agora_uid,
+      agora_uid: update.agora_uid ?? existingState?.agora_uid,
       timestamp: update.timestamp,
     };
 
@@ -1045,13 +1077,13 @@ export class VoiceService {
       return currentVolume;
     }
 
-    // Use more aggressive smoothing when VAD indicates no speech
-    const factor = this.isVadSpeaking ? 0.5 : 0.8;
+    // Use less aggressive smoothing overall
+    const factor = this.isVadSpeaking ? 0.7 : 0.5; // Increased factors for faster response
     const smoothedVolume = this.lastVolume * (1 - factor) + currentVolume * factor;
 
     // If volume is below hold threshold and VAD shows no speech, let it drop quickly
     if (currentVolume < VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD && !this.isVadSpeaking) {
-      this.lastVolume = Math.min(smoothedVolume, currentVolume * 1.2);
+      this.lastVolume = Math.min(smoothedVolume, currentVolume * 1.5); // Faster drop
     } else {
       this.lastVolume = smoothedVolume;
     }
@@ -1223,6 +1255,123 @@ export class VoiceService {
     );
   }
 
+  private async setupAIDenoiser() {
+    try {
+      // Create AIDenoiserExtension instance with proper path to wasm files
+      const extension = new AIDenoiserExtension({
+        assetsPath: "/external",
+      });
+
+      // Handle loading errors
+      extension.onloaderror = (e) => {
+        logger.error('AI Denoiser failed to load', {
+          component: 'VoiceService',
+          action: 'setupAIDenoiser',
+          metadata: { error: e },
+        });
+      };
+
+      // Register extension
+      AgoraRTC.registerExtensions([extension]);
+
+      // Create processor
+      const processor = extension.createProcessor();
+      this.aiDenoiserProcessor = processor;
+
+      // Handle processor overload
+      processor.on("overload", async (elapsedTimeInMs: number) => {
+        logger.warn('AI Denoiser overload detected', {
+          component: 'VoiceService',
+          action: 'setupAIDenoiser',
+          metadata: { elapsedTimeInMs },
+        });
+        // Fall back to stationary noise suppression mode
+        await processor.setMode(AIDenoiserProcessorMode.STATIONARY_NS);
+      });
+
+      logger.info('AI Denoiser setup complete');
+    } catch (error) {
+      logger.error('Failed to setup AI Denoiser', {
+        component: 'VoiceService',
+        action: 'setupAIDenoiser',
+        metadata: { error },
+      });
+    }
+  }
+
+  private async setupVAD() {
+    try {
+      // Create VAD extension instance
+      const extension = new VADExtension({
+        assetsPath: "/external/",
+      });
+
+      // Check compatibility
+      if (!extension.checkCompatibility()) {
+        logger.warn('VAD extension is not supported in this environment', {
+          component: 'VoiceService',
+          action: 'setupVAD',
+        });
+        return;
+      }
+
+
+      // Register extension
+      AgoraRTC.registerExtensions([extension]);
+
+      // Create processor
+      const processor = extension.createProcessor();
+      this.vadProcessor = processor;
+
+
+      // Handle processor overload
+      processor.on("overload", () => {
+        logger.warn('VAD processor overload detected', {
+          component: 'VoiceService',
+          action: 'setupVAD',
+        });
+      });
+      // Handle VAD results
+      processor.on("result", (result: VADResultMessageData) => {
+        const isVoiceProb = result.voiceProb > VOICE_CONSTANTS.SPEAKING_THRESHOLD;
+        const isNotMusic = result.musicProb < VOICE_CONSTANTS.MUSIC_THRESHOLD;
+        const isValidPitch = result.pitchFreq >= VOICE_CONSTANTS.MIN_PITCH_FREQ &&
+                           result.pitchFreq <= VOICE_CONSTANTS.MAX_PITCH_FREQ;
+
+        const isSpeaking = isVoiceProb && isNotMusic && isValidPitch;
+
+        if (this.isVadSpeaking !== isSpeaking) {
+          this.isVadSpeaking = isSpeaking;
+          logger.debug('VAD state changed', {
+            component: 'VoiceService',
+            action: 'vadResult',
+            metadata: {
+              isSpeaking,
+              voiceProb: result.voiceProb,
+              musicProb: result.musicProb,
+              pitchFreq: result.pitchFreq,
+              isVoiceProb,
+              isNotMusic,
+              isValidPitch,
+              threshold: VOICE_CONSTANTS.SPEAKING_THRESHOLD,
+              musicThreshold: VOICE_CONSTANTS.MUSIC_THRESHOLD,
+              minPitchFreq: VOICE_CONSTANTS.MIN_PITCH_FREQ,
+              maxPitchFreq: VOICE_CONSTANTS.MAX_PITCH_FREQ
+            },
+          });
+        }
+      });
+
+      logger.info('VAD setup complete');
+    } catch (error) {
+      logger.error('Failed to setup VAD', {
+        component: 'VoiceService',
+        action: 'setupVAD',
+        metadata: { error },
+      });
+    }
+  }
+
   private async createAudioTrack(): Promise<IMicrophoneAudioTrack> {
     let audioTrack: IMicrophoneAudioTrack | null = null;
 
@@ -1232,23 +1381,42 @@ export class VoiceService {
         encoderConfig: {
           sampleRate: 48000,
           stereo: false,
-          bitrate: 64, // Reduced bitrate helps with noise
+          bitrate: 64,
         },
-        // Enable built-in noise suppression
         AEC: true,
         ANS: true,
         AGC: true,
       });
 
-      // Initialize VAD for additional noise detection
-      await this.initializeVAD();
+      // Apply AI Denoiser if available
+      if (this.aiDenoiserProcessor) {
+        audioTrack.pipe(this.aiDenoiserProcessor).pipe(audioTrack.processorDestination);
+        await this.aiDenoiserProcessor.enable();
+        await this.aiDenoiserProcessor.setMode(AIDenoiserProcessorMode.NSNG);
+        await this.aiDenoiserProcessor.setLevel(AIDenoiserProcessorLevel.SOFT);
+        logger.info('AI Denoiser enabled for audio track');
+      }
+
+      // Apply VAD if available
+      if (this.vadProcessor) {
+        if (this.aiDenoiserProcessor) {
+          // If AI Denoiser is active, chain VAD after it
+          this.aiDenoiserProcessor.pipe(this.vadProcessor);
+        } else {
+          // Otherwise pipe directly from audio track
+          audioTrack.pipe(this.vadProcessor).pipe(audioTrack.processorDestination);
+        }
+        await this.vadProcessor.enable();
+        logger.info('VAD enabled for audio track');
+      }
 
       logger.debug('Audio track created successfully', {
         component: 'VoiceService',
         action: 'createAudioTrack',
         metadata: {
           hasAudioTrack: true,
-          hasVAD: !!this.vad,
+          hasVAD: !!this.vadProcessor,
+          hasAIDenoiser: !!this.aiDenoiserProcessor,
         },
       });
 
@@ -1261,7 +1429,8 @@ export class VoiceService {
           errorMessage: error instanceof Error ? error.message : String(error),
           errorStack: error instanceof Error ? error.stack : undefined,
           hasAudioTrack: !!audioTrack,
-          hasVAD: !!this.vad,
+          hasVAD: !!this.vadProcessor,
+          hasAIDenoiser: !!this.aiDenoiserProcessor,
         },
       });
 
@@ -1352,22 +1521,23 @@ export class VoiceService {
 
     // Use VAD to help filter out noise
     const isVadConfidentSpeech = this.updateVadHistory(this.isVadSpeaking);
-    const isLoudEnough = audioLevel >= VOICE_CONSTANTS.SPEAKING_THRESHOLD;
 
-    // Only consider it speaking if both VAD and volume indicate speech
-    if (isVadConfidentSpeech && isLoudEnough) {
+    // Consider it speaking if either VAD or volume indicates clear speech
+    if (isVadConfidentSpeech || (audioLevel >= VOICE_CONSTANTS.SPEAKING_THRESHOLD * 1.2)) {
       return 'speaking';
     }
 
-    // If VAD says it's not speech but volume is high, likely noise
-    if (!isVadConfidentSpeech && isLoudEnough) {
-      // Reduce volume for probable noise
-      if (this.audioTrack) {
-        const reducedVolume = audioLevel * 0.5; // Reduce volume by 50%
-        this.audioTrack.setVolume(Math.round(reducedVolume * 1000));
-      }
+    // If volume is moderate and VAD indicates speech, still consider it speaking
+    if (isVadConfidentSpeech && audioLevel >= VOICE_CONSTANTS.SPEAKING_THRESHOLD * 0.8) {
+      return 'speaking';
     }
 
+    // If volume is very low, consider it silent
+    if (audioLevel < VOICE_CONSTANTS.SPEAKING_THRESHOLD * 0.3) {
+      return 'silent';
+    }
+
+    // Otherwise return silent
     return 'silent';
   }
 
@@ -1405,7 +1575,7 @@ export class VoiceService {
     }
   }
 
-  public async toggleMemberMute(memberId: string, muted: boolean): Promise<void> {
+  public async toggleMemberMute(memberId: string, muted: boolean) {
     logger.debug('Toggling member mute state', {
       component: 'VoiceService',
       action: 'toggleMemberMute',
@@ -1445,12 +1615,36 @@ export class VoiceService {
       this.volumeCallback(Array.from(this.memberVoiceStates.values()));
     }
 
-    // If we have an audio track for this member, adjust its volume
+    // Control remote audio stream by unsubscribing/subscribing
     const agoraUid = this.getAgoraUidFromMemberId(memberId);
     if (agoraUid) {
-      const remoteUser = this.client?.remoteUsers.find((user) => user.uid === agoraUid);
-      if (remoteUser?.audioTrack) {
-        remoteUser.audioTrack.setVolume(muted ? 0 : 100);
+      const remoteUser = this.client?.remoteUsers.find((user) => user.uid.toString() === agoraUid);
+      if (remoteUser) {
+        logger.debug('Setting remote user mute state', {
+          component: 'VoiceService',
+          action: 'toggleMemberMute',
+          metadata: { memberId, agoraUid, muted },
+        });
+
+        try {
+          if (muted) {
+            // Unsubscribe from audio to mute
+            await this.client.unsubscribe(remoteUser, 'audio');
+          } else {
+            // Subscribe to audio to unmute
+            await this.client.subscribe(remoteUser, 'audio');
+            // Play the audio track after subscribing
+            if (remoteUser.audioTrack) {
+              remoteUser.audioTrack.play();
+            }
+          }
+        } catch (error) {
+          logger.error('Failed to control remote audio stream', {
+            component: 'VoiceService',
+            action: 'toggleMemberMute',
+            metadata: { memberId, agoraUid, muted, error },
+          });
+        }
       }
     }
   }

@@ -63,7 +63,7 @@ const nextConfig: NextConfig = {
           },
           {
             from: 'node_modules/agora-extension-ai-denoiser/external/*.wasm',
-            to: '../public/external/agora-denoiser/[name][ext]',
+            to: '../public/external/[name][ext]',
           },
         ],
       })

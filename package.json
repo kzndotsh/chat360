@@ -33,6 +33,7 @@
     "@supabase/supabase-js": "^2.47.16",
     "@uidotdev/usehooks": "^2.4.1",
     "agora-extension-ai-denoiser": "^1.1.0",
+    "agora-extension-vad": "^1.0.0-beta.2",
     "agora-rtc-sdk-ng": "^4.23.1",
     "agora-rte-extension": "^1.2.4",
     "agora-token": "^2.0.3",

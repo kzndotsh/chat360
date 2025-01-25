@@ -21,6 +21,11 @@ export const VOICE_CONSTANTS = {
   VAD_CONFIDENCE_THRESHOLD: 0.5, // Lowered for better sensitivity
   VAD_SPEAKING_HISTORY: 8,
   VAD_SPEAKING_RATIO_THRESHOLD: 0.4, // More lenient ratio
+
+  // Agora VAD configuration
+  MUSIC_THRESHOLD: 0.3, // Threshold for music detection (0-1)
+  MIN_PITCH_FREQ: 85, // Minimum pitch frequency for human voice (Hz)
+  MAX_PITCH_FREQ: 255, // Maximum pitch frequency for human voice (Hz)
 } as const;
 
 export const VAD_CONFIG = {

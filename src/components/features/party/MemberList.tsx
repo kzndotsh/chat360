@@ -131,7 +131,7 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
           {/* Game status */}
           <div className="ml-3 flex flex-1 items-center md:-ml-[35px]">
             {/* Game status icon */}
-            <div className="-ml-6 mr-5 md:mr-2">
+            <div className="-ml-2 mr-5 md:mr-2">
               <svg
                 className="h-6 w-6 md:h-8 md:w-8"
                 fill="#acd43b"

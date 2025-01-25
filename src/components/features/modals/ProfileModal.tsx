@@ -31,7 +31,9 @@ import { logger } from '@/lib/logger';
 import { BaseModal } from './BaseModal';
 
 const formSchema = z.object({
-  name: z.string().min(2, 'Name must be at least 2 characters'),
+  name: z.string()
+    .min(2, 'Name must be at least 2 characters')
+    .max(20, 'Name cannot be longer than 20 characters'),
   avatar: z.string().refine((val) => AVATARS.includes(val), {
     message: 'Please select an avatar',
   }),
