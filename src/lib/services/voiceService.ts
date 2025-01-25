@@ -1349,8 +1349,8 @@ export class VoiceService {
   }
 
   private async initializeVAD(): Promise<void> {
-    // Only initialize VAD in browser environment
-    if (typeof window === 'undefined') {
+    // Skip VAD initialization in non-browser environment
+    if (typeof window === 'undefined' || typeof self === 'undefined') {
       logger.info('Skipping VAD initialization in non-browser environment');
       return;
     }
@@ -1359,9 +1359,9 @@ export class VoiceService {
       logger.info('Initializing VAD');
 
       // Dynamically import VAD only in browser environment
-      const VAD = await import('@ricky0123/vad-web');
+      const { MicVAD } = await import('@ricky0123/vad-web');
 
-      this.vad = await VAD.MicVAD.new({
+      this.vad = await MicVAD.new({
         onSpeechStart: () => {
           logger.debug('VAD speech start detected');
           this.isVadSpeaking = true;
@@ -1387,12 +1387,14 @@ export class VoiceService {
         action: 'initializeVAD',
         metadata: { error }
       });
+      // Don't throw error, just continue without VAD
+      this.vad = null;
     }
   }
 
   private updateVadHistory(isSpeaking: boolean): boolean {
     // Skip VAD processing in non-browser environment
-    if (typeof window === 'undefined') {
+    if (typeof window === 'undefined' || typeof self === 'undefined') {
       return false;
     }
 
