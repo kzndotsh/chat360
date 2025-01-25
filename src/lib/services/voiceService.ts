@@ -824,6 +824,9 @@ export class VoiceService {
         // Create and publish audio track
         this.audioTrack = await this.createAudioTrack();
 
+        // Publish the audio track
+        await this.client.publish(this.audioTrack);
+
         // Map the Agora UID to member ID
         const agoraUid = uid.toString();
         this.memberIdToAgoraUid.set(memberId, agoraUid);
