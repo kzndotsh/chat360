@@ -1,5 +1,7 @@
 "use client"
 
+import Image from 'next/image'
+
 import {
   Toast,
   ToastClose,
@@ -21,10 +23,12 @@ export function Toaster() {
             {...props}
             className="relative group p-0 bg-transparent border-none shadow-none w-fit data-[state=open]:animate-in data-[state=open]:slide-in-from-top-full data-[state=open]:fade-in-0 data-[state=open]:duration-300"
           >
-            <img
+            <Image
               alt="Achievement"
               className="h-[50px] w-auto"
+              height={50}
               src="/achievement.png"
+              width={50}
             />
             <ToastClose className="absolute right-1.5 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-white" />
           </Toast>
