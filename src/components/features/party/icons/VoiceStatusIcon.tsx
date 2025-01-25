@@ -1,3 +1,5 @@
+import { memo } from 'react';
+
 import { IoVolumeHighSharp, IoVolumeMuteSharp, IoVolumeOffSharp } from 'react-icons/io5';
 
 import { logger } from '@/lib/logger';
@@ -9,7 +11,10 @@ interface VoiceStatusIconProps {
   className?: string;
 }
 
-export function VoiceStatusIcon({ status, className }: VoiceStatusIconProps) {
+export const VoiceStatusIcon = memo(function VoiceStatusIcon({
+  status,
+  className,
+}: VoiceStatusIconProps) {
   const iconClass = cn(className, 'text-[#282b2f]');
 
   logger.debug('Rendering VoiceStatusIcon', {
@@ -31,4 +36,4 @@ export function VoiceStatusIcon({ status, className }: VoiceStatusIconProps) {
     default:
       return <IoVolumeOffSharp className={iconClass} />;
   }
-}
+});

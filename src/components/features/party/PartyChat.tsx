@@ -4,47 +4,18 @@ import type { VoiceStatus } from '@/lib/types/party/member';
 
 import React, { memo } from 'react';
 
-import Image from 'next/image';
-
 import { Card } from '@/components/ui/card';
 
 import { ModalManager } from '@/components/features/modals/ModalManager';
 
-import { AVATARS } from '@/lib/constants';
 import { useParty } from '@/lib/contexts/partyContext';
 import { usePartyNotifications } from '@/lib/hooks/usePartyNotifications';
 import { logger } from '@/lib/logger';
 
-import Clock from './Clock';
 import { MemberList } from './MemberList';
 import { PartyControls } from './PartyControls';
 import { PartyHeader } from './PartyHeader';
-
-const TopBar = () => {
-  const { currentMember } = useParty();
-
-  return (
-    <div className="relative mb-3 flex h-[65px] w-full items-end justify-between px-4 md:px-8">
-      <div className="flex items-center">
-        <span className="text-xl font-medium leading-none text-white [text-shadow:_0_1px_1px_rgba(0,0,0,0.15)_inset] md:text-2xl">
-          $360
-        </span>
-      </div>
-      <div className="absolute left-1/2 top-0 -translate-x-1/2">
-        <Image
-          alt={currentMember?.name ?? 'Default Avatar'}
-          className="h-[50px] w-[50px] object-cover md:h-[65px] md:w-[65px]"
-          height={65}
-          src={currentMember?.avatar ?? AVATARS[0]!}
-          width={65}
-        />
-      </div>
-      <div className="flex items-center">
-        <Clock />
-      </div>
-    </div>
-  );
-};
+import { TopBar } from './TopBar';
 
 const PartyContent = memo(() => {
   const { members, currentMember, volumeLevels } = useParty();
@@ -124,13 +95,13 @@ function PartyChat() {
   };
 
   return (
-    <div className="flex min-h-screen w-full items-center justify-center p-8 md:p-12">
-      <div className="w-full max-w-full md:w-auto">
+    <div className="flex min-h-screen w-full items-start justify-center p-0 lg:items-center lg:p-12">
+      <div className="w-full max-w-full lg:w-auto">
         <div className="flex flex-col">
           <TopBar />
-          <Card className="flex h-[600px] w-full min-w-[300px] flex-col rounded-none border-0 bg-[#dce4e7] md:min-w-[900px]">
+          <Card className="flex h-[calc(100vh-120px)] w-full flex-col rounded-none border-0 bg-[#dce4e7] lg:h-[600px] lg:min-w-[900px]">
             <PartyHeader membersCount={members.length} />
-            <div className="overflow-y-auto bg-[#dce4e7]">
+            <div className="flex-1 overflow-y-auto bg-[#dce4e7]">
               <PartyContent />
             </div>
           </Card>

@@ -14,12 +14,11 @@ const STATUSES = [
   'Yield Maxxing',
   'Tax Evading',
   'Perps Trading',
-  'Buying High Selling Low',
   'Shitposting',
   'Retiring Early',
   'PNL Flexing',
   'Larping',
-  'Engagement Farming',
+  'Engagement Farmin',
   'Top Blasting',
 ];
 

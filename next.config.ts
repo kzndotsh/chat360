@@ -1,5 +1,6 @@
 import type { NextConfig } from 'next';
 
+import MillionLint from '@million/lint';
 import CopyPlugin from 'copy-webpack-plugin';
 
 const nextConfig: NextConfig = {
@@ -49,6 +50,10 @@ const nextConfig: NextConfig = {
       new CopyPlugin({
         patterns: [
           {
+            from: 'node_modules/onnxruntime-web/dist/*.wasm',
+            to: '../public/[name][ext]',
+          },
+          {
             from: 'node_modules/@ricky0123/vad-web/dist/vad.worklet.bundle.min.js',
             to: '../public/[name][ext]',
           },
@@ -68,4 +73,7 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default MillionLint.next({
+  enabled: true,
+  rsc: false,
+})(nextConfig);

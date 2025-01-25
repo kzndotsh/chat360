@@ -17,7 +17,7 @@ export function usePartyNotifications() {
       if (lastMember) {
         toast({
           description: `${lastMember.name} has joined the party`,
-          duration: 1500, // Reduced from 2000ms to 1500ms
+          duration: 2000,
         });
       }
     }

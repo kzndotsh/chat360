@@ -1,12 +1,12 @@
 export const VOICE_CONSTANTS = {
   // Volume thresholds (0-1)
-  SPEAKING_THRESHOLD: 0.35, // Lower threshold for more sensitive speech detection
-  SPEAKING_HOLD_THRESHOLD: 0.3, // Higher hold threshold for more stable transitions
-  VOLUME_SMOOTHING: 0.3,
+  SPEAKING_THRESHOLD: 0.35, // Lowered to be more sensitive
+  SPEAKING_HOLD_THRESHOLD: 0.3, // Adjusted to maintain speaking state
+  VOLUME_SMOOTHING: 0.4, // Reduced for faster response
 
   // Timing constants (ms)
-  SPEAKING_TIMEOUT: 100, // Longer timeout for more stable state changes
-  UPDATE_DEBOUNCE: 50, // More debounce for smoother updates
+  SPEAKING_TIMEOUT: 200, // Increased to reduce flickering
+  UPDATE_DEBOUNCE: 50,
   RECOVERY_DELAY: 250,
 
   // Audio quality monitoring
@@ -18,7 +18,16 @@ export const VOICE_CONSTANTS = {
   MAX_VOLUME: 1000,
 
   // VAD configuration
-  VAD_CONFIDENCE_THRESHOLD: 0.75,
-  VAD_SPEAKING_HISTORY: 8, // Match redemptionFrames from VAD docs
-  VAD_SPEAKING_RATIO_THRESHOLD: 0.6,
+  VAD_CONFIDENCE_THRESHOLD: 0.5, // Lowered for better sensitivity
+  VAD_SPEAKING_HISTORY: 8,
+  VAD_SPEAKING_RATIO_THRESHOLD: 0.4, // More lenient ratio
+} as const;
+
+export const VAD_CONFIG = {
+  POSITIVE_SPEECH_THRESHOLD: 0.45, // Lowered for better sensitivity
+  NEGATIVE_SPEECH_THRESHOLD: 0.3, // Lowered to detect silence sooner
+  REDEMPTION_FRAMES: 6, // Reduced for faster state changes
+  PRE_SPEECH_PAD_FRAMES: 2, // Increased to catch speech start
+  MIN_SPEECH_FRAMES: 2, // Lowered for faster response
+  FRAME_SAMPLES: 512, // Kept optimal for Silero v5
 } as const;

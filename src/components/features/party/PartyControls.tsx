@@ -2,11 +2,12 @@
 
 import type { PartyControlsProps } from '@/lib/types/components/props';
 
-import React from 'react';
+import React, { memo, useCallback } from 'react';
 
+import { AVATARS } from '@/lib/constants';
 import { useModalStore } from '@/lib/stores/useModalStore';
 
-export function PartyControls({
+export const PartyControls = memo(function PartyControls({
   currentUser,
   isLeaving,
   onLeaveAction,
@@ -18,28 +19,39 @@ export function PartyControls({
 }: PartyControlsProps) {
   const showModal = useModalStore((state) => state.showModal);
 
+  const handleJoinClick = useCallback(() => {
+    showModal('join', {
+      name: '',
+      avatar: '',
+      game: '',
+    });
+  }, [showModal]);
+
+  const handleProfileClick = useCallback(() => {
+    if (!currentUser) return;
+    showModal('profile', {
+      name: currentUser.name ?? '',
+      avatar: currentUser.avatar ?? AVATARS[0]!,
+      game: currentUser.game ?? 'Offline',
+    });
+  }, [showModal, currentUser]);
+
   const buttonClass = (isActive: boolean, isProcessing: boolean) =>
-    `flex items-center gap-2 transition-opacity ${
+    `flex items-center gap-1 md:gap-2 transition-opacity ${
       isActive && !isProcessing ? 'hover:opacity-80' : 'opacity-50 cursor-not-allowed'
     }`;
 
   return (
     <div className="flex flex-col px-[30px] py-3">
-      <div className="flex flex-wrap gap-4 text-sm">
+      <div className="flex min-w-[300px] flex-nowrap gap-2 text-xs md:gap-4 md:text-sm">
         {!currentUser && (
           <button
-            onClick={() => {
-              showModal('join', {
-                name: '',
-                avatar: '',
-                game: '',
-              });
-            }}
+            onClick={handleJoinClick}
 
             className={buttonClass(partyState === 'idle', partyState === 'joining')}
             disabled={partyState !== 'idle'}
           >
-            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#55b611] text-[11px] font-bold text-white">
+            <div className="flex h-4 w-4 items-center justify-center rounded-full bg-[#55b611] text-[10px] font-bold text-white md:h-5 md:w-5 md:text-[11px]">
               A
             </div>
             <span className="font-semibold text-white [text-shadow:_0_1px_1px_rgba(0,0,0,0.15)_inset]">
@@ -56,7 +68,7 @@ export function PartyControls({
               className={buttonClass(true, isLeaving)}
               disabled={isLeaving || partyState === 'joining'}
             >
-              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#ae1228] text-[11px] font-bold text-white">
+              <div className="flex h-4 w-4 items-center justify-center rounded-full bg-[#ae1228] text-[10px] font-bold text-white md:h-5 md:w-5 md:text-[11px]">
                 B
               </div>
               <span className="text-white [text-shadow:_0_1px_1px_rgba(0,0,0,0.15)_inset]">
@@ -70,7 +82,7 @@ export function PartyControls({
               className={buttonClass(true, false)}
               disabled={partyState === 'joining'}
             >
-              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#0c71ba] text-[11px] font-bold text-white">
+              <div className="flex h-4 w-4 items-center justify-center rounded-full bg-[#0c71ba] text-[10px] font-bold text-white md:h-5 md:w-5 md:text-[11px]">
                 X
               </div>
               <span className="text-white [text-shadow:_0_1px_1px_rgba(0,0,0,0.15)_inset]">
@@ -85,7 +97,7 @@ export function PartyControls({
                 className={buttonClass(true, false)}
                 disabled={partyState === 'joining'}
               >
-                <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#0c71ba] text-[11px] font-bold text-white">
+                <div className="flex h-4 w-4 items-center justify-center rounded-full bg-[#0c71ba] text-[10px] font-bold text-white md:h-5 md:w-5 md:text-[11px]">
                   R
                 </div>
                 <span className="text-white [text-shadow:_0_1px_1px_rgba(0,0,0,0.15)_inset]">
@@ -95,18 +107,12 @@ export function PartyControls({
             )}
 
             <button
-              onClick={() => {
-                showModal('profile', {
-                  name: currentUser.name,
-                  avatar: currentUser.avatar || 'https://i.imgur.com/LCycgcq.png',
-                  game: currentUser.game || 'Offline',
-                });
-              }}
+              onClick={handleProfileClick}
 
               className={buttonClass(true, false)}
               disabled={partyState === 'joining'}
             >
-              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#e09a23] text-[11px] font-bold text-white">
+              <div className="flex h-4 w-4 items-center justify-center rounded-full bg-[#e09a23] text-[10px] font-bold text-white md:h-5 md:w-5 md:text-[11px]">
                 Y
               </div>
               <span className="text-white [text-shadow:_0_1px_1px_rgba(0,0,0,0.15)_inset]">
@@ -118,4 +124,4 @@ export function PartyControls({
       </div>
     </div>
   );
-}
+});

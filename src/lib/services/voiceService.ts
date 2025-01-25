@@ -5,7 +5,7 @@ import type { IMicrophoneAudioTrack, IAgoraRTCClient } from 'agora-rtc-sdk-ng';
 
 import AgoraRTC from 'agora-rtc-sdk-ng';
 
-import { VOICE_CONSTANTS } from '@/lib/constants/voice';
+import { VOICE_CONSTANTS, VAD_CONFIG } from '@/lib/constants/voice';
 import { logger } from '@/lib/logger';
 import { PresenceService } from '@/lib/services/presenceService';
 import { supabase } from '@/lib/supabase';
@@ -1272,7 +1272,6 @@ export class VoiceService {
   }
 
   private async initializeVAD(): Promise<void> {
-    // Skip VAD initialization in non-browser environment
     if (typeof window === 'undefined' || typeof self === 'undefined') {
       logger.info('Skipping VAD initialization in non-browser environment');
       return;
@@ -1302,9 +1301,13 @@ export class VoiceService {
             action: 'vadMisfire',
           });
         },
-        // Use standard VAD options
-        minSpeechFrames: 5,
-        redemptionFrames: 10,
+        // Use optimized VAD settings from Silero docs
+        frameSamples: VAD_CONFIG.FRAME_SAMPLES,
+        positiveSpeechThreshold: VAD_CONFIG.POSITIVE_SPEECH_THRESHOLD,
+        negativeSpeechThreshold: VAD_CONFIG.NEGATIVE_SPEECH_THRESHOLD,
+        redemptionFrames: VAD_CONFIG.REDEMPTION_FRAMES,
+        preSpeechPadFrames: VAD_CONFIG.PRE_SPEECH_PAD_FRAMES,
+        minSpeechFrames: VAD_CONFIG.MIN_SPEECH_FRAMES,
       });
 
       await this.vad.start();
