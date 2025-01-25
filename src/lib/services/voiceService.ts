@@ -1257,74 +1257,44 @@ export class VoiceService {
 
   private async setupAIDenoiser() {
     try {
-      // Create AIDenoiserExtension instance with proper path to wasm files
       const extension = new AIDenoiserExtension({
-        assetsPath: "/external",
+        assetsPath: '/external',
       });
 
-      // Handle loading errors
-      extension.onloaderror = (e) => {
-        logger.error('AI Denoiser failed to load', {
-          component: 'VoiceService',
-          action: 'setupAIDenoiser',
-          metadata: { error: e },
-        });
-      };
-
-      // Add load success handler
-      extension.onload = () => {
-        logger.info('AI Denoiser loaded successfully', {
-          component: 'VoiceService',
-          action: 'setupAIDenoiser',
-          metadata: { wasmLoaded: true },
-        });
-      };
-
-      // Register extension
       AgoraRTC.registerExtensions([extension]);
 
-      // Create processor
-      const processor = extension.createProcessor();
-      this.aiDenoiserProcessor = processor;
-
-      // Handle processor overload
-      processor.on("overload", async (elapsedTimeInMs: number) => {
-        logger.warn('AI Denoiser overload detected - switching to stationary mode', {
+      if (!extension.checkCompatibility()) {
+        logger.warn('AI Denoiser not supported on this browser', {
           component: 'VoiceService',
           action: 'setupAIDenoiser',
-          metadata: {
-            elapsedTimeInMs,
-            switchingToMode: 'STATIONARY_NS'
-          },
         });
-        // Fall back to stationary noise suppression mode
-        await processor.setMode(AIDenoiserProcessorMode.STATIONARY_NS);
-      });
+        return;
+      }
 
-      // Add processing event handler
-      processor.on("processframe", () => {
-        logger.debug('AI Denoiser processing frame', {
+      const processor = extension.createProcessor();
+
+      if (!processor) {
+        logger.error('Failed to create AI Denoiser processor', {
           component: 'VoiceService',
-          action: 'processFrame',
-          metadata: {
-            mode: processor.mode,
-            level: processor.level,
-            isEnabled: processor.enabled
-          },
+          action: 'setupAIDenoiser',
         });
-      });
+        return;
+      }
+
+      this.aiDenoiserProcessor = processor;
 
       logger.info('AI Denoiser setup complete', {
         component: 'VoiceService',
         action: 'setupAIDenoiser',
         metadata: {
           processorCreated: true,
-          initialMode: AIDenoiserProcessorMode.NSNG,
-          initialLevel: AIDenoiserProcessorLevel.AGGRESSIVE
+          initialMode: 'NSNG',
+          initialLevel: 'AGGRESSIVE',
         }
       });
+
     } catch (error) {
-      logger.error('Failed to setup AI Denoiser', {
+      logger.error('Error setting up AI Denoiser', {
         component: 'VoiceService',
         action: 'setupAIDenoiser',
         metadata: { error },
@@ -1409,15 +1379,18 @@ export class VoiceService {
     let audioTrack: IMicrophoneAudioTrack | null = null;
 
     try {
-      // Create audio track with noise suppression enabled
+      // Create audio track with basic settings
       audioTrack = await AgoraRTC.createMicrophoneAudioTrack({
         encoderConfig: {
           sampleRate: 48000,
           stereo: false,
           bitrate: 64,
         },
-        AEC: true,
-        ANS: true,
+        // Only use echo cancellation when not using AI denoiser
+        AEC: !this.aiDenoiserProcessor,
+        // Disable built-in noise suppression when using AI denoiser
+        ANS: !this.aiDenoiserProcessor,
+        // Keep auto gain control enabled for consistent volume
         AGC: true,
       });
 
@@ -1425,7 +1398,7 @@ export class VoiceService {
       if (this.aiDenoiserProcessor) {
         audioTrack.pipe(this.aiDenoiserProcessor).pipe(audioTrack.processorDestination);
         await this.aiDenoiserProcessor.enable();
-        await this.aiDenoiserProcessor.setMode(AIDenoiserProcessorMode.STATIONARY_NS);
+        await this.aiDenoiserProcessor.setMode(AIDenoiserProcessorMode.NSNG);
         await this.aiDenoiserProcessor.setLevel(AIDenoiserProcessorLevel.AGGRESSIVE);
         logger.info('AI Denoiser enabled for audio track');
       }
@@ -1450,6 +1423,7 @@ export class VoiceService {
           hasAudioTrack: true,
           hasVAD: !!this.vadProcessor,
           hasAIDenoiser: !!this.aiDenoiserProcessor,
+          noiseSuppressionMode: this.aiDenoiserProcessor ? 'AI_DENOISER' : 'BUILT_IN',
         },
       });
 
@@ -1513,7 +1487,7 @@ export class VoiceService {
         minSpeechFrames: VAD_CONFIG.MIN_SPEECH_FRAMES,
       });
 
-      await this.vad.start();
+      this.vad.start();
 
       logger.info('VAD initialized successfully', {
         component: 'VoiceService',
