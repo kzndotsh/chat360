@@ -186,7 +186,10 @@ export class VoiceService {
           isMuted: this._isMuted,
           audioTrackMuted: this.audioTrack?.muted,
           isJoined: this._isJoined,
-          volumes
+          volumes: volumes.map(v => ({
+            uid: v.uid,
+            level: v.level
+          }))
         }
       });
 
@@ -200,7 +203,11 @@ export class VoiceService {
           logger.debug('No member ID found for volume update', {
             component: 'VoiceService',
             action: 'volumeIndicator',
-            metadata: { agoraUid }
+            metadata: {
+              agoraUid,
+              allMemberIds: Array.from(this.memberVoiceStates.keys()),
+              allAgoraUids: this.client.remoteUsers.map(u => u.uid.toString())
+            }
           });
           return;
         }
@@ -221,7 +228,8 @@ export class VoiceService {
               indicatorLevel: level,
               actualLevel,
               difference: Math.abs(level - actualLevel),
-              isRemote: true
+              isRemote: true,
+              hasAudio: remoteUser.hasAudio
             }
           });
         }
@@ -246,7 +254,8 @@ export class VoiceService {
               threshold: VOICE_CONSTANTS.SPEAKING_THRESHOLD,
               rawLevel: vol.level,
               normalizedLevel: level,
-              isRemote: !!remoteUser
+              isRemote: !!remoteUser,
+              currentState: this.memberVoiceStates.get(memberId)?.voice_status
             }
           });
         }
@@ -267,8 +276,23 @@ export class VoiceService {
       });
 
       // Call volume callback with all updated volumes
-      if (this.volumeCallback && volumeUpdates.size > 0) {
-        this.volumeCallback(Array.from(this.memberVoiceStates.values()));
+      if (this.volumeCallback && this.memberVoiceStates.size > 0) {
+        const allStates = Array.from(this.memberVoiceStates.values());
+        logger.debug('Calling volume callback with all states', {
+          component: 'VoiceService',
+          action: 'volumeIndicator',
+          metadata: {
+            statesCount: allStates.length,
+            states: allStates.map(s => ({
+              id: s.id,
+              level: s.level,
+              voice_status: s.voice_status,
+              muted: s.muted,
+              isRemote: s.id !== this.currentMemberId
+            }))
+          }
+        });
+        this.volumeCallback(allStates);
       }
     });
 
