@@ -1271,6 +1271,15 @@ export class VoiceService {
         });
       };
 
+      // Add load success handler
+      extension.onload = () => {
+        logger.info('AI Denoiser loaded successfully', {
+          component: 'VoiceService',
+          action: 'setupAIDenoiser',
+          metadata: { wasmLoaded: true },
+        });
+      };
+
       // Register extension
       AgoraRTC.registerExtensions([extension]);
 
@@ -1280,16 +1289,40 @@ export class VoiceService {
 
       // Handle processor overload
       processor.on("overload", async (elapsedTimeInMs: number) => {
-        logger.warn('AI Denoiser overload detected', {
+        logger.warn('AI Denoiser overload detected - switching to stationary mode', {
           component: 'VoiceService',
           action: 'setupAIDenoiser',
-          metadata: { elapsedTimeInMs },
+          metadata: {
+            elapsedTimeInMs,
+            switchingToMode: 'STATIONARY_NS'
+          },
         });
         // Fall back to stationary noise suppression mode
         await processor.setMode(AIDenoiserProcessorMode.STATIONARY_NS);
       });
 
-      logger.info('AI Denoiser setup complete');
+      // Add processing event handler
+      processor.on("processframe", () => {
+        logger.debug('AI Denoiser processing frame', {
+          component: 'VoiceService',
+          action: 'processFrame',
+          metadata: {
+            mode: processor.mode,
+            level: processor.level,
+            isEnabled: processor.enabled
+          },
+        });
+      });
+
+      logger.info('AI Denoiser setup complete', {
+        component: 'VoiceService',
+        action: 'setupAIDenoiser',
+        metadata: {
+          processorCreated: true,
+          initialMode: AIDenoiserProcessorMode.NSNG,
+          initialLevel: AIDenoiserProcessorLevel.AGGRESSIVE
+        }
+      });
     } catch (error) {
       logger.error('Failed to setup AI Denoiser', {
         component: 'VoiceService',
@@ -1392,8 +1425,8 @@ export class VoiceService {
       if (this.aiDenoiserProcessor) {
         audioTrack.pipe(this.aiDenoiserProcessor).pipe(audioTrack.processorDestination);
         await this.aiDenoiserProcessor.enable();
-        await this.aiDenoiserProcessor.setMode(AIDenoiserProcessorMode.NSNG);
-        await this.aiDenoiserProcessor.setLevel(AIDenoiserProcessorLevel.SOFT);
+        await this.aiDenoiserProcessor.setMode(AIDenoiserProcessorMode.STATIONARY_NS);
+        await this.aiDenoiserProcessor.setLevel(AIDenoiserProcessorLevel.AGGRESSIVE);
         logger.info('AI Denoiser enabled for audio track');
       }
 

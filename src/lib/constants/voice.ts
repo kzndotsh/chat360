@@ -1,11 +1,11 @@
 export const VOICE_CONSTANTS = {
   // Volume thresholds (0-1)
-  SPEAKING_THRESHOLD: 0.35, // Lowered to be more sensitive
-  SPEAKING_HOLD_THRESHOLD: 0.3, // Adjusted to maintain speaking state
-  VOLUME_SMOOTHING: 0.4, // Reduced for faster response
+  SPEAKING_THRESHOLD: 0.2,
+  SPEAKING_HOLD_THRESHOLD: 0.15,
+  VOLUME_SMOOTHING: 0.3,
 
   // Timing constants (ms)
-  SPEAKING_TIMEOUT: 200, // Increased to reduce flickering
+  SPEAKING_TIMEOUT: 200,
   UPDATE_DEBOUNCE: 50,
   RECOVERY_DELAY: 250,
 
@@ -18,21 +18,21 @@ export const VOICE_CONSTANTS = {
   MAX_VOLUME: 1000,
 
   // VAD configuration
-  VAD_CONFIDENCE_THRESHOLD: 0.5, // Lowered for better sensitivity
-  VAD_SPEAKING_HISTORY: 8,
-  VAD_SPEAKING_RATIO_THRESHOLD: 0.4, // More lenient ratio
+  VAD_CONFIDENCE_THRESHOLD: 0.1,
+  VAD_SPEAKING_HISTORY: 2,
+  VAD_SPEAKING_RATIO_THRESHOLD: 0.15,
 
   // Agora VAD configuration
-  MUSIC_THRESHOLD: 0.3, // Threshold for music detection (0-1)
-  MIN_PITCH_FREQ: 85, // Minimum pitch frequency for human voice (Hz)
-  MAX_PITCH_FREQ: 255, // Maximum pitch frequency for human voice (Hz)
+  MUSIC_THRESHOLD: 0.7,
+  MIN_PITCH_FREQ: 50,
+  MAX_PITCH_FREQ: 400,
 } as const;
 
 export const VAD_CONFIG = {
-  POSITIVE_SPEECH_THRESHOLD: 0.45, // Lowered for better sensitivity
-  NEGATIVE_SPEECH_THRESHOLD: 0.3, // Lowered to detect silence sooner
-  REDEMPTION_FRAMES: 6, // Reduced for faster state changes
-  PRE_SPEECH_PAD_FRAMES: 2, // Increased to catch speech start
-  MIN_SPEECH_FRAMES: 2, // Lowered for faster response
-  FRAME_SAMPLES: 512, // Kept optimal for Silero v5
+  POSITIVE_SPEECH_THRESHOLD: 0.1,
+  NEGATIVE_SPEECH_THRESHOLD: 0.05,
+  REDEMPTION_FRAMES: 2,
+  PRE_SPEECH_PAD_FRAMES: 1,
+  MIN_SPEECH_FRAMES: 1,
+  FRAME_SAMPLES: 512,
 } as const;
