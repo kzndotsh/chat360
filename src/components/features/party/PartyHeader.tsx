@@ -28,7 +28,7 @@ const HeaderButton = ({
 }) => {
   const ButtonContent = (
     <button
-      className={`flex items-center justify-center relative h-[50px] cursor-pointer bg-[#6B717D] transition-colors hover:bg-[#5D626D] ${width}`}
+      className={`relative flex h-[50px] cursor-pointer items-center justify-center bg-[#6B717D] transition-colors hover:bg-[#5D626D] ${width}`}
     >
       <div className="absolute inset-0 shadow-[inset_0_-1px_1px_rgba(0,0,0,0.05)]"></div>
       <div className="absolute bottom-0 left-0 top-0 w-[1px] bg-[#5D626D]/50"></div>
@@ -123,31 +123,30 @@ export function PartyHeader({ membersCount }: PartyHeaderProps) {
       role="banner"
     >
       <div className="flex w-full flex-col sm:flex-row">
-        <div className="order-2 flex h-[50px] flex-1 items-center justify-center py-2 sm:py-0 sm:justify-start bg-[#f7ffff] sm:order-1">
+        <div className="order-2 flex h-[50px] flex-1 items-center justify-center bg-[#f7ffff] py-2 sm:order-1 sm:justify-start sm:py-0">
           <div className="flex items-center gap-2 sm:pl-[30px]">
             <Chat360Icon className="h-14 w-14 text-[#282b2f] opacity-90" />
             <span className="text-2xl font-semibold text-[#282b2f]">Chat360 Party</span>
           </div>
         </div>
 
-        <div className="order-1 flex h-[80px] w-full flex-col gap-[1px] sm:h-[40px] sm:flex-row sm:gap-0 sm:order-2 sm:w-auto">
+        <div className="order-1 flex h-[80px] w-full flex-col gap-[1px] sm:order-2 sm:h-[40px] sm:w-auto sm:flex-row sm:gap-0">
           <div className="flex h-[40px] w-full sm:hidden">
             <div className="flex-1">
-            <HeaderButton
-              icon={BiSolidBarChartAlt2}
-              iconSize="w-7 h-7"
+              <HeaderButton
+                icon={BiSolidBarChartAlt2}
+                iconSize="w-7 h-7"
                 width="w-full"
-            />
+              />
             </div>
             <div className="flex-1">
-            <HeaderButton
-              icon={TbBrandX}
-              iconSize="w-7 h-7"
-              url="https://x.com/chat360fun"
+              <HeaderButton
+                icon={TbBrandX}
+                iconSize="w-7 h-7"
+                url="https://x.com/chat360fun"
                 width="w-full"
-            />
-
-          </div>
+              />
+            </div>
           </div>
 
           <div className="h-[40px] w-full sm:hidden">
@@ -160,36 +159,36 @@ export function PartyHeader({ membersCount }: PartyHeaderProps) {
                 {membersCount}
               </span>
             </HeaderButton>
-        </div>
+          </div>
 
           <div className="hidden sm:flex">
-          <HeaderButton
-            icon={UserIcon}
-            iconSize="w-7 h-6"
-            width="w-[140px]"
-          >
-            <span className="ml-2 truncate text-sm font-bold text-white opacity-90">
-              {membersCount}
-            </span>
-          </HeaderButton>
+            <HeaderButton
+              icon={UserIcon}
+              iconSize="w-7 h-6"
+              width="w-[140px]"
+            >
+              <span className="ml-2 truncate text-sm font-bold text-white opacity-90">
+                {membersCount}
+              </span>
+            </HeaderButton>
 
-          <HeaderButton
-            icon={BiSolidBarChartAlt2}
-            iconSize="w-7 h-7"
-            width="w-[140px]"
-          />
+            <HeaderButton
+              icon={BiSolidBarChartAlt2}
+              iconSize="w-7 h-7"
+              width="w-[140px]"
+            />
 
-          <HeaderButton
-            icon={TbBrandX}
-            iconSize="w-7 h-7"
-            url="https://x.com/chat360fun"
-            width="w-[140px]"
-          />
+            <HeaderButton
+              icon={TbBrandX}
+              iconSize="w-7 h-7"
+              url="https://x.com/chat360fun"
+              width="w-[140px]"
+            />
           </div>
         </div>
       </div>
 
-      <div className="hidden sm:block h-[15px] w-full border-b border-gray-200 bg-[#f7ffff]"></div>
+      <div className="hidden h-[15px] w-full border-b border-gray-200 bg-[#f7ffff] sm:block"></div>
 
       <button
         onClick={handleCopyURL}

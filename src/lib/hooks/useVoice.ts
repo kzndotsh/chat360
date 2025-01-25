@@ -16,16 +16,16 @@ export function useVoice({ partyState = 'idle', channelName, uid }: Partial<Voic
     isMuted: false,
     volume: 0,
   });
-  const { client, denoiser } = useAgoraContext();
+  const { client } = useAgoraContext();
   const [voiceService, setVoiceService] = useState<VoiceService | null>(null);
 
   // Initialize voice service when client is available
   useEffect(() => {
     if (client) {
-      const service = VoiceService.getInstance(client, denoiser || undefined);
+      const service = VoiceService.getInstance(client);
       setVoiceService(service);
     }
-  }, [client, denoiser]);
+  }, [client]);
 
   useEffect(() => {
     if (partyState === 'joined' && channelName && uid && voiceService) {
@@ -60,14 +60,14 @@ export function useVoice({ partyState = 'idle', channelName, uid }: Partial<Voic
       action: 'toggleMute',
       metadata: {
         hasVoiceService: !!voiceService,
-        currentMuteState: voiceService?.isMuted
-      }
+        currentMuteState: voiceService?.isMuted,
+      },
     });
 
     if (!voiceService) {
       logger.warn('Cannot toggle mute - no voice service available', {
         component: 'useVoice',
-        action: 'toggleMute'
+        action: 'toggleMute',
       });
       return;
     }
@@ -78,14 +78,14 @@ export function useVoice({ partyState = 'idle', channelName, uid }: Partial<Voic
         component: 'useVoice',
         action: 'toggleMute',
         metadata: {
-          newMuteState: voiceService.isMuted
-        }
+          newMuteState: voiceService.isMuted,
+        },
       });
     } catch (error) {
       logger.error('Toggle mute error', {
         component: 'useVoice',
         action: 'toggleMute',
-        metadata: { error }
+        metadata: { error },
       });
     }
   }, [voiceService]);
@@ -99,8 +99,8 @@ export function useVoice({ partyState = 'idle', channelName, uid }: Partial<Voic
       volume: voiceService?.getVolume(),
       partyState,
       channelName,
-      uid
-    }
+      uid,
+    },
   });
 
   return {

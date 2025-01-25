@@ -12,10 +12,13 @@ const PartyChat = dynamic(() => import('@/components/features/party/PartyChat'),
   loading: () => null,
 });
 
-const XboxIntro = dynamic(() => import('@/components/features/party/XboxIntro').then(mod => mod.XboxIntro), {
-  ssr: false,
-  loading: () => null,
-});
+const XboxIntro = dynamic(
+  () => import('@/components/features/party/XboxIntro').then((mod) => mod.XboxIntro),
+  {
+    ssr: false,
+    loading: () => null,
+  }
+);
 
 export default function MainContent() {
   const [showIntro, setShowIntro] = useState(true);

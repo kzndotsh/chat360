@@ -28,8 +28,8 @@ export const createVoiceMiddleware = (): StateCreator<Store, [], [], VoiceSlice>
         action: 'setVoiceStatus',
         metadata: {
           previousStatus: state.voice.status,
-          newStatus: status
-        }
+          newStatus: status,
+        },
       });
 
       return {
@@ -52,8 +52,8 @@ export const createVoiceMiddleware = (): StateCreator<Store, [], [], VoiceSlice>
         action: 'setMuted',
         metadata: {
           wasMuted: state.voice.isMuted,
-          isMuted
-        }
+          isMuted,
+        },
       });
 
       return {
@@ -83,12 +83,10 @@ export const createVoiceMiddleware = (): StateCreator<Store, [], [], VoiceSlice>
 
       const isSpeaking = normalizedVolume >= VOICE_CONSTANTS.SPEAKING_THRESHOLD;
       const isHoldingSpeaking =
-        state.voice.isSpeaking &&
-        normalizedVolume >= VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD;
+        state.voice.isSpeaking && normalizedVolume >= VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD;
 
       // More responsive volume change detection
-      const hasSignificantVolumeChange =
-        Math.abs(state.voice.volume - normalizedVolume) >= 0.02;
+      const hasSignificantVolumeChange = Math.abs(state.voice.volume - normalizedVolume) >= 0.02;
 
       // Update state if:
       // 1. Speaking state changed
@@ -109,9 +107,9 @@ export const createVoiceMiddleware = (): StateCreator<Store, [], [], VoiceSlice>
             isSpeaking: isSpeaking || isHoldingSpeaking,
             thresholds: {
               speaking: VOICE_CONSTANTS.SPEAKING_THRESHOLD,
-              hold: VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD
-            }
-          }
+              hold: VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD,
+            },
+          },
         });
 
         return {
@@ -159,8 +157,8 @@ export const createVoiceMiddleware = (): StateCreator<Store, [], [], VoiceSlice>
         action: 'setSpeaking',
         metadata: {
           wasSpeaking: state.voice.isSpeaking,
-          isSpeaking
-        }
+          isSpeaking,
+        },
       });
 
       return {

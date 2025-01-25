@@ -6,7 +6,7 @@ const compat = new FlatCompat({
 
 const eslintConfig = [
   {
-    ignores: ['.next/**/*', 'node_modules/**/*', 'out/**/*', 'tmp_old/**/*'],
+    ignores: ['.next/**/*', 'node_modules/**/*', 'out/**/*', 'tmp_old/**/*', 'public/**/*'],
   },
   ...compat.config({
     extends: ['next', 'next/typescript', 'prettier'],

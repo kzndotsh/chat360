@@ -3,7 +3,7 @@
 import type { MemberListProps } from '@/lib/types/components/props';
 import type { VoiceStatus } from '@/lib/types/party/member';
 
-import { useMemo } from 'react';
+import { useMemo, useCallback } from 'react';
 
 import Image from 'next/image';
 
@@ -15,15 +15,20 @@ import { VoiceService } from '@/lib/services/voiceService';
 import { usePartyStore } from '@/lib/stores/partyStore';
 
 export function MemberList({ members, currentUserId, volumeLevels = {} }: MemberListProps) {
-  const { voice: { isMuted: storeIsMuted } } = usePartyStore();
+  const {
+    voice: { isMuted: storeIsMuted },
+  } = usePartyStore();
 
-  const handleVolumeClick = async (memberId: string) => {
-    const voiceService = VoiceService.getInstance();
-    if (!voiceService) return;
+  const handleVolumeClick = useCallback(
+    async (memberId: string) => {
+      const voiceService = VoiceService.getInstance();
+      if (!voiceService) return;
 
-    const isMuted = volumeLevels[memberId]?.muted ?? false;
-    await voiceService.toggleMemberMute(memberId, !isMuted);
-  };
+      const isMuted = volumeLevels[memberId]?.muted ?? false;
+      await voiceService.toggleMemberMute(memberId, !isMuted);
+    },
+    [volumeLevels]
+  );
 
   // Memoize member rendering to prevent unnecessary recalculations
   const renderedMembers = useMemo(() => {
@@ -58,8 +63,8 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
           volumeLevel,
           isMuted,
           volumeState,
-          storeIsMuted: isCurrentUser ? storeIsMuted : undefined
-        }
+          storeIsMuted: isCurrentUser ? storeIsMuted : undefined,
+        },
       });
 
       // Start with the volume state's voice status or default to silent
@@ -79,12 +84,14 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
           finalStatus: voice_status,
           volumeLevel,
           isMuted,
-          volumeState: volumeState ? {
-            level: volumeState.level,
-            voice_status: volumeState.voice_status,
-            muted: volumeState.muted
-          } : 'none'
-        }
+          volumeState: volumeState
+            ? {
+                level: volumeState.level,
+                voice_status: volumeState.voice_status,
+                muted: volumeState.muted,
+              }
+            : 'none',
+        },
       });
 
       return (
@@ -99,7 +106,7 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
               onClick={() => !isCurrentUser && handleVolumeClick(member.id)}
 
               className="relative -ml-4 cursor-pointer"
-              title={isCurrentUser ? "Can't mute yourself" : isMuted ? "Unmute user" : "Mute user"}
+              title={isCurrentUser ? "Can't mute yourself" : isMuted ? 'Unmute user' : 'Mute user'}
             >
               <VoiceStatusIcon
                 className="h-8 w-8"
@@ -145,7 +152,7 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
         </div>
       );
     });
-  }, [members, currentUserId, volumeLevels, storeIsMuted]);
+  }, [members, currentUserId, volumeLevels, storeIsMuted, handleVolumeClick]);
 
   return (
     <div className="flex h-full flex-col">

@@ -4,15 +4,21 @@ import type { ReactNode } from 'react';
 
 import dynamic from 'next/dynamic';
 
-const DynamicAgoraProvider = dynamic(() => import('@/components/providers/AgoraProvider').then(mod => mod.AgoraProvider), {
-  ssr: false,
-});
+const DynamicAgoraProvider = dynamic(
+  () => import('@/components/providers/AgoraProvider').then((mod) => mod.AgoraProvider),
+  {
+    ssr: false,
+  }
+);
 
-const DynamicClientProviders = dynamic(() => import('@/components/providers/ClientProviders').then(mod => mod.ClientProviders), {
-  ssr: false,
-});
+const DynamicClientProviders = dynamic(
+  () => import('@/components/providers/ClientProviders').then((mod) => mod.ClientProviders),
+  {
+    ssr: false,
+  }
+);
 
-const DynamicToaster = dynamic(() => import('@/components/ui/toaster').then(mod => mod.Toaster), {
+const DynamicToaster = dynamic(() => import('@/components/ui/toaster').then((mod) => mod.Toaster), {
   ssr: false,
 });
 

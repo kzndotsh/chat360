@@ -56,7 +56,7 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
 
   const [volumeLevels, setVolumeLevels] = useState<Record<string, VoiceMemberState>>({});
 
-  const { getClient, denoiser } = useAgoraContext();
+  const { getClient } = useAgoraContext();
 
   const { updateVolume } = useVolumeControl({
     isMuted,
@@ -64,41 +64,44 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
       logger.debug('Voice status changed', {
         component: 'PartyContext',
         action: 'onVoiceStatusChange',
-        metadata: { status, isMuted }
+        metadata: { status, isMuted },
       });
     },
     onVolumeChange: (volume) => {
       logger.debug('Volume changed', {
         component: 'PartyContext',
         action: 'onVolumeChange',
-        metadata: { volume, isMuted }
+        metadata: { volume, isMuted },
       });
-    }
+    },
   });
 
-  const handleVolumeChange = useCallback((volumes: VoiceMemberState[]) => {
-    setVolumeLevels(prevLevels => {
-      const newLevels = { ...prevLevels };
+  const handleVolumeChange = useCallback(
+    (volumes: VoiceMemberState[]) => {
+      setVolumeLevels((prevLevels) => {
+        const newLevels = { ...prevLevels };
 
-      volumes.forEach(vol => {
-        // Always update volume levels for all users
-        newLevels[vol.id] = vol;
+        volumes.forEach((vol) => {
+          // Always update volume levels for all users
+          newLevels[vol.id] = vol;
 
-        // Only update local volume for current user
-        if (vol.id === currentMember?.id) {
-          updateVolume(vol.level);
-        }
+          // Only update local volume for current user
+          if (vol.id === currentMember?.id) {
+            updateVolume(vol.level);
+          }
+        });
+
+        logger.debug('Volume levels updated', {
+          component: 'PartyContext',
+          action: 'handleVolumeChange',
+          metadata: { volumes, newLevels },
+        });
+
+        return newLevels;
       });
-
-      logger.debug('Volume levels updated', {
-        component: 'PartyContext',
-        action: 'handleVolumeChange',
-        metadata: { volumes, newLevels }
-      });
-
-      return newLevels;
-    });
-  }, [currentMember, updateVolume]);
+    },
+    [currentMember, updateVolume]
+  );
 
   // Set up volume update handler
   useEffect(() => {
@@ -114,7 +117,7 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
       try {
         // Dynamically import VoiceService
         const { VoiceService } = await import('@/lib/services/voiceService');
-        const voiceService = VoiceService.getInstance(client, denoiser || undefined);
+        const voiceService = VoiceService.getInstance(client);
         if (!voiceService) return () => {}; // Return no-op cleanup function
 
         // Set up voice update handler
@@ -127,14 +130,14 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
         logger.error('Failed to setup voice service', {
           component: 'PartyContext',
           action: 'setupVoiceService',
-          metadata: { error }
+          metadata: { error },
         });
         return () => {}; // Return no-op cleanup function on error
       }
     };
 
     void setupVoiceService();
-  }, [handleVolumeChange, getClient, denoiser]);
+  }, [handleVolumeChange, getClient]);
 
   const { initializePresence, cleanupPresence, updatePresence } = usePartyStore();
 
@@ -236,8 +239,8 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
         metadata: {
           newMuteState,
           voiceServiceMuted: voiceService.isMuted,
-          currentMemberId: currentMember?.id
-        }
+          currentMemberId: currentMember?.id,
+        },
       });
     } catch (error) {
       logger.error('Toggle mute error', { metadata: { error } });
@@ -249,7 +252,7 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
     logger.debug('Mute state changed in store', {
       component: 'PartyContext',
       action: 'muteStateEffect',
-      metadata: { isMuted }
+      metadata: { isMuted },
     });
   }, [isMuted]);
 
@@ -283,9 +286,5 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
     ]
   );
 
-  return (
-    <PartyContext.Provider value={contextValue}>
-      {children}
-    </PartyContext.Provider>
-  );
+  return <PartyContext.Provider value={contextValue}>{children}</PartyContext.Provider>;
 }

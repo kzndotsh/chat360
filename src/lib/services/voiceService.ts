@@ -62,8 +62,8 @@ export class VoiceService {
     // @ts-expect-error - I need to put something here for now.
     this.client.enableAudioVolumeIndicator({
       interval: 100, // Update every 100ms
-      smooth: 3,     // Light smoothing
-      enableVad: true // Enable Voice Activity Detection
+      smooth: 3, // Light smoothing
+      enableVad: true, // Enable Voice Activity Detection
     });
 
     // Listen for client state changes
@@ -71,7 +71,7 @@ export class VoiceService {
       logger.debug('Agora client connection state changed', {
         component: 'VoiceService',
         action: 'connectionStateChange',
-        metadata: { curState, prevState }
+        metadata: { curState, prevState },
       });
 
       // Only initialize broadcast channel when we're fully connected and have a UID
@@ -97,7 +97,7 @@ export class VoiceService {
         logger.error('Failed to initialize VoiceService', {
           component: 'VoiceService',
           action: 'createInstance',
-          metadata: { error }
+          metadata: { error },
         });
         return {} as VoiceService; // Return empty instance if initialization fails
       }
@@ -106,7 +106,7 @@ export class VoiceService {
     return VoiceService.instance;
   }
 
-  public static getInstance(client?: IAgoraRTCClient): VoiceService {
+  public static getInstance(client?: IAgoraRTCClient, denoiser?: boolean): VoiceService {
     // Skip initialization in non-browser environment
     if (typeof window === 'undefined') {
       return {} as VoiceService;
@@ -119,11 +119,12 @@ export class VoiceService {
         action: 'getInstance',
         metadata: {
           isNewInstance: true,
-          reason: 'first_init'
-        }
+          reason: 'first_init',
+          denoiserEnabled: denoiser,
+        },
       });
 
-      // Create new instance with client
+      // Initialize with existing Supabase client
       VoiceService.instance = new VoiceService(client, supabase);
     }
 
@@ -148,8 +149,8 @@ export class VoiceService {
                 userId: user.uid,
                 mediaType,
                 hasAudio: true,
-                audioLevel: user.audioTrack.getVolumeLevel()
-              }
+                audioLevel: user.audioTrack.getVolumeLevel(),
+              },
             });
 
             // Set initial voice state for remote user
@@ -162,7 +163,7 @@ export class VoiceService {
                 muted: !user.hasAudio,
                 is_deafened: false,
                 agora_uid: user.uid.toString(),
-                timestamp: Date.now()
+                timestamp: Date.now(),
               };
 
               this.memberVoiceStates.set(memberId, voiceState);
@@ -172,7 +173,7 @@ export class VoiceService {
         }
       } catch (error) {
         logger.error('Failed to subscribe to remote user', {
-          metadata: { userId: user.uid, mediaType, error }
+          metadata: { userId: user.uid, mediaType, error },
         });
       }
     });
@@ -187,7 +188,7 @@ export class VoiceService {
         logger.info('Unsubscribe success', { metadata: { userId: user.uid, mediaType } });
       } catch (error) {
         logger.error('Failed to unsubscribe from remote user', {
-          metadata: { userId: user.uid, mediaType, error }
+          metadata: { userId: user.uid, mediaType, error },
         });
       }
     });
@@ -202,11 +203,11 @@ export class VoiceService {
           isMuted: this._isMuted,
           audioTrackMuted: this.audioTrack?.muted,
           isJoined: this._isJoined,
-          volumes: volumes.map(v => ({
+          volumes: volumes.map((v) => ({
             uid: v.uid,
-            level: v.level
-          }))
-        }
+            level: v.level,
+          })),
+        },
       });
 
       // Process all volumes, including local and remote users
@@ -258,7 +259,7 @@ export class VoiceService {
       if (this.broadcastChannel) {
         logger.debug('Broadcast channel already exists, skipping initialization', {
           component: 'VoiceService',
-          action: 'initializeBroadcastChannel'
+          action: 'initializeBroadcastChannel',
         });
         return;
       }
@@ -268,7 +269,7 @@ export class VoiceService {
       logger.error('Failed to initialize broadcast channel', {
         component: 'VoiceService',
         action: 'initializeBroadcastChannel',
-        metadata: { error }
+        metadata: { error },
       });
       // Retry with backoff
       setTimeout(() => void this.initializeBroadcastChannel(), 1000);
@@ -297,9 +298,9 @@ export class VoiceService {
       logger.debug('Waiting for client UID', {
         component: 'VoiceService',
         action: 'setupBroadcastChannel',
-        metadata: { retryCount, maxClientRetries }
+        metadata: { retryCount, maxClientRetries },
       });
-      await new Promise<void>(resolve => setTimeout(resolve, clientRetryDelay));
+      await new Promise<void>((resolve) => setTimeout(resolve, clientRetryDelay));
       retryCount++;
     }
 
@@ -315,8 +316,8 @@ export class VoiceService {
         isTemporaryKey,
         clientState,
         hasAuthSession: true,
-        authUserId: this.client.uid
-      }
+        authUserId: this.client.uid,
+      },
     });
 
     // Create new broadcast channel with enhanced config
@@ -328,7 +329,7 @@ export class VoiceService {
         },
         presence: {
           key: presenceKey,
-        }
+        },
       },
     });
 
@@ -340,8 +341,8 @@ export class VoiceService {
         metadata: {
           payload,
           clientState: this.client?.connectionState,
-          clientUid: this.client?.uid
-        }
+          clientUid: this.client?.uid,
+        },
       });
 
       // Retry setup after delay
@@ -355,7 +356,7 @@ export class VoiceService {
       logger.debug('Received voice update broadcast', {
         component: 'VoiceService',
         action: 'handleBroadcast',
-        metadata: { payload }
+        metadata: { payload },
       });
 
       this.handleVoiceUpdate(payload as VoiceUpdate);
@@ -372,8 +373,8 @@ export class VoiceService {
             presenceKey,
             isTemporaryKey,
             clientState,
-            userId: this.client.uid
-          }
+            userId: this.client.uid,
+          },
         });
       });
 
@@ -386,7 +387,7 @@ export class VoiceService {
       logger.error('Channel subscription failed', {
         component: 'VoiceService',
         action: 'setupBroadcastChannel',
-        metadata: { error }
+        metadata: { error },
       });
       throw error;
     }
@@ -399,7 +400,7 @@ export class VoiceService {
     if (retryCount >= MAX_RETRIES) {
       logger.error('Max retry attempts reached for broadcast setup', {
         component: 'VoiceService',
-        action: 'retryBroadcastSetup'
+        action: 'retryBroadcastSetup',
       });
       return;
     }
@@ -407,10 +408,10 @@ export class VoiceService {
     logger.info('Retrying broadcast setup', {
       component: 'VoiceService',
       action: 'retryBroadcastSetup',
-      metadata: { retryCount, delay: RETRY_DELAY }
+      metadata: { retryCount, delay: RETRY_DELAY },
     });
 
-    await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+    await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY));
 
     try {
       await this.setupBroadcastChannel();
@@ -418,7 +419,7 @@ export class VoiceService {
       logger.error('Retry attempt failed', {
         component: 'VoiceService',
         action: 'retryBroadcastSetup',
-        metadata: { error, retryCount }
+        metadata: { error, retryCount },
       });
       await this.retryBroadcastSetup(retryCount + 1);
     }
@@ -433,8 +434,8 @@ export class VoiceService {
         isLocalUser: update.id === this.currentMemberId,
         currentLocalMuteState: this._isMuted,
         audioTrackMuted: this.audioTrack?.muted,
-        source: new Error().stack?.split('\n')[2]
-      }
+        source: new Error().stack?.split('\n')[2],
+      },
     });
 
     // For local user updates, ignore our own broadcasts to prevent feedback loops
@@ -443,7 +444,7 @@ export class VoiceService {
         logger.debug('Ignoring own broadcast', {
           component: 'VoiceService',
           action: 'handleVoiceUpdate',
-          metadata: { update }
+          metadata: { update },
         });
         return;
       }
@@ -457,8 +458,8 @@ export class VoiceService {
           metadata: {
             updateAgoraUid: update.agora_uid,
             ourAgoraUid,
-            memberId: update.id
-          }
+            memberId: update.id,
+          },
         });
         // Re-broadcast our current state to override the unauthorized update
         if (this.audioTrack) {
@@ -469,7 +470,7 @@ export class VoiceService {
             muted: this._isMuted,
             is_deafened: false,
             agora_uid: ourAgoraUid,
-            timestamp: Date.now()
+            timestamp: Date.now(),
           };
           void this.broadcastVoiceUpdate(voiceState);
         }
@@ -497,8 +498,8 @@ export class VoiceService {
         memberId: update.id,
         newState: voiceState,
         totalMembersTracked: this.memberVoiceStates.size,
-        isRemoteUser: update.id !== this.currentMemberId
-      }
+        isRemoteUser: update.id !== this.currentMemberId,
+      },
     });
 
     if (this.volumeCallback) {
@@ -519,7 +520,7 @@ export class VoiceService {
         is_deafened: update.is_deafened ?? false,
         agora_uid: update.agora_uid,
         // Add source identifier
-        source: 'local_broadcast'
+        source: 'local_broadcast',
       };
 
       logger.debug('Broadcasting voice update', {
@@ -527,8 +528,8 @@ export class VoiceService {
         action: 'broadcastVoiceUpdate',
         metadata: {
           broadcast,
-          currentMemberId: this.currentMemberId
-        }
+          currentMemberId: this.currentMemberId,
+        },
       });
 
       await this.broadcastChannel.send({
@@ -612,7 +613,7 @@ export class VoiceService {
   private async withJoinMutex<T>(operation: () => Promise<T>): Promise<T> {
     const current = this.joinMutex;
     let resolve: () => void;
-    this.joinMutex = new Promise<void>(r => resolve = r);
+    this.joinMutex = new Promise<void>((r) => (resolve = r));
     try {
       await current;
       return await operation();
@@ -633,9 +634,9 @@ export class VoiceService {
         const response = await fetch('/api/agora/token', {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ channelName })
+          body: JSON.stringify({ channelName }),
         });
 
         if (!response.ok) {
@@ -677,13 +678,13 @@ export class VoiceService {
           muted: false,
           is_deafened: false,
           agora_uid: agoraUid,
-          timestamp: Date.now()
+          timestamp: Date.now(),
         };
         this.memberVoiceStates.set(memberId, initialState);
         await this.broadcastVoiceUpdate(initialState);
 
         logger.info('Join channel success', {
-          metadata: { channelName, memberId }
+          metadata: { channelName, memberId },
         });
       } catch (error) {
         // Clean up VAD if join fails
@@ -713,7 +714,7 @@ export class VoiceService {
           logger.warn('Error stopping VAD', {
             component: 'VoiceService',
             action: 'leave',
-            metadata: { error }
+            metadata: { error },
           });
         }
       }
@@ -730,7 +731,7 @@ export class VoiceService {
             logger.warn('Error unsubscribing from broadcast channel', {
               component: 'VoiceService',
               action: 'leave',
-              metadata: { error }
+              metadata: { error },
             });
           }
           this.broadcastChannel = null;
@@ -748,7 +749,7 @@ export class VoiceService {
               logger.warn('Error stopping remote audio track', {
                 component: 'VoiceService',
                 action: 'leave',
-                metadata: { userId: user.uid, error }
+                metadata: { userId: user.uid, error },
               });
             }
           }
@@ -765,7 +766,7 @@ export class VoiceService {
                 logger.warn('Error unpublishing audio track', {
                   component: 'VoiceService',
                   action: 'leave',
-                  metadata: { error }
+                  metadata: { error },
                 });
               }
             }
@@ -775,7 +776,7 @@ export class VoiceService {
             logger.warn('Error closing audio track', {
               component: 'VoiceService',
               action: 'leave',
-              metadata: { error }
+              metadata: { error },
             });
           }
         }
@@ -788,7 +789,7 @@ export class VoiceService {
             logger.warn('Error leaving channel', {
               component: 'VoiceService',
               action: 'leave',
-              metadata: { error }
+              metadata: { error },
             });
           }
         }
@@ -808,7 +809,7 @@ export class VoiceService {
         logger.error('Error during voice service cleanup', {
           component: 'VoiceService',
           action: 'leave',
-          metadata: { error }
+          metadata: { error },
         });
         throw error;
       }
@@ -824,14 +825,14 @@ export class VoiceService {
         hasAudioTrack: !!this.audioTrack,
         audioTrackMuted: this.audioTrack?.muted,
         currentMemberId: this.currentMemberId,
-        stackTrace: new Error().stack
-      }
+        stackTrace: new Error().stack,
+      },
     });
 
     if (!this.audioTrack) {
       logger.warn('Cannot toggle mute - no audio track available', {
         component: 'VoiceService',
-        action: 'toggleMute'
+        action: 'toggleMute',
       });
       return false;
     }
@@ -848,8 +849,8 @@ export class VoiceService {
         metadata: {
           newMuteState,
           currentInternalState: this._isMuted,
-          audioTrackState: this.audioTrack.muted
-        }
+          audioTrackState: this.audioTrack.muted,
+        },
       });
 
       // Set the mute state on the audio track
@@ -864,8 +865,8 @@ export class VoiceService {
           metadata: {
             expectedState: newMuteState,
             actualState: actualMuteState,
-            internalState: this._isMuted
-          }
+            internalState: this._isMuted,
+          },
         });
         // Revert internal state if audio track state doesn't match
         this._isMuted = actualMuteState;
@@ -883,7 +884,7 @@ export class VoiceService {
           muted: newMuteState,
           is_deafened: false,
           agora_uid: this.getAgoraUidFromMemberId(this.currentMemberId),
-          timestamp: Date.now()
+          timestamp: Date.now(),
         };
 
         // Update local state and notify UI immediately
@@ -903,8 +904,8 @@ export class VoiceService {
             memberId: this.currentMemberId,
             audioTrackMuted: this.audioTrack.muted,
             voiceStatus: voice_status,
-            level
-          }
+            level,
+          },
         });
       }
 
@@ -916,8 +917,8 @@ export class VoiceService {
         metadata: {
           error,
           currentState: this._isMuted,
-          audioTrackState: this.audioTrack?.muted
-        }
+          audioTrackState: this.audioTrack?.muted,
+        },
       });
       throw error;
     }
@@ -932,7 +933,7 @@ export class VoiceService {
       logger.warn('Cannot set volume - no audio track available', {
         component: 'VoiceService',
         action: 'setVolume',
-        metadata: { requestedVolume: volume }
+        metadata: { requestedVolume: volume },
       });
       return;
     }
@@ -946,8 +947,8 @@ export class VoiceService {
         action: 'setVolume',
         metadata: {
           volume,
-          agoraVolume
-        }
+          agoraVolume,
+        },
       });
 
       this.audioTrack.setVolume(agoraVolume);
@@ -959,8 +960,8 @@ export class VoiceService {
         metadata: {
           targetVolume: agoraVolume,
           actualVolume,
-          difference: Math.abs(agoraVolume - actualVolume)
-        }
+          difference: Math.abs(agoraVolume - actualVolume),
+        },
       });
 
       // Update state if not muted
@@ -972,14 +973,10 @@ export class VoiceService {
           metadata: {
             memberId: this.currentMemberId,
             newLevel,
-            isMuted: this._isMuted
-          }
+            isMuted: this._isMuted,
+          },
         });
-        this.handleVolumeUpdate(
-          this.currentMemberId!,
-          newLevel,
-          false
-        );
+        this.handleVolumeUpdate(this.currentMemberId!, newLevel, false);
       }
     } catch (error) {
       logger.error('Failed to set volume', {
@@ -989,8 +986,8 @@ export class VoiceService {
           error,
           requestedVolume: volume,
           currentVolume: this.audioTrack.getVolumeLevel(),
-          isMuted: this._isMuted
-        }
+          isMuted: this._isMuted,
+        },
       });
       throw error;
     }
@@ -1004,8 +1001,8 @@ export class VoiceService {
         metadata: {
           hasAudioTrack: !!this.audioTrack,
           isMuted: this._isMuted,
-          audioTrackMuted: this.audioTrack?.muted
-        }
+          audioTrackMuted: this.audioTrack?.muted,
+        },
       });
       return 0;
     }
@@ -1017,8 +1014,8 @@ export class VoiceService {
       metadata: {
         volume,
         isMuted: this._isMuted,
-        audioTrackMuted: this.audioTrack.muted
-      }
+        audioTrackMuted: this.audioTrack.muted,
+      },
     });
     return volume;
   }
@@ -1083,7 +1080,7 @@ export class VoiceService {
         muted: true,
         is_deafened: false,
         agora_uid: existingState?.agora_uid ?? this.getAgoraUidFromMemberId(memberId),
-        timestamp: Date.now()
+        timestamp: Date.now(),
       };
 
       this.memberVoiceStates.set(memberId, voiceState);
@@ -1103,8 +1100,8 @@ export class VoiceService {
           memberId,
           isMuted,
           isCurrentUser: memberId === this.currentMemberId,
-          internalMuteState: this._isMuted
-        }
+          internalMuteState: this._isMuted,
+        },
       });
 
       // Get existing state to preserve agora_uid
@@ -1116,7 +1113,7 @@ export class VoiceService {
         muted: true,
         is_deafened: false,
         agora_uid: existingState?.agora_uid ?? this.getAgoraUidFromMemberId(memberId),
-        timestamp: Date.now()
+        timestamp: Date.now(),
       };
 
       this.memberVoiceStates.set(memberId, voiceState);
@@ -1141,8 +1138,8 @@ export class VoiceService {
         isLoudEnough,
         speakingThreshold: VOICE_CONSTANTS.SPEAKING_THRESHOLD,
         isCurrentUser: memberId === this.currentMemberId,
-        vadSpeaking: this.isVadSpeaking
-      }
+        vadSpeaking: this.isVadSpeaking,
+      },
     });
 
     // Determine voice status
@@ -1170,7 +1167,7 @@ export class VoiceService {
       muted: false,
       is_deafened: false,
       agora_uid: existingState?.agora_uid ?? this.getAgoraUidFromMemberId(memberId),
-      timestamp: Date.now()
+      timestamp: Date.now(),
     };
 
     // Always update state and broadcast if volume changes significantly or status changes
@@ -1190,8 +1187,8 @@ export class VoiceService {
           isLoudEnough,
           volumeChanged,
           statusChanged,
-          vadSpeaking: memberId === this.currentMemberId ? this.isVadSpeaking : undefined
-        }
+          vadSpeaking: memberId === this.currentMemberId ? this.isVadSpeaking : undefined,
+        },
       });
 
       this.memberVoiceStates.set(memberId, voiceState);
@@ -1205,7 +1202,7 @@ export class VoiceService {
   private async withProcessorMutex<T>(operation: () => Promise<T>): Promise<T> {
     const current = VoiceService.processorMutex;
     let resolve: () => void;
-    VoiceService.processorMutex = new Promise<void>(r => resolve = r);
+    VoiceService.processorMutex = new Promise<void>((r) => (resolve = r));
     try {
       await current;
       return await operation();
@@ -1214,7 +1211,9 @@ export class VoiceService {
     }
   }
 
-  private isValidProcessor(processor: unknown): processor is { enabled: boolean; disable: () => Promise<void> } {
+  private isValidProcessor(
+    processor: unknown
+  ): processor is { enabled: boolean; disable: () => Promise<void> } {
     return (
       processor !== null &&
       typeof processor === 'object' &&
@@ -1232,12 +1231,12 @@ export class VoiceService {
         encoderConfig: {
           sampleRate: 48000,
           stereo: false,
-          bitrate: 64 // Reduced bitrate helps with noise
+          bitrate: 64, // Reduced bitrate helps with noise
         },
         // Enable built-in noise suppression
         AEC: true,
         ANS: true,
-        AGC: true
+        AGC: true,
       });
 
       // Initialize VAD for additional noise detection
@@ -1248,8 +1247,8 @@ export class VoiceService {
         action: 'createAudioTrack',
         metadata: {
           hasAudioTrack: true,
-          hasVAD: !!this.vad
-        }
+          hasVAD: !!this.vad,
+        },
       });
 
       return audioTrack;
@@ -1261,8 +1260,8 @@ export class VoiceService {
           errorMessage: error instanceof Error ? error.message : String(error),
           errorStack: error instanceof Error ? error.stack : undefined,
           hasAudioTrack: !!audioTrack,
-          hasVAD: !!this.vad
-        }
+          hasVAD: !!this.vad,
+        },
       });
 
       if (audioTrack) {
@@ -1287,38 +1286,38 @@ export class VoiceService {
           this.isVadSpeaking = true;
           logger.debug('VAD speech start detected', {
             component: 'VoiceService',
-            action: 'vadSpeechStart'
+            action: 'vadSpeechStart',
           });
         },
         onSpeechEnd: () => {
           this.isVadSpeaking = false;
           logger.debug('VAD speech end detected', {
             component: 'VoiceService',
-            action: 'vadSpeechEnd'
+            action: 'vadSpeechEnd',
           });
         },
         onVADMisfire: () => {
           logger.debug('VAD misfire detected', {
             component: 'VoiceService',
-            action: 'vadMisfire'
+            action: 'vadMisfire',
           });
         },
         // Use standard VAD options
         minSpeechFrames: 5,
-        redemptionFrames: 10
+        redemptionFrames: 10,
       });
 
       await this.vad.start();
 
       logger.info('VAD initialized successfully', {
         component: 'VoiceService',
-        action: 'initializeVAD'
+        action: 'initializeVAD',
       });
     } catch (error) {
       logger.error('Failed to initialize VAD', {
         component: 'VoiceService',
         action: 'initializeVAD',
-        metadata: { error }
+        metadata: { error },
       });
     }
   }
@@ -1371,7 +1370,7 @@ export class VoiceService {
   private async vadSpeechStart() {
     logger.debug('VAD speech start detected', {
       component: 'VoiceService',
-      action: 'vadSpeechStart'
+      action: 'vadSpeechStart',
     });
     this.isVadSpeaking = true;
 
@@ -1388,7 +1387,7 @@ export class VoiceService {
   private async vadSpeechEnd() {
     logger.debug('VAD speech end detected', {
       component: 'VoiceService',
-      action: 'vadSpeechEnd'
+      action: 'vadSpeechEnd',
     });
     this.isVadSpeaking = false;
 
@@ -1406,7 +1405,7 @@ export class VoiceService {
     logger.debug('Toggling member mute state', {
       component: 'VoiceService',
       action: 'toggleMemberMute',
-      metadata: { memberId, muted }
+      metadata: { memberId, muted },
     });
 
     // Store the mute state for this member
@@ -1423,12 +1422,12 @@ export class VoiceService {
         muted: false,
         is_deafened: false,
         agora_uid: this.getAgoraUidFromMemberId(memberId),
-        timestamp: Date.now()
+        timestamp: Date.now(),
       };
       logger.debug('Created initial voice state for member', {
         component: 'VoiceService',
         action: 'toggleMemberMute',
-        metadata: { memberId, initialState: currentState }
+        metadata: { memberId, initialState: currentState },
       });
     }
 
@@ -1437,7 +1436,11 @@ export class VoiceService {
       ...currentState,
       muted,
       level: muted ? 0 : currentState.level,
-      voice_status: muted ? 'muted' : (currentState.level > VOICE_CONSTANTS.SPEAKING_THRESHOLD ? 'speaking' : 'silent')
+      voice_status: muted
+        ? 'muted'
+        : currentState.level > VOICE_CONSTANTS.SPEAKING_THRESHOLD
+          ? 'speaking'
+          : 'silent',
     };
 
     // Update the state and broadcast
@@ -1450,7 +1453,7 @@ export class VoiceService {
     // If we have an audio track for this member, adjust its volume
     const agoraUid = this.getAgoraUidFromMemberId(memberId);
     if (agoraUid) {
-      const remoteUser = this.client?.remoteUsers.find(user => user.uid === agoraUid);
+      const remoteUser = this.client?.remoteUsers.find((user) => user.uid === agoraUid);
       if (remoteUser?.audioTrack) {
         remoteUser.audioTrack.setVolume(muted ? 0 : 100);
       }

@@ -10,7 +10,11 @@ interface BaseModalProps {
   onCloseAction: () => void;
 }
 
-export function BaseModal({ children, onCloseAction, preventOutsideClick = false }: BaseModalProps) {
+export function BaseModal({
+  children,
+  onCloseAction,
+  preventOutsideClick = false,
+}: BaseModalProps) {
   return (
     <AnimatePresence mode="wait">
       <div className="fixed inset-0 z-50 flex items-center justify-center">

@@ -26,14 +26,14 @@ const TopBar = () => {
   return (
     <div className="relative mb-3 flex h-[65px] w-full items-end justify-between px-4 md:px-8">
       <div className="flex items-center">
-        <span className="text-xl md:text-2xl font-medium leading-none text-white [text-shadow:_0_1px_1px_rgba(0,0,0,0.15)_inset]">
+        <span className="text-xl font-medium leading-none text-white [text-shadow:_0_1px_1px_rgba(0,0,0,0.15)_inset] md:text-2xl">
           $360
         </span>
       </div>
       <div className="absolute left-1/2 top-0 -translate-x-1/2">
         <Image
           alt={currentMember?.name ?? 'Default Avatar'}
-          className="h-[50px] w-[50px] md:h-[65px] md:w-[65px] object-cover"
+          className="h-[50px] w-[50px] object-cover md:h-[65px] md:w-[65px]"
           height={65}
           src={currentMember?.avatar ?? AVATARS[0]!}
           width={65}
@@ -128,7 +128,7 @@ function PartyChat() {
       <div className="w-full max-w-full md:w-auto">
         <div className="flex flex-col">
           <TopBar />
-          <Card className="flex h-[600px] w-full min-w-[300px] md:min-w-[900px] flex-col rounded-none border-0 bg-[#dce4e7]">
+          <Card className="flex h-[600px] w-full min-w-[300px] flex-col rounded-none border-0 bg-[#dce4e7] md:min-w-[900px]">
             <PartyHeader membersCount={members.length} />
             <div className="overflow-y-auto bg-[#dce4e7]">
               <PartyContent />

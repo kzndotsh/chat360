@@ -3,10 +3,7 @@ import type { VoiceStatus } from '@/lib/types/party/member';
 import { useState, useEffect, useRef, useMemo } from 'react';
 
 import { Subject } from 'rxjs';
-import {
-  debounceTime,
-  map
-} from 'rxjs/operators';
+import { debounceTime, map } from 'rxjs/operators';
 
 import { VOICE_CONSTANTS } from '../constants/voice';
 
@@ -21,21 +18,20 @@ export function determineVoiceStatus(
   currentStatus: VoiceStatus,
   isMuted: boolean
 ): VoiceStatus {
-  if (isMuted) return "muted";
+  if (isMuted) return 'muted';
 
   const isSpeaking = volume >= VOICE_CONSTANTS.SPEAKING_THRESHOLD;
   const isHoldingSpeaking =
-    currentStatus === "speaking" &&
-    volume >= VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD;
+    currentStatus === 'speaking' && volume >= VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD;
 
   // Immediate transition to speaking state when threshold is met
   if (isSpeaking || isHoldingSpeaking) {
-    return "speaking";
+    return 'speaking';
   }
 
   // Quick transition to silent state when volume is very low
   if (volume < VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD) {
-    return "silent";
+    return 'silent';
   }
 
   // Keep current state if in transition
@@ -68,10 +64,10 @@ export function useVolumeControl(options: UseVolumeControlOptions) {
         }
 
         // Set timeout to transition to silent if volume stays low
-        if (newStatus === "speaking" && volume < VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD) {
+        if (newStatus === 'speaking' && volume < VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD) {
           silenceTimeoutRef.current = setTimeout(() => {
-            setVoiceStatus("silent");
-            onVoiceStatusChange?.("silent");
+            setVoiceStatus('silent');
+            onVoiceStatusChange?.('silent');
           }, VOICE_CONSTANTS.SPEAKING_TIMEOUT);
         }
 
@@ -92,6 +88,6 @@ export function useVolumeControl(options: UseVolumeControlOptions) {
 
   return {
     voiceStatus,
-    updateVolume: (volume: number) => volumeSubject.next(volume)
+    updateVolume: (volume: number) => volumeSubject.next(volume),
   };
 }
