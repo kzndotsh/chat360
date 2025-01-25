@@ -99,6 +99,7 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
                 alt={member.name ?? 'Member'}
                 height={32}
                 src={member.avatar ?? AVATARS[0]!}
+                unoptimized={true}
                 width={32}
               />
             </div>
