@@ -9,13 +9,25 @@ import { cn } from '@/lib/utils';
 interface VoiceStatusIconProps {
   status: VoiceStatus;
   className?: string;
+  isOtherUser?: boolean;
 }
 
 export const VoiceStatusIcon = memo(function VoiceStatusIcon({
   status,
   className,
+  isOtherUser = false,
 }: VoiceStatusIconProps) {
-  const iconClass = cn(className, 'text-[#282b2f]');
+  // Set color based on status
+  const getIconClass = (status: VoiceStatus) => {
+    switch (status) {
+      case 'muted':
+        return isOtherUser ? 'text-[#bd2727]' : 'text-[#282b2f]';
+      default:
+        return 'text-[#282b2f]';
+    }
+  };
+
+  const iconClass = cn(className, getIconClass(status));
 
   logger.debug('Rendering VoiceStatusIcon', {
     component: 'VoiceStatusIcon',
@@ -23,6 +35,7 @@ export const VoiceStatusIcon = memo(function VoiceStatusIcon({
     metadata: {
       status,
       className,
+      isOtherUser,
     },
   });
 
