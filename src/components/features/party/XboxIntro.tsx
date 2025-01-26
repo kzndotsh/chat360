@@ -10,14 +10,15 @@ import { INTRO_VIDEO_URL } from '@/lib/constants';
 import { logger } from '@/lib/logger';
 
 interface XboxIntroProps {
+  isPreloaded: boolean;
   onIntroEndAction: () => void;
 }
 
-export function XboxIntro({ onIntroEndAction }: XboxIntroProps) {
+export function XboxIntro({ onIntroEndAction, isPreloaded }: XboxIntroProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const videoUrlRef = useRef<string | null>(null);
   const [isMuted, setIsMuted] = useState(true);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!isPreloaded);
   const [isEnded, setIsEnded] = useState(false);
   const mountedRef = useRef(false);
 
@@ -298,7 +299,7 @@ export function XboxIntro({ onIntroEndAction }: XboxIntroProps) {
 
   return (
     <div
-      className={`fixed inset-0 z-50 bg-white transition-all duration-700 md:bg-black ${isEnded ? 'scale-105 opacity-0' : 'scale-100 opacity-100'}`}
+      className={`fixed inset-0 z-50 bg-black ${isEnded ? 'scale-105 opacity-0' : 'scale-100 opacity-100'} transition-[transform,opacity] duration-700`}
     >
       <video
         muted
@@ -310,8 +311,8 @@ export function XboxIntro({ onIntroEndAction }: XboxIntroProps) {
         webkit-playsinline=""
       />
       <div
-        className={`absolute flex space-x-2 transition-all duration-700 ${
-          isEnded ? 'translate-y-4 opacity-0' : 'opacity-100'
+        className={`absolute flex space-x-2 transition-[transform,opacity] duration-700 ${
+          isEnded || isLoading ? 'translate-y-4 opacity-0' : 'opacity-100'
         } bottom-[15%] left-1/2 -translate-x-1/2 md:bottom-4 md:left-auto md:right-4 md:translate-x-0`}
       >
         <Button

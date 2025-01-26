@@ -10,7 +10,7 @@ import Image from 'next/image';
 import { VoiceStatusIcon } from '@/components/features/party/icons/VoiceStatusIcon';
 
 import { AVATARS } from '@/lib/constants';
-import { logger } from '@/lib/logger';
+import { VOICE_CONSTANTS } from '@/lib/constants/voice';
 import { VoiceService } from '@/lib/services/voiceService';
 import { usePartyStore } from '@/lib/stores/partyStore';
 
@@ -18,6 +18,42 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
   const {
     voice: { isMuted: storeIsMuted },
   } = usePartyStore();
+
+  // Throttle volume updates to reduce re-renders and add hysteresis
+  const throttledVolumeLevels = useMemo(() => {
+    const processedLevels: typeof volumeLevels = {};
+
+    for (const [id, state] of Object.entries(volumeLevels)) {
+      if (!state) continue;
+
+      // Use voice constants for thresholds
+      const SPEAKING_THRESHOLD = VOICE_CONSTANTS.SPEAKING_THRESHOLD;      // 0.2
+      const SILENCE_THRESHOLD = VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD;  // 0.15
+      const MIN_VOICE_LEVEL = VOICE_CONSTANTS.VAD_CONFIDENCE_THRESHOLD;   // 0.1
+
+      const isSpeakingLoud = state.level > SPEAKING_THRESHOLD;
+      const isSpeakingQuiet = state.level > MIN_VOICE_LEVEL;
+      const isSilent = state.level <= SILENCE_THRESHOLD;
+
+      // Enhanced state transition logic with hysteresis
+      let newStatus: VoiceStatus = state.voice_status || 'silent';
+
+      if (state.muted) {
+        newStatus = 'muted';
+      } else if (isSpeakingLoud || (newStatus === 'speaking' && isSpeakingQuiet && !isSilent)) {
+        newStatus = 'speaking';
+      } else if (isSilent) {
+        newStatus = 'silent';
+      }
+
+      processedLevels[id] = {
+        ...state,
+        voice_status: newStatus
+      };
+    }
+
+    return processedLevels;
+  }, [JSON.stringify(volumeLevels)]);
 
   // Handle muting/unmuting other users
   const handleOtherMemberMute = useCallback(async (memberId: string) => {
@@ -40,7 +76,12 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
 
     if (!activeMembers.length) {
       return (
-        <div className="flex h-full items-center justify-center opacity-0 animate-fadeIn" style={{ animationDelay: '150ms', animationFillMode: 'forwards' }}>
+        <div
+          aria-label="No members in party"
+          className="flex h-full items-center justify-center opacity-0 animate-fadeIn"
+          role="status"
+          style={{ animationDelay: '150ms', animationFillMode: 'forwards' }}
+        >
           <span className="p-10 text-base text-[#282b2f]">nostalgia, onchain.</span>
         </div>
       );
@@ -53,19 +94,9 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
       return 0;
     });
 
-    logger.debug('Rendering member list', {
-      component: 'MemberList',
-      action: 'render',
-      metadata: {
-        totalMembers: members.length,
-        activeMembers: activeMembers.length,
-        sortedMembers,
-      },
-    });
-
     return sortedMembers.map((member, index) => {
       const isCurrentUser = member.id === currentUserId;
-      const volumeState = volumeLevels[member.id];
+      const volumeState = throttledVolumeLevels[member.id];
 
       // For current user: only use store state
       // For other users: use volume state with fallback
@@ -83,20 +114,6 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
         voice_status = volumeState.voice_status;
       }
 
-      logger.debug('Processing member state', {
-        component: 'MemberList',
-        action: 'processMemberState',
-        metadata: {
-          memberId: member.id,
-          isCurrentUser,
-          volumeLevel: volumeState?.level ?? 0,
-          isMuted,
-          volumeState,
-          memberStatus: member.status,
-          isActive: member.is_active,
-        },
-      });
-
       return (
         <div
           style={{
@@ -104,13 +121,16 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
             animationFillMode: 'forwards'
           }}
 
+          aria-label={`${member.name} - ${member.game} - ${voice_status}`}
           className="flex h-[48px] items-center border-t border-[#e5e5e5] px-3 sm:px-6 transition-all duration-300 ease-in-out first:border-t-0 hover:bg-[#f5f5f5] opacity-0 animate-fadeIn"
           key={member.id}
+          role="listitem"
         >
           <div className="flex w-[140px] items-center gap-1.5 sm:gap-2 md:w-[440px]">
-            <div
+            <button
               onClick={() => isCurrentUser ? handleSelfMute() : handleOtherMemberMute(member.id)}
 
+              aria-label={isCurrentUser ? (isMuted ? 'Unmute yourself' : 'Mute yourself') : (isMuted ? 'Unmute user' : 'Mute user')}
               className="relative -ml-2 sm:-ml-5 cursor-pointer transition-transform duration-200 hover:scale-105"
               title={isCurrentUser ? (isMuted ? 'Unmute yourself' : 'Mute yourself') : (isMuted ? 'Unmute user' : 'Mute user')}
             >
@@ -119,10 +139,14 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
                 isOtherUser={!isCurrentUser}
                 status={voice_status}
               />
-            </div>
+            </button>
 
             {/* Avatar */}
-            <div className="h-6 w-6 rounded-none md:h-8 md:w-8 transition-transform duration-200">
+            <div
+              aria-label={`${member.name}'s avatar`}
+              className="h-6 w-6 rounded-none md:h-8 md:w-8 transition-transform duration-200"
+              role="img"
+            >
               <Image
                 alt={member.name ?? 'Member'}
                 className="transition-opacity duration-200"
@@ -142,8 +166,13 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
           {/* Game status */}
           <div className="flex flex-1 items-center min-w-0 justify-start sm:ml-3 md:-ml-[35px] transition-transform duration-200">
             {/* Game status icon */}
-            <div className="flex-shrink-0 flex items-center mr-2 sm:mr-5 md:mr-2">
+            <div
+              aria-label="Game status icon"
+              className="flex-shrink-0 flex items-center mr-2 sm:mr-5 md:mr-2"
+              role="img"
+            >
               <svg
+                aria-hidden="true"
                 className="h-6 w-6 md:h-8 md:w-8 transition-colors duration-200"
                 fill="#acd43b"
                 viewBox="0 0 3000 3000"
@@ -162,10 +191,14 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
         </div>
       );
     });
-  }, [members, currentUserId, volumeLevels, storeIsMuted, handleOtherMemberMute, handleSelfMute]);
+  }, [currentUserId, members, throttledVolumeLevels, storeIsMuted, handleOtherMemberMute, handleSelfMute]);
 
   return (
-    <div className="flex h-full flex-col">
+    <div
+      aria-label="Party members"
+      className="flex h-full flex-col"
+      role="list"
+    >
       <div className="flex flex-1 flex-col">{renderedMembers}</div>
     </div>
   );

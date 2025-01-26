@@ -31,6 +31,7 @@ type VoiceCallback = (volumes: VoiceMemberState[]) => void;
 export class VoiceService {
   private static instance: VoiceService = {} as VoiceService;
   private static processorMutex: Promise<void> = Promise.resolve();
+  private static initMutex: Promise<void> = Promise.resolve();
   private client: IAgoraRTCClient;
   private audioTrack: IMicrophoneAudioTrack | null = null;
   private _isMuted: boolean = false;
@@ -110,28 +111,90 @@ export class VoiceService {
   }
 
   public static async createInstance(): Promise<VoiceService> {
-    // Skip initialization in non-browser environment
-    if (typeof window === 'undefined' || typeof self === 'undefined') {
-      return {} as VoiceService; // Return empty instance for SSR
-    }
+    // Use mutex to prevent concurrent initialization
+    const current = VoiceService.initMutex;
+    let resolve: () => void;
+    VoiceService.initMutex = new Promise<void>(r => resolve = r);
+    await current;
 
-    if (!VoiceService.instance) {
-      try {
-        // Dynamically import AgoraRTC only in browser environment
-        const AgoraRTC = (await import('agora-rtc-sdk-ng')).default;
-        const client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
-        VoiceService.instance = new VoiceService(client, supabase);
-      } catch (error) {
-        logger.error('Failed to initialize VoiceService', {
-          component: 'VoiceService',
-          action: 'createInstance',
-          metadata: { error },
-        });
-        return {} as VoiceService; // Return empty instance if initialization fails
-      }
-    }
+    try {
+        // Skip initialization in non-browser environment
+        if (typeof window === 'undefined' || typeof self === 'undefined') {
+            return {} as VoiceService; // Return empty instance for SSR
+        }
 
-    return VoiceService.instance;
+        // Clean up existing instance if it exists
+        if (VoiceService.instance?.client) {
+            try {
+                // Ensure we're fully disconnected before cleanup
+                if (VoiceService.instance._isJoined) {
+                    await VoiceService.instance.leave();
+                }
+
+                // Additional cleanup to ensure no lingering state
+                if (VoiceService.instance.audioTrack) {
+                    try {
+                        VoiceService.instance.audioTrack.stop();
+                        VoiceService.instance.audioTrack.close();
+                    } catch (error) {
+                        logger.warn('Error cleaning up audio track during instance creation', {
+                            component: 'VoiceService',
+                            action: 'createInstance',
+                            metadata: { error },
+                        });
+                    }
+                }
+
+                // Reset critical state
+                VoiceService.instance._isJoined = false;
+                VoiceService.instance._isMuted = false;
+                VoiceService.instance.audioTrack = null;
+                VoiceService.instance.volumeCallback = null;
+
+            } catch (error) {
+                logger.warn('Failed to cleanup existing instance', {
+                    component: 'VoiceService',
+                    action: 'createInstance',
+                    metadata: { error },
+                });
+            }
+        }
+
+        try {
+            // Dynamically import AgoraRTC only in browser environment
+            const AgoraRTC = (await import('agora-rtc-sdk-ng')).default;
+            const client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
+            VoiceService.instance = new VoiceService(client, supabase);
+
+            // Initialize with clean state
+            VoiceService.instance._isJoined = false;
+            VoiceService.instance._isMuted = false;
+            VoiceService.instance.memberVoiceStates = new Map();
+            VoiceService.instance.memberMuteStates = new Map();
+
+            logger.info('Created new VoiceService instance', {
+                component: 'VoiceService',
+                action: 'createInstance',
+                metadata: {
+                    hasClient: !!client,
+                    isJoined: false,
+                    isMuted: false
+                }
+            });
+
+        } catch (error) {
+            logger.error('Failed to initialize VoiceService', {
+                component: 'VoiceService',
+                action: 'createInstance',
+                metadata: { error },
+            });
+            return {} as VoiceService; // Return empty instance if initialization fails
+        }
+
+        return VoiceService.instance;
+    } finally {
+        resolve!();
+    }
   }
 
   public static getInstance(client?: IAgoraRTCClient, denoiser?: boolean): VoiceService {
@@ -140,20 +203,64 @@ export class VoiceService {
       return {} as VoiceService;
     }
 
+    // If we have an instance and no client is provided, return existing instance
+    if (VoiceService.instance?.client && !client) {
+      return VoiceService.instance;
+    }
+
+    // If we have an instance and same client, return existing instance
+    if (VoiceService.instance?.client && client && VoiceService.instance.client === client) {
+      return VoiceService.instance;
+    }
+
+    // Only clean up if we have a different client and we're not in the process of joining
+    if (VoiceService.instance?.client && client &&
+        VoiceService.instance.client !== client &&
+        !VoiceService.instance.joinMutex) {
+
+        logger.debug('Cleaning up old instance due to new client', {
+            component: 'VoiceService',
+            action: 'getInstance',
+            metadata: {
+                oldClientId: VoiceService.instance.client.uid,
+                newClientId: client.uid,
+                reason: 'different_client',
+                isJoined: VoiceService.instance._isJoined,
+                hasAudioTrack: !!VoiceService.instance.audioTrack
+            },
+        });
+
+        // Ensure we leave the channel before cleanup
+        if (VoiceService.instance._isJoined) {
+            void VoiceService.instance.leave().catch(error => {
+                logger.warn('Failed to leave channel during cleanup', {
+                    component: 'VoiceService',
+                    action: 'getInstance',
+                    metadata: { error },
+                });
+            });
+        }
+    }
+
     // Initialize instance if needed
     if (!VoiceService.instance?.client && client) {
-      logger.debug('Creating new VoiceService instance', {
-        component: 'VoiceService',
-        action: 'getInstance',
-        metadata: {
-          isNewInstance: true,
-          reason: 'first_init',
-          denoiserEnabled: denoiser,
-        },
-      });
+        logger.debug('Creating new VoiceService instance', {
+            component: 'VoiceService',
+            action: 'getInstance',
+            metadata: {
+                isNewInstance: true,
+                reason: 'first_init',
+                denoiserEnabled: denoiser,
+            },
+        });
 
-      // Initialize with existing Supabase client
-      VoiceService.instance = new VoiceService(client, supabase);
+        // Initialize with existing Supabase client
+        VoiceService.instance = new VoiceService(client, supabase);
+
+        // Setup AI denoiser if enabled
+        if (denoiser) {
+            void VoiceService.instance.setupAIDenoiser();
+        }
     }
 
     return VoiceService.instance;
@@ -818,6 +925,10 @@ export class VoiceService {
         // Create and publish audio track
         this.audioTrack = await this.createAudioTrack();
 
+        // Reset volume state
+        this.lastVolume = 0;
+        this.isVadSpeaking = false;
+
         // Publish the audio track
         await this.client.publish(this.audioTrack);
 
@@ -844,6 +955,14 @@ export class VoiceService {
         this.memberVoiceStates.set(memberId, initialState);
         void this.broadcastVoiceUpdate(initialState);
 
+        // Re-enable volume indicator after join
+        // @ts-expect-error - Type definitions don't match Agora SDK's actual API
+        this.client.enableAudioVolumeIndicator({
+          interval: 200,
+          smooth: 3,
+          enableVad: true
+        });
+
         logger.info('Join channel success', {
           metadata: { channelName, memberId },
         });
@@ -865,27 +984,42 @@ export class VoiceService {
         this.cleanupMemberMapping(this.currentMemberId);
       }
 
-      // Clean up audio track
+      // First unpublish audio track if it exists
       if (this.audioTrack) {
-        this.audioTrack.stop();
-        this.audioTrack.close();
-        this.audioTrack = null;
+        try {
+          await this.client.unpublish(this.audioTrack);
+        } catch (error) {
+          logger.warn('Failed to unpublish audio track', {
+            component: 'VoiceService',
+            action: 'leave',
+            metadata: { error },
+          });
+        }
       }
 
-      // Leave the channel
-      await this.client.leave();
+      // Then leave the channel
+      try {
+        await this.client.leave();
+      } catch (error) {
+        logger.warn('Failed to leave Agora channel', {
+          component: 'VoiceService',
+          action: 'leave',
+          metadata: { error },
+        });
+        throw error; // Rethrow to trigger cleanup
+      }
 
-      // Reset state
-      this._isJoined = false;
-      this.currentMemberId = null;
-      this.memberVoiceStates.clear();
-      this.memberMuteStates.clear();
+      // Finally clean up all state
+      this.cleanupInstance();
 
       logger.info('Left voice channel', {
         component: 'VoiceService',
         action: 'leave',
       });
     } catch (error) {
+      // Ensure cleanup happens even on error
+      this.cleanupInstance();
+
       logger.error('Error leaving voice channel', {
         component: 'VoiceService',
         action: 'leave',
@@ -907,6 +1041,28 @@ export class VoiceService {
         stackTrace: new Error().stack,
       },
     });
+
+    // If no audio track and we're joined, try to recreate it
+    if (!this.audioTrack && this._isJoined) {
+      try {
+        this.audioTrack = await this.createAudioTrack();
+        if (this._isJoined) {
+          await this.client.publish(this.audioTrack);
+        }
+        logger.info('Recreated audio track during mute toggle', {
+          component: 'VoiceService',
+          action: 'toggleMute',
+          metadata: { success: true }
+        });
+      } catch (error) {
+        logger.error('Failed to recreate audio track', {
+          component: 'VoiceService',
+          action: 'toggleMute',
+          metadata: { error }
+        });
+        return false;
+      }
+    }
 
     if (!this.audioTrack) {
       logger.warn('Cannot toggle mute - no audio track available', {
@@ -933,10 +1089,10 @@ export class VoiceService {
       });
 
       // Set the mute state on the audio track
-      await this.audioTrack.setMuted(newMuteState);
+      await this.audioTrack.setEnabled(!newMuteState);
 
       // Verify mute state was set correctly
-      const actualMuteState = this.audioTrack.muted;
+      const actualMuteState = !this.audioTrack.enabled;
       if (actualMuteState !== newMuteState) {
         logger.error('Mute state mismatch after setting', {
           component: 'VoiceService',
@@ -977,19 +1133,6 @@ export class VoiceService {
 
         // Ensure state is broadcast before returning
         await this.broadcastVoiceUpdate(voiceState);
-
-        logger.debug('Voice mute state changed', {
-          component: 'VoiceService',
-          action: 'toggleMute',
-          metadata: {
-            newMuteState,
-            memberId: this.currentMemberId,
-            audioTrackMuted: this.audioTrack.muted,
-            voiceStatus: voice_status,
-            level,
-            isMutedByOthers
-          },
-        });
       }
 
       return this._isMuted;
@@ -1000,7 +1143,7 @@ export class VoiceService {
         metadata: {
           error,
           currentState: this._isMuted,
-          audioTrackState: this.audioTrack?.muted,
+          audioTrackState: this.audioTrack?.enabled,
         },
       });
       throw error;
@@ -1114,10 +1257,25 @@ export class VoiceService {
 
   public onVolumeChange(callback: VoiceCallback | null): void {
     this.volumeCallback = callback;
+
+    // If we have existing states, immediately notify the callback
+    if (callback && this.memberVoiceStates.size > 0) {
+        callback(Array.from(this.memberVoiceStates.values()));
+    }
+
+    logger.debug('Volume callback updated', {
+        component: 'VoiceService',
+        action: 'onVolumeChange',
+        metadata: {
+            hasCallback: !!callback,
+            memberCount: this.memberVoiceStates.size,
+            isJoined: this._isJoined
+        }
+    });
   }
 
   private smoothVolume(currentVolume: number): number {
-    if (this._isMuted) {
+    if (this._isMuted || currentVolume <= VOICE_CONSTANTS.NOISE_FLOOR) {
       return 0;
     }
 
@@ -1128,7 +1286,7 @@ export class VoiceService {
     }
 
     // Use less aggressive smoothing overall
-    const factor = this.isVadSpeaking ? 0.7 : 0.5; // Increased factors for faster response
+    const factor = this.isVadSpeaking ? 0.7 : VOICE_CONSTANTS.VOLUME_SMOOTHING;
     const smoothedVolume = this.lastVolume * (1 - factor) + currentVolume * factor;
 
     // If volume is below hold threshold and VAD shows no speech, let it drop quickly
@@ -1319,10 +1477,37 @@ export class VoiceService {
   }
 
   private handleVolumeUpdate(memberId: string, level: number, isMuted: boolean): void {
-    // Check if member is muted - if so, force level to 0
+    // Check if we're in a valid state to process updates
+    if (!this._isJoined || !this.currentMemberId) {
+        logger.debug('Ignoring volume update - not in valid state', {
+            component: 'VoiceService',
+            action: 'handleVolumeUpdate',
+            metadata: {
+                isJoined: this._isJoined,
+                hasMemberId: !!this.currentMemberId,
+                memberId,
+                level,
+                isMuted
+            }
+        });
+        return;
+    }
+
+    // Validate member mapping exists
+    const agoraUid = this.getAgoraUidFromMemberId(memberId);
+    if (!agoraUid) {
+        logger.debug('Ignoring volume update - no member mapping', {
+            component: 'VoiceService',
+            action: 'handleVolumeUpdate',
+            metadata: { memberId }
+        });
+        return;
+    }
+
+    // Check if member is muted or below noise floor - if so, force level to 0
     const isLocallyMuted = this.memberMuteStates.get(memberId) || false;
-    if (isLocallyMuted) {
-      level = 0;
+    if (isLocallyMuted || level <= VOICE_CONSTANTS.NOISE_FLOOR) {
+        level = 0;
     }
 
     const isCurrentUser = memberId === this.currentMemberId;
@@ -1331,74 +1516,83 @@ export class VoiceService {
     const isLoudEnough = smoothedLevel > VOICE_CONSTANTS.SPEAKING_THRESHOLD;
 
     logger.debug('Processing volume update', {
-      component: 'VoiceService',
-      action: 'handleVolumeUpdate',
-      metadata: {
-        memberId,
-        rawLevel,
-        smoothedLevel,
-        isLoudEnough,
-        speakingThreshold: VOICE_CONSTANTS.SPEAKING_THRESHOLD,
-        isCurrentUser,
-        vadSpeaking: this.isVadSpeaking
-      }
+        component: 'VoiceService',
+        action: 'handleVolumeUpdate',
+        metadata: {
+            memberId,
+            rawLevel,
+            smoothedLevel,
+            isLoudEnough,
+            speakingThreshold: VOICE_CONSTANTS.SPEAKING_THRESHOLD,
+            isCurrentUser,
+            vadSpeaking: this.isVadSpeaking,
+            hasVolumeCallback: !!this.volumeCallback
+        }
     });
 
     // Get or create voice state
     let currentState = this.memberVoiceStates.get(memberId);
     if (!currentState) {
-      currentState = {
-        id: memberId,
-        level: 0,
-        voice_status: isMuted ? 'muted' : 'silent',
-        muted: isMuted,
-        is_deafened: false,
-        agora_uid: this.getAgoraUidFromMemberId(memberId),
-        timestamp: Date.now()
-      };
-      this.memberVoiceStates.set(memberId, currentState);
+        currentState = {
+            id: memberId,
+            level: 0,
+            voice_status: isMuted ? 'muted' : 'silent',
+            muted: isMuted,
+            is_deafened: false,
+            agora_uid: agoraUid,
+            timestamp: Date.now()
+        };
+        this.memberVoiceStates.set(memberId, currentState);
     }
 
-    // Determine new voice status
+    // Determine new voice status with debouncing for state changes
     const oldState = currentState.voice_status;
-    const newState = isMuted ? 'muted' :
-                    isLoudEnough ? 'speaking' : 'silent';
+    let newState = isMuted ? 'muted' : 'silent';
+
+    if (!isMuted) {
+        if (isLoudEnough || (isCurrentUser && this.isVadSpeaking)) {
+            newState = 'speaking';
+        } else if (smoothedLevel > 0 && smoothedLevel <= VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
+            // Add hysteresis - keep speaking state if we were speaking and level is still above noise floor
+            newState = oldState === 'speaking' ? 'speaking' : 'silent';
+        }
+    }
 
     // Update state if changed
     const volumeChanged = Math.abs(currentState.level - smoothedLevel) > 0.01;
     const statusChanged = oldState !== newState;
 
     if (volumeChanged || statusChanged) {
-      logger.debug('Voice state changed', {
-        component: 'VoiceService',
-        action: 'handleVolumeUpdate',
-        metadata: {
-          memberId,
-          oldState,
-          newState,
-          level: smoothedLevel,
-          isLoudEnough,
-          volumeChanged,
-          statusChanged,
-          vadSpeaking: this.isVadSpeaking
-        }
-      });
+        logger.debug('Voice state changed', {
+            component: 'VoiceService',
+            action: 'handleVolumeUpdate',
+            metadata: {
+                memberId,
+                oldState,
+                newState,
+                level: smoothedLevel,
+                isLoudEnough,
+                volumeChanged,
+                statusChanged,
+                vadSpeaking: this.isVadSpeaking
+            }
+        });
 
-      const updatedState: VoiceMemberState = {
-        ...currentState,
-        level: smoothedLevel,
-        voice_status: newState,
-        muted: isMuted,
-        timestamp: Date.now()
-      };
+        const updatedState: VoiceMemberState = {
+            ...currentState,
+            level: smoothedLevel,
+            voice_status: newState,
+            muted: isMuted,
+            timestamp: Date.now()
+        };
 
-      this.memberVoiceStates.set(memberId, updatedState);
-      void this.broadcastVoiceUpdate(updatedState);
+        this.memberVoiceStates.set(memberId, updatedState);
+        void this.broadcastVoiceUpdate(updatedState);
     }
 
-    // Notify volume callback if set
+    // Always notify callback of current state, even if unchanged
     if (this.volumeCallback) {
-      this.volumeCallback(Array.from(this.memberVoiceStates.values()));
+        this.volumeCallback(Array.from(this.memberVoiceStates.values()));
     }
   }
 
@@ -1550,6 +1744,102 @@ export class VoiceService {
       this.memberMuteStates.set(memberId, currentState);
       throw error;
     }
+  }
+
+  private cleanupInstance(): void {
+    // First mark that we're not joined to prevent new operations
+    this._isJoined = false;
+
+    // Store callback before cleanup to restore it later
+    const storedCallback = this.volumeCallback;
+
+    // Clean up broadcast channel first to stop receiving updates
+    if (this.broadcastChannel) {
+        try {
+            void this.broadcastChannel.unsubscribe();
+        } catch (error) {
+            logger.warn('Error cleaning up broadcast channel', {
+                component: 'VoiceService',
+                action: 'cleanupInstance',
+                metadata: { error },
+            });
+        }
+        this.broadcastChannel = null;
+    }
+
+    // Clean up intervals before audio cleanup
+    if (this.audioQualityMonitorInterval) {
+        clearInterval(this.audioQualityMonitorInterval);
+        this.audioQualityMonitorInterval = null;
+    }
+
+    // Clean up audio track with proper sequencing
+    if (this.audioTrack) {
+        try {
+            // First stop the track
+            this.audioTrack.stop();
+
+            // Unpipe any processors before closing
+            try {
+                if (this.aiDenoiserProcessor) {
+                    this.audioTrack.unpipe(this.aiDenoiserProcessor);
+                }
+            } catch (error) {
+                logger.warn('Error unpiping processors', {
+                    component: 'VoiceService',
+                    action: 'cleanupInstance',
+                    metadata: { error },
+                });
+            }
+
+            // Close the track immediately
+            this.audioTrack.close();
+            this.audioTrack = null;
+
+        } catch (error) {
+            logger.warn('Error cleaning up audio track', {
+                component: 'VoiceService',
+                action: 'cleanupInstance',
+                metadata: { error },
+            });
+            this.audioTrack = null;
+        }
+    }
+
+    // Clean up AI denoiser
+    if (this.aiDenoiserProcessor) {
+        try {
+            void this.aiDenoiserProcessor.disable();
+            this.aiDenoiserProcessor = null;
+        } catch (error) {
+            logger.warn('Error cleaning up AI denoiser', {
+                component: 'VoiceService',
+                action: 'cleanupInstance',
+                metadata: { error },
+            });
+        }
+    }
+
+    // Reset all state
+    this.currentMemberId = null;
+    this.memberVoiceStates.clear();
+    this.memberMuteStates.clear();
+    this.memberIdToAgoraUid.clear();
+    this.agoraUidToMemberId.clear();
+    this.lastVolume = 0;
+    this.isVadSpeaking = false;
+    this._isMuted = false;
+
+    // Restore callback after state reset
+    this.volumeCallback = storedCallback;
+
+    logger.debug('Instance cleanup completed', {
+        component: 'VoiceService',
+        action: 'cleanupInstance',
+        metadata: {
+            hasRestoredCallback: !!storedCallback
+        }
+    });
   }
 
 }

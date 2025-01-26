@@ -5,6 +5,7 @@ import type { PartyControlsProps } from '@/lib/types/components/props';
 import React, { memo, useCallback } from 'react';
 
 import { AVATARS } from '@/lib/constants';
+import { useToast } from '@/lib/hooks/use-toast';
 import { useModalStore } from '@/lib/stores/useModalStore';
 
 export const PartyControls = memo(function PartyControls({
@@ -18,6 +19,16 @@ export const PartyControls = memo(function PartyControls({
   onRequestMicrophonePermission,
 }: PartyControlsProps) {
   const showModal = useModalStore((state) => state.showModal);
+  const { toast } = useToast();
+
+  const handleMuteToggle = useCallback(async () => {
+    if (!onToggleMute) return;
+    await onToggleMute();
+    toast({
+      description: `Microphone ${!isMuted ? 'muted' : 'unmuted'}`,
+      duration: 1000,
+    });
+  }, [onToggleMute, isMuted, toast]);
 
   const handleJoinClick = useCallback(() => {
     showModal('join', {
@@ -77,7 +88,7 @@ export const PartyControls = memo(function PartyControls({
             </button>
 
             <button
-              onClick={onToggleMute}
+              onClick={handleMuteToggle}
 
               className={buttonClass(true, false)}
               disabled={partyState === 'joining'}
