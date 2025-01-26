@@ -19,13 +19,17 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
     voice: { isMuted: storeIsMuted },
   } = usePartyStore();
 
-  const handleMemberMute = useCallback(
-    async (memberId: string) => {
-      const voiceService = await VoiceService.createInstance();
-      await voiceService.toggleMemberMute(memberId);
-    },
-    [volumeLevels]
-  );
+  // Handle muting/unmuting other users
+  const handleOtherMemberMute = useCallback(async (memberId: string) => {
+    const voiceService = await VoiceService.createInstance();
+    await voiceService.toggleMemberMute(memberId);
+  }, []);
+
+  // Handle self mute toggle - use store state as single source of truth
+  const handleSelfMute = useCallback(async () => {
+    const voiceService = await VoiceService.createInstance();
+    await voiceService.toggleMute();
+  }, []);
 
   // Memoize member rendering to prevent unnecessary recalculations
   const renderedMembers = useMemo(() => {
@@ -36,7 +40,7 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
 
     if (!activeMembers.length) {
       return (
-        <div className="flex h-full items-center justify-center">
+        <div className="flex h-full items-center justify-center opacity-0 animate-fadeIn" style={{ animationDelay: '150ms', animationFillMode: 'forwards' }}>
           <span className="p-10 text-base text-[#282b2f]">nostalgia, onchain.</span>
         </div>
       );
@@ -59,20 +63,33 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
       },
     });
 
-    return sortedMembers.map((member) => {
+    return sortedMembers.map((member, index) => {
       const isCurrentUser = member.id === currentUserId;
       const volumeState = volumeLevels[member.id];
-      const isMuted = isCurrentUser ? storeIsMuted : (volumeState?.muted ?? false);
-      const volumeLevel = volumeState?.level ?? 0;
 
-      // Log member state for debugging
+      // For current user: only use store state
+      // For other users: use volume state with fallback
+      const isMuted = isCurrentUser
+        ? storeIsMuted
+        : volumeState?.muted ?? false;
+
+      // Derive voice status from mute state first, then volume
+      let voice_status: VoiceStatus = 'silent';
+      if (isMuted) {
+        voice_status = 'muted';
+      } else if (volumeState?.level && volumeState.level > 0) {
+        voice_status = 'speaking';
+      } else if (volumeState?.voice_status) {
+        voice_status = volumeState.voice_status;
+      }
+
       logger.debug('Processing member state', {
         component: 'MemberList',
         action: 'processMemberState',
         metadata: {
           memberId: member.id,
           isCurrentUser,
-          volumeLevel,
+          volumeLevel: volumeState?.level ?? 0,
           isMuted,
           volumeState,
           memberStatus: member.status,
@@ -80,27 +97,22 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
         },
       });
 
-      // Start with the volume state's voice status or default to silent
-      let voice_status: VoiceStatus = volumeState?.voice_status ?? 'silent';
-
-      // Override voice status only for mute state
-      if (isMuted) {
-        voice_status = 'muted';
-      }
-
       return (
         <div
-          className="flex h-[48px] items-center border-t border-[#e5e5e5] px-3 sm:px-6 transition-colors first:border-t-0 hover:bg-[#f5f5f5]"
+          style={{
+            animationDelay: `${150 + index * 50}ms`,
+            animationFillMode: 'forwards'
+          }}
+
+          className="flex h-[48px] items-center border-t border-[#e5e5e5] px-3 sm:px-6 transition-all duration-300 ease-in-out first:border-t-0 hover:bg-[#f5f5f5] opacity-0 animate-fadeIn"
           key={member.id}
         >
-          {/* Column 1: Username section */}
           <div className="flex w-[140px] items-center gap-1.5 sm:gap-2 md:w-[440px]">
-            {/* Voice status with volume indicator */}
             <div
-              onClick={() => !isCurrentUser && handleMemberMute(member.id)}
+              onClick={() => isCurrentUser ? handleSelfMute() : handleOtherMemberMute(member.id)}
 
-              className="relative -ml-2 sm:-ml-5 cursor-pointer"
-              title={isCurrentUser ? "Can't mute yourself" : isMuted ? 'Unmute user' : 'Mute user'}
+              className="relative -ml-2 sm:-ml-5 cursor-pointer transition-transform duration-200 hover:scale-105"
+              title={isCurrentUser ? (isMuted ? 'Unmute yourself' : 'Mute yourself') : (isMuted ? 'Unmute user' : 'Mute user')}
             >
               <VoiceStatusIcon
                 className="h-6 w-6 md:h-8 md:w-8"
@@ -110,9 +122,10 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
             </div>
 
             {/* Avatar */}
-            <div className="h-6 w-6 rounded-none md:h-8 md:w-8">
+            <div className="h-6 w-6 rounded-none md:h-8 md:w-8 transition-transform duration-200">
               <Image
                 alt={member.name ?? 'Member'}
+                className="transition-opacity duration-200"
                 height={32}
                 src={member.avatar ?? AVATARS[0]!}
                 unoptimized={true}
@@ -121,17 +134,17 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
             </div>
 
             {/* Name */}
-            <span className="flex-1 truncate text-base font-semibold text-[#282b2f] [text-shadow:_0_1px_1px_rgba(0,0,0,0.15)_inset] md:text-2xl">
+            <span className="flex-1 truncate text-base font-semibold text-[#282b2f] [text-shadow:_0_1px_1px_rgba(0,0,0,0.15)_inset] md:text-2xl transition-colors duration-200">
               {member.name ?? 'Unknown'}
             </span>
           </div>
 
           {/* Game status */}
-          <div className="flex flex-1 items-center min-w-0 justify-start sm:ml-3 md:-ml-[35px]">
+          <div className="flex flex-1 items-center min-w-0 justify-start sm:ml-3 md:-ml-[35px] transition-transform duration-200">
             {/* Game status icon */}
             <div className="flex-shrink-0 flex items-center mr-2 sm:mr-5 md:mr-2">
               <svg
-                className="h-6 w-6 md:h-8 md:w-8"
+                className="h-6 w-6 md:h-8 md:w-8 transition-colors duration-200"
                 fill="#acd43b"
                 viewBox="0 0 3000 3000"
                 xmlns="http://www.w3.org/2000/svg"
@@ -141,7 +154,7 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
               </svg>
             </div>
             <div className="flex items-center min-w-0 flex-1">
-              <span className="truncate text-base font-semibold text-[#282b2f] [text-shadow:_0_1px_1px_rgba(0,0,0,0.15)_inset] md:ml-[75px] md:text-2xl">
+              <span className="truncate text-base font-semibold text-[#282b2f] [text-shadow:_0_1px_1px_rgba(0,0,0,0.15)_inset] md:ml-[75px] md:text-2xl transition-colors duration-200">
                 {member.game}
               </span>
             </div>
@@ -149,7 +162,7 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
         </div>
       );
     });
-  }, [members, currentUserId, volumeLevels, storeIsMuted, handleMemberMute]);
+  }, [members, currentUserId, volumeLevels, storeIsMuted, handleOtherMemberMute, handleSelfMute]);
 
   return (
     <div className="flex h-full flex-col">

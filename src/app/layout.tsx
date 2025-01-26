@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 
 import { ClientLayout } from '@/components/layouts/ClientLayout';
 
-import '@/styles/globals.css';
+import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Chat360',

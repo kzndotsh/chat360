@@ -80,6 +80,7 @@
 }
 
 @keyframes fadeOut {
+
   0%,
   50% {
     opacity: 1;
@@ -87,6 +88,22 @@
 
   100% {
     opacity: 0;
+  }
+}
+
+@keyframes fadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  50% {
+    opacity: 0.3;
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
@@ -126,6 +143,7 @@
 }
 
 .animate-fadeIn {
-  opacity: 1;
-  transform: none;
+  animation: fadeIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: opacity, transform;
+  backface-visibility: hidden;
 }
