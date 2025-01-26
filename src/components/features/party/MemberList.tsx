@@ -1,7 +1,6 @@
 'use client';
 
 import type { MemberListProps } from '@/lib/types/components/props';
-import type { VoiceStatus } from '@/lib/types/party/member';
 
 import { useMemo, useCallback } from 'react';
 
@@ -10,7 +9,6 @@ import Image from 'next/image';
 import { VoiceStatusIcon } from '@/components/features/party/icons/VoiceStatusIcon';
 
 import { AVATARS } from '@/lib/constants';
-import { VOICE_CONSTANTS } from '@/lib/constants/voice';
 import { VoiceService } from '@/lib/services/voiceService';
 import { usePartyStore } from '@/lib/stores/partyStore';
 
@@ -18,42 +16,6 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
   const {
     voice: { isMuted: storeIsMuted },
   } = usePartyStore();
-
-  // Throttle volume updates to reduce re-renders and add hysteresis
-  const throttledVolumeLevels = useMemo(() => {
-    const processedLevels: typeof volumeLevels = {};
-
-    for (const [id, state] of Object.entries(volumeLevels)) {
-      if (!state) continue;
-
-      // Use voice constants for thresholds
-      const SPEAKING_THRESHOLD = VOICE_CONSTANTS.SPEAKING_THRESHOLD;      // 0.2
-      const SILENCE_THRESHOLD = VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD;  // 0.15
-      const MIN_VOICE_LEVEL = VOICE_CONSTANTS.VAD_CONFIDENCE_THRESHOLD;   // 0.1
-
-      const isSpeakingLoud = state.level > SPEAKING_THRESHOLD;
-      const isSpeakingQuiet = state.level > MIN_VOICE_LEVEL;
-      const isSilent = state.level <= SILENCE_THRESHOLD;
-
-      // Enhanced state transition logic with hysteresis
-      let newStatus: VoiceStatus = state.voice_status || 'silent';
-
-      if (state.muted) {
-        newStatus = 'muted';
-      } else if (isSpeakingLoud || (newStatus === 'speaking' && isSpeakingQuiet && !isSilent)) {
-        newStatus = 'speaking';
-      } else if (isSilent) {
-        newStatus = 'silent';
-      }
-
-      processedLevels[id] = {
-        ...state,
-        voice_status: newStatus
-      };
-    }
-
-    return processedLevels;
-  }, [JSON.stringify(volumeLevels)]);
 
   // Handle muting/unmuting other users
   const handleOtherMemberMute = useCallback(async (memberId: string) => {
@@ -96,7 +58,7 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
 
     return sortedMembers.map((member, index) => {
       const isCurrentUser = member.id === currentUserId;
-      const volumeState = throttledVolumeLevels[member.id];
+      const volumeState = volumeLevels[member.id];
 
       // For current user: only use store state
       // For other users: use volume state with fallback
@@ -104,15 +66,8 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
         ? storeIsMuted
         : volumeState?.muted ?? false;
 
-      // Derive voice status from mute state first, then volume
-      let voice_status: VoiceStatus = 'silent';
-      if (isMuted) {
-        voice_status = 'muted';
-      } else if (volumeState?.level && volumeState.level > 0) {
-        voice_status = 'speaking';
-      } else if (volumeState?.voice_status) {
-        voice_status = volumeState.voice_status;
-      }
+      // Use voice status directly from volume state, with fallback to silent
+      const voice_status = volumeState?.voice_status ?? 'silent';
 
       return (
         <div
@@ -191,7 +146,7 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
         </div>
       );
     });
-  }, [currentUserId, members, throttledVolumeLevels, storeIsMuted, handleOtherMemberMute, handleSelfMute]);
+  }, [currentUserId, members, volumeLevels, storeIsMuted, handleOtherMemberMute, handleSelfMute]);
 
   return (
     <div

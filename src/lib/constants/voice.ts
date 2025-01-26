@@ -1,14 +1,15 @@
 export const VOICE_CONSTANTS = {
   // Volume thresholds (0-1)
   SPEAKING_THRESHOLD: 0.25,
-  SPEAKING_HOLD_THRESHOLD: 0.18,  // Lowered to drop to silent faster
-  VOLUME_SMOOTHING: 0.40,  // Increased for faster response to volume changes
-  NOISE_FLOOR: 0.15,  // Increased to handle 13-15% lingering levels
+  SPEAKING_HOLD_THRESHOLD: 0.15,
+  VOLUME_SMOOTHING: 0.4,
+  NOISE_FLOOR: 0.02,
 
   // Timing constants (ms)
   SPEAKING_TIMEOUT: 100,
   UPDATE_DEBOUNCE: 30,
-  RECOVERY_DELAY: 150,
+  RECOVERY_DELAY: 1000,
+  MAX_HOLD_TIME: 100,
 
   // Audio quality monitoring
   MAX_LOW_AUDIO_COUNT: 3,
@@ -19,9 +20,9 @@ export const VOICE_CONSTANTS = {
   MAX_VOLUME: 1000,
 
   // VAD configuration
-  VAD_CONFIDENCE_THRESHOLD: 0.30,
-  VAD_SPEAKING_HISTORY: 2,  // Reduced to be more responsive
-  VAD_SPEAKING_RATIO_THRESHOLD: 0.35,
+  VAD_CONFIDENCE_THRESHOLD: 0.35,
+  VAD_SPEAKING_HISTORY: 2,
+  VAD_SPEAKING_RATIO_THRESHOLD: 0.40,
 
   // Agora VAD configuration
   MUSIC_THRESHOLD: 0.7,
@@ -30,10 +31,10 @@ export const VOICE_CONSTANTS = {
 } as const;
 
 export const VAD_CONFIG = {
-  POSITIVE_SPEECH_THRESHOLD: 0.25,
-  NEGATIVE_SPEECH_THRESHOLD: 0.15,  // Increased to match noise floor
-  REDEMPTION_FRAMES: 2,  // Reduced for faster state changes
+  POSITIVE_SPEECH_THRESHOLD: 0.30,
+  NEGATIVE_SPEECH_THRESHOLD: 0.20,
+  REDEMPTION_FRAMES: 2,
   PRE_SPEECH_PAD_FRAMES: 1,
-  MIN_SPEECH_FRAMES: 2,  // Reduced for faster detection
+  MIN_SPEECH_FRAMES: 2,
   FRAME_SAMPLES: 256,
 } as const;

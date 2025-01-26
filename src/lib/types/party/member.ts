@@ -32,6 +32,9 @@ export interface VoiceMemberState {
   muted: boolean;
   voice_status: VoiceStatus;
   agora_uid?: string;
+  last_transition?: number; // For debouncing state changes
+  prev_level?: number;      // For tracking level changes
+  smoothed_level?: number;  // For smoothing volume transitions
   timestamp?: number;
 }
 

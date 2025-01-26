@@ -777,38 +777,41 @@ export class VoiceService {
     }
   }
 
-  private async broadcastVoiceUpdate(update: Partial<VoiceUpdate>) {
-    if (!this.broadcastChannel) return;
+  private async broadcastVoiceUpdate(state: VoiceMemberState): Promise<void> {
+    if (!this.broadcastChannel || !this._isJoined) {
+        logger.debug('Skipping voice update broadcast - not ready', {
+            component: 'VoiceService',
+            action: 'broadcastVoiceUpdate',
+            metadata: {
+                hasChannel: !!this.broadcastChannel,
+                isJoined: this._isJoined
+            }
+        });
+        return;
+    }
 
     try {
-      const broadcast: VoiceUpdate = {
-        id: update.id!,
-        timestamp: Date.now(),
-        level: update.level ?? 0,
-        voice_status: update.voice_status ?? 'silent',
-        muted: update.muted ?? false,
-        is_deafened: update.is_deafened ?? false,
-        agora_uid: update.agora_uid,
-        // Add source identifier
-        source: 'local_broadcast',
-      };
-
-      logger.debug('Broadcasting voice update', {
-        component: 'VoiceService',
-        action: 'broadcastVoiceUpdate',
-        metadata: {
-          broadcast,
-          currentMemberId: this.currentMemberId,
-        },
-      });
-
-      await this.broadcastChannel.send({
-        type: 'broadcast',
-        event: 'voice_update',
-        payload: broadcast,
-      });
+        await this.broadcastChannel.send({
+            type: 'broadcast',
+            event: 'voice_update',
+            payload: {
+                id: state.id,
+                level: state.level,
+                voice_status: state.voice_status,
+                muted: state.muted,
+                is_deafened: state.is_deafened,
+                agora_uid: state.agora_uid,
+                timestamp: state.timestamp,
+                source: 'voice_service'
+            }
+        });
     } catch (error) {
-      logger.error('Broadcast error', { metadata: { error } });
+        logger.error('Failed to broadcast voice update', {
+            component: 'VoiceService',
+            action: 'broadcastVoiceUpdate',
+            metadata: { error, state }
+        });
+        throw error; // Re-throw to allow caller to handle
     }
   }
 
@@ -1285,13 +1288,13 @@ export class VoiceService {
       return currentVolume;
     }
 
-    // Use less aggressive smoothing overall
-    const factor = this.isVadSpeaking ? 0.7 : VOICE_CONSTANTS.VOLUME_SMOOTHING;
+    // Use more aggressive smoothing for rising volumes to catch speech onset faster
+    const factor = currentVolume > this.lastVolume ? 0.8 : VOICE_CONSTANTS.VOLUME_SMOOTHING;
     const smoothedVolume = this.lastVolume * (1 - factor) + currentVolume * factor;
 
     // If volume is below hold threshold and VAD shows no speech, let it drop quickly
     if (currentVolume < VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD && !this.isVadSpeaking) {
-      this.lastVolume = Math.min(smoothedVolume, currentVolume * 1.5); // Faster drop
+      this.lastVolume = Math.min(smoothedVolume, currentVolume * 1.2); // Slightly slower drop
     } else {
       this.lastVolume = smoothedVolume;
     }
@@ -1513,7 +1516,9 @@ export class VoiceService {
     const isCurrentUser = memberId === this.currentMemberId;
     const rawLevel = level;
     const smoothedLevel = isCurrentUser ? rawLevel : this.smoothVolume(rawLevel);
+
     const isLoudEnough = smoothedLevel > VOICE_CONSTANTS.SPEAKING_THRESHOLD;
+    const isAboveHoldThreshold = smoothedLevel > VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD;
 
     logger.debug('Processing volume update', {
         component: 'VoiceService',
@@ -1524,6 +1529,7 @@ export class VoiceService {
             smoothedLevel,
             isLoudEnough,
             speakingThreshold: VOICE_CONSTANTS.SPEAKING_THRESHOLD,
+            holdThreshold: VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD,
             isCurrentUser,
             vadSpeaking: this.isVadSpeaking,
             hasVolumeCallback: !!this.volumeCallback
@@ -1536,7 +1542,7 @@ export class VoiceService {
         currentState = {
             id: memberId,
             level: 0,
-            voice_status: isMuted ? 'muted' : 'silent',
+            voice_status: isMuted ? ('muted' as const) : ('silent' as const),
             muted: isMuted,
             is_deafened: false,
             agora_uid: agoraUid,
@@ -1545,21 +1551,29 @@ export class VoiceService {
         this.memberVoiceStates.set(memberId, currentState);
     }
 
-    // Determine new voice status with debouncing for state changes
+    // Determine new voice status with improved state transition logic
     const oldState = currentState.voice_status;
-    let newState = isMuted ? 'muted' : 'silent';
+    let newState: VoiceStatus = isMuted ? 'muted' : 'silent';
+    const now = Date.now(); // Declare now at the top level of the function
 
     if (!isMuted) {
-        if (isLoudEnough || (isCurrentUser && this.isVadSpeaking)) {
-            newState = 'speaking';
-        } else if (smoothedLevel > 0 && smoothedLevel <= VOICE_CONSTANTS.SPEAKING_THRESHOLD) {
-            // Add hysteresis - keep speaking state if we were speaking and level is still above noise floor
-            newState = oldState === 'speaking' ? 'speaking' : 'silent';
+        const timeSinceLastTransition = now - (currentState.timestamp || 0);
+
+        if (oldState === 'speaking') {
+            // If currently speaking, use stricter criteria to maintain state
+            if (isLoudEnough || (isAboveHoldThreshold && timeSinceLastTransition < VOICE_CONSTANTS.MAX_HOLD_TIME)) {
+                newState = 'speaking';
+            }
+        } else {
+            // If not speaking, require clear speech signal to enter speaking state
+            if (isLoudEnough && (isCurrentUser || this.isVadSpeaking)) {
+                newState = 'speaking';
+            }
         }
     }
 
-    // Update state if changed
-    const volumeChanged = Math.abs(currentState.level - smoothedLevel) > 0.01;
+    // Update state if changed - more lenient volume change detection
+    const volumeChanged = Math.abs(currentState.level - smoothedLevel) > VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD;
     const statusChanged = oldState !== newState;
 
     if (volumeChanged || statusChanged) {
@@ -1583,10 +1597,12 @@ export class VoiceService {
             level: smoothedLevel,
             voice_status: newState,
             muted: isMuted,
-            timestamp: Date.now()
+            timestamp: now
         };
 
         this.memberVoiceStates.set(memberId, updatedState);
+
+        // Broadcast update and handle errors
         void this.broadcastVoiceUpdate(updatedState);
     }
 
@@ -1782,7 +1798,7 @@ export class VoiceService {
             // Unpipe any processors before closing
             try {
                 if (this.aiDenoiserProcessor) {
-                    this.audioTrack.unpipe(this.aiDenoiserProcessor);
+                    this.audioTrack.unpipe();
                 }
             } catch (error) {
                 logger.warn('Error unpiping processors', {
