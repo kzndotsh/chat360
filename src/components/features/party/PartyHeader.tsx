@@ -13,7 +13,11 @@ import { logger } from '@/lib/logger';
 import { Chat360Icon } from './icons/Chat360Icon';
 import { UserIcon } from './icons/UserIcon';
 
-const HeaderButton = ({
+const MemoizedUserIcon = React.memo(UserIcon);
+const MemoizedBarChartIcon = React.memo(BiSolidBarChartAlt2);
+const MemoizedXIcon = React.memo(TbBrandX);
+
+const HeaderButton = React.memo(({
   icon: Icon,
   iconSize = 'w-7 h-7',
   width = 'w-[170px]',
@@ -49,7 +53,9 @@ const HeaderButton = ({
   ) : (
     ButtonContent
   );
-};
+});
+
+HeaderButton.displayName = 'HeaderButton';
 
 export function PartyHeader({ membersCount }: PartyHeaderProps) {
   const [copyStatus, setCopyStatus] = useState<'error' | 'idle' | 'success'>('idle');
@@ -134,14 +140,14 @@ export function PartyHeader({ membersCount }: PartyHeaderProps) {
           <div className="flex h-[40px] w-full sm:hidden">
             <div className="flex-1">
               <HeaderButton
-                icon={BiSolidBarChartAlt2}
+                icon={MemoizedBarChartIcon}
                 iconSize="w-7 h-7"
                 width="w-full"
               />
             </div>
             <div className="flex-1">
               <HeaderButton
-                icon={TbBrandX}
+                icon={MemoizedXIcon}
                 iconSize="w-7 h-7"
                 url="https://x.com/chat360fun"
                 width="w-full"
@@ -151,7 +157,7 @@ export function PartyHeader({ membersCount }: PartyHeaderProps) {
 
           <div className="h-[40px] w-full sm:hidden">
             <HeaderButton
-              icon={UserIcon}
+              icon={MemoizedUserIcon}
               iconSize="w-7 h-6"
               width="w-full"
             >
@@ -163,7 +169,7 @@ export function PartyHeader({ membersCount }: PartyHeaderProps) {
 
           <div className="hidden sm:flex">
             <HeaderButton
-              icon={UserIcon}
+              icon={MemoizedUserIcon}
               iconSize="w-7 h-6"
               width="w-[140px]"
             >
@@ -173,13 +179,13 @@ export function PartyHeader({ membersCount }: PartyHeaderProps) {
             </HeaderButton>
 
             <HeaderButton
-              icon={BiSolidBarChartAlt2}
+              icon={MemoizedBarChartIcon}
               iconSize="w-7 h-7"
               width="w-[140px]"
             />
 
             <HeaderButton
-              icon={TbBrandX}
+              icon={MemoizedXIcon}
               iconSize="w-7 h-7"
               url="https://x.com/chat360fun"
               width="w-[140px]"

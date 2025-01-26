@@ -184,13 +184,13 @@ const FormFields = React.memo(
               Select Avatar
             </FormLabel>
             <div
-              className={`flex flex-wrap justify-center gap-2 sm:grid sm:grid-cols-7 sm:gap-4 ${!!errors.avatar ? 'rounded-md ring-2 ring-red-500' : ''} p-4 bg-gray-100/50 rounded-lg`}
+              className={`grid grid-cols-3 justify-items-center sm:grid-cols-7 gap-x-8 gap-y-2 sm:gap-x-6 sm:gap-y-2 ${!!errors.avatar ? 'rounded-md ring-2 ring-red-500' : ''} p-4 bg-gray-100/50 rounded-lg`}
             >
               {AVATARS.map((avatar, index) => (
                 <button
                   onClick={() => field.onChange(avatar)}
 
-                  className={`h-16 w-16 overflow-hidden rounded-md transition-all sm:h-20 sm:w-20 ${field.value === avatar ? 'ring-[3px] ring-[#ACD43B] shadow-[0_0_15px_rgba(170,205,67,0.3)]' : 'hover:ring-2 hover:ring-[#ACD43B]/50 hover:shadow-[0_0_10px_rgba(170,205,67,0.2)] bg-white'}`}
+                  className={`h-[85px] w-[85px] overflow-hidden rounded-md transition-all sm:h-20 sm:w-20 ${field.value === avatar ? 'ring-[3px] ring-[#ACD43B] shadow-[0_0_15px_rgba(170,205,67,0.3)]' : 'hover:ring-2 hover:ring-[#ACD43B]/50 hover:shadow-[0_0_10px_rgba(170,205,67,0.2)] bg-white'}`}
                   disabled={isSubmitting}
                   key={index}
                   type="button"
@@ -314,7 +314,7 @@ export function ProfileModal({ onSubmitAction, onCloseAction, initialData }: Pro
         </div>
       )}
 
-      <div className="min-h-[520px] w-[90vw] rounded-lg bg-[#F7FFFF] p-2 sm:p-6 lg:w-[700px]">
+      <div className="max-h-[90vh] w-[95vw] overflow-y-auto rounded-lg bg-[#F7FFFF] p-2 sm:w-[90vw] sm:p-6 lg:w-[700px]">
         <div className="relative mb-4 flex items-center justify-center">
           <h2 className="relative text-base font-bold text-[#282828] sm:text-xl">
             {initialData ? 'Edit Profile' : 'Join Party'}
@@ -326,9 +326,9 @@ export function ProfileModal({ onSubmitAction, onCloseAction, initialData }: Pro
           <form
             onSubmit={form.handleSubmit(onSubmitForm)}
 
-            className="flex h-full flex-col bg-white rounded-lg p-4 shadow-sm border border-[#ACD43B]/20"
+            className="flex h-full flex-col bg-white rounded-lg p-2 sm:p-4 shadow-sm border border-[#ACD43B]/20"
           >
-            <div className="flex flex-col items-center flex-1 space-y-4 sm:space-y-6 sm:items-stretch">
+            <div className="flex flex-col items-center flex-1 space-y-3 sm:space-y-6 sm:items-stretch">
               <FormField
                 render={({ field }) => (
                   <FormItem className="w-full max-w-[280px] sm:max-w-none">
@@ -357,13 +357,13 @@ export function ProfileModal({ onSubmitAction, onCloseAction, initialData }: Pro
                       Select Avatar
                     </FormLabel>
                     <div
-                      className={`flex flex-wrap justify-center gap-2 sm:grid sm:grid-cols-7 sm:gap-4 ${!!errors.avatar ? 'rounded-md ring-2 ring-red-500' : ''} p-4 bg-gray-100/50 rounded-lg`}
+                      className={`grid grid-cols-3 justify-items-center sm:grid-cols-7 gap-x-8 gap-y-2 sm:gap-x-6 sm:gap-y-2 ${!!errors.avatar ? 'rounded-md ring-2 ring-red-500' : ''} p-4 bg-gray-100/50 rounded-lg`}
                     >
                       {AVATARS.map((avatar, index) => (
                         <button
                           onClick={() => field.onChange(avatar)}
 
-                          className={`h-16 w-16 overflow-hidden rounded-md transition-all sm:h-20 sm:w-20 ${field.value === avatar ? 'ring-[3px] ring-[#ACD43B] shadow-[0_0_15px_rgba(170,205,67,0.3)]' : 'hover:ring-2 hover:ring-[#ACD43B]/50 hover:shadow-[0_0_10px_rgba(170,205,67,0.2)] bg-white'}`}
+                          className={`h-[85px] w-[85px] overflow-hidden rounded-md transition-all sm:h-20 sm:w-20 ${field.value === avatar ? 'ring-[3px] ring-[#ACD43B] shadow-[0_0_15px_rgba(170,205,67,0.3)]' : 'hover:ring-2 hover:ring-[#ACD43B]/50 hover:shadow-[0_0_10px_rgba(170,205,67,0.2)] bg-white'}`}
                           disabled={isSubmitting}
                           key={index}
                           type="button"
