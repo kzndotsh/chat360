@@ -21,6 +21,7 @@ self.addEventListener('fetch', (event) => {
     'cds-ap-web-1.agora.io',
     'cds-web-2.ap.sd-rtn.com',
     'cds-ap-web-3.agora.io',
+    'web-2.statscollector.sd-rtn.com',
   ];
 
   // Block any domain containing 'statscollector' or 'logservice'

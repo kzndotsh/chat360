@@ -36,39 +36,66 @@ export default function MainContent() {
     const preloadVideo = async (url: string, onLoad: () => void) => {
       try {
         const video = document.createElement('video');
-        video.src = url;
+        video.muted = true;
+        video.playsInline = true;
         video.preload = 'auto';
-        video.onloadedmetadata = () => {
-          onLoad();
-        };
-        video.onerror = () => {
-          logger.error('Video preload error', {
-            action: 'videoPreload',
-            metadata: { url },
-          });
-        };
+
+        // Create a promise to handle both success and error cases
+        const loadPromise = new Promise<void>((resolve, reject) => {
+          video.onloadeddata = () => {
+            onLoad();
+            resolve();
+          };
+
+          video.onerror = () => {
+            reject(new Error(`Failed to load video: ${video.error?.message || 'Unknown error'}`));
+          };
+        });
+
+        video.src = url;
         videoElements.push(video);
+
+        // Add to DOM temporarily to ensure loading
+        video.style.display = 'none';
+        document.body.appendChild(video);
+
+        await loadPromise;
       } catch (error: unknown) {
         if (error instanceof Error && error.name !== 'AbortError') {
           logger.error('Video preload error', {
             action: 'videoPreload',
-            metadata: { error, url },
+            metadata: {
+              error: error.message,
+              url,
+              type: error.name
+            },
           });
         }
       }
     };
 
     // Start preloading both videos
-    preloadVideo(INTRO_VIDEO_URL, () => setIntroVideoLoaded(true));
-    preloadVideo(BACKGROUND_VIDEO_URL, () => setVideoLoaded(true));
+    Promise.all([
+      preloadVideo(INTRO_VIDEO_URL, () => setIntroVideoLoaded(true)),
+      preloadVideo(BACKGROUND_VIDEO_URL, () => setVideoLoaded(true))
+    ]).catch(error => {
+      logger.error('Video preload batch error', {
+        action: 'videoPreloadBatch',
+        metadata: { error },
+      });
+    });
 
     return () => {
       controller.abort();
       // Clean up video elements
       videoElements.forEach(video => {
         if (video.src) {
-          video.src = '';
+          video.pause();
+          video.removeAttribute('src');
           video.load();
+          if (video.parentNode) {
+            video.parentNode.removeChild(video);
+          }
         }
       });
     };
