@@ -6,8 +6,10 @@ import React, { useRef, useState, useCallback, useEffect } from 'react';
 
 import { Clipboard } from 'lucide-react';
 import { BiSolidBarChartAlt2 } from 'react-icons/bi';
+import { FaUserPlus } from 'react-icons/fa';
 import { TbBrandX } from 'react-icons/tb';
 
+import { useParty } from '@/lib/contexts/partyContext';
 import { logger } from '@/lib/logger';
 
 import { Chat360Icon } from './icons/Chat360Icon';
@@ -17,6 +19,7 @@ const MemoizedUserIcon = React.memo(UserIcon);
 const MemoizedBarChartIcon = React.memo(BiSolidBarChartAlt2);
 const MemoizedXIcon = React.memo(TbBrandX);
 const MemoizedChat360Icon = React.memo(Chat360Icon);
+const MemoizedUserPlusIcon = React.memo(FaUserPlus);
 
 const HeaderButton = React.memo(({
   icon: Icon,
@@ -24,15 +27,19 @@ const HeaderButton = React.memo(({
   width = 'w-[170px]',
   children,
   url,
+  onClick,
 }: {
   icon: React.FC<React.SVGProps<SVGSVGElement>>;
   iconSize?: string;
   width?: string;
   children?: React.ReactNode;
   url?: string;
+  onClick?: () => void;
 }) => {
   const ButtonContent = (
     <button
+      onClick={onClick}
+
       className={`relative flex h-[50px] cursor-pointer items-center justify-center bg-[#6B717D] transition-colors hover:bg-[#5D626D] ${width}`}
     >
       <div className="absolute inset-0 shadow-[inset_0_-1px_1px_rgba(0,0,0,0.05)]"></div>
@@ -136,6 +143,7 @@ Logo.displayName = 'Logo';
 
 export const PartyHeader = React.memo(
   function PartyHeader({ membersCount }: PartyHeaderProps) {
+    const { addTestMembers } = useParty();
     const [copyStatus, setCopyStatus] = useState<'error' | 'idle' | 'success'>('idle');
     const loggerRef = useRef(logger);
     const timeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
@@ -201,6 +209,12 @@ export const PartyHeader = React.memo(
       }
     }, []);
 
+    const handleAddTestMembers = useCallback(() => {
+      if (addTestMembers) {
+        addTestMembers(50);
+      }
+    }, [addTestMembers]);
+
     useEffect(() => {
       return () => {
         if (timeoutRef.current) {
@@ -251,6 +265,19 @@ export const PartyHeader = React.memo(
             Party Options: Party Chat
           </span>
         </div>
+
+        {process.env.NODE_ENV === 'development' && addTestMembers && (
+          <HeaderButton
+            onClick={handleAddTestMembers}
+
+            icon={MemoizedUserPlusIcon}
+            width="w-[170px]"
+          >
+            <span className="ml-2 text-sm font-medium text-white opacity-90">
+              Add Test Members
+            </span>
+          </HeaderButton>
+        )}
       </div>
     );
   },

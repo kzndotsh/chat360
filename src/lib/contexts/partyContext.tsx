@@ -10,6 +10,38 @@ import { useVolumeControl } from '@/lib/hooks/useVolumeControl';
 import { logger } from '@/lib/logger';
 import { usePartyStore } from '@/lib/stores/partyStore';
 
+// Temporary function for development testing
+const generateTestMembers = (count: number): PartyMember[] => {
+  const defaultGame = 'Minecraft';
+  const defaultAvatar = 'https://api.dicebear.com/7.x/avataaars/svg?seed=1';
+
+  const games = [defaultGame, 'Fortnite', 'League of Legends', 'Valorant', 'CS:GO', 'Among Us'];
+  const avatars = [
+    defaultAvatar,
+    'https://api.dicebear.com/7.x/avataaars/svg?seed=2',
+    'https://api.dicebear.com/7.x/avataaars/svg?seed=3',
+    'https://api.dicebear.com/7.x/avataaars/svg?seed=4',
+    'https://api.dicebear.com/7.x/avataaars/svg?seed=5'
+  ];
+
+  return Array.from({ length: count }, (_, i): PartyMember => {
+    const avatarIndex = i % avatars.length;
+    const gameIndex = Math.floor(Math.random() * games.length);
+
+    return {
+      id: `test-member-${i}`,
+      name: `Test User ${i}`,
+      avatar: avatars[avatarIndex] ?? defaultAvatar,
+      game: games[gameIndex] ?? defaultGame,
+      created_at: new Date().toISOString(),
+      last_seen: new Date().toISOString(),
+      is_active: true,
+      status: 'active' as const,
+      agora_uid: `test-${i}`,
+    };
+  });
+};
+
 interface PartyContextType {
   currentMember: PartyMember | null;
   error: Error | null;
@@ -23,6 +55,7 @@ interface PartyContextType {
   leave: () => Promise<void>;
   toggleMute: () => Promise<void>;
   updateProfile: (updates: Partial<PartyMember>) => Promise<void>;
+  addTestMembers?: (count: number) => void;
 }
 
 const initialPartyState: PartyStatus = 'idle';
@@ -57,8 +90,13 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
 
   const [volumeLevels, setVolumeLevels] = useState<Record<string, VoiceMemberState>>({});
   const [isSubscribed, setIsSubscribed] = useState(false);
+  const [testMembers, setTestMembers] = useState<PartyMember[]>([]);
 
   const { getClient } = useAgoraContext();
+
+  const addTestMembers = useCallback((count: number) => {
+    setTestMembers(generateTestMembers(count));
+  }, []);
 
   const { updateVolume } = useVolumeControl({
     isMuted,
@@ -296,7 +334,10 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
     });
   }, [isMuted]);
 
-  const memoizedMembers = useMemo(() => Array.from(members.values()), [members]);
+  const memoizedMembers = useMemo(() => {
+    const storeMembers = Array.from(members.values());
+    return [...storeMembers, ...testMembers];
+  }, [members, testMembers]);
 
   const contextValue = useMemo<PartyContextType>(
     () => ({
@@ -312,6 +353,7 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
       leave,
       toggleMute,
       updateProfile,
+      addTestMembers,
     }),
     [
       currentMember,
@@ -325,6 +367,7 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
       leave,
       toggleMute,
       updateProfile,
+      addTestMembers,
     ]
   );
 

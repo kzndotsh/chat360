@@ -105,43 +105,45 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
           }}
 
           aria-label={`${member.name} - ${member.game} - ${voice_status}`}
-          className="flex h-[48px] items-center border-t border-[#e5e5e5] px-3 sm:px-6 transition-all duration-200 ease-out first:border-t-0 hover:bg-[#f5f5f5] opacity-0 animate-fadeIn"
+          className="flex h-[48px] items-center border-t border-[#e5e5e5] px-1 sm:px-3 transition-all duration-200 ease-out first:border-t-0 hover:bg-[#f5f5f5] opacity-0 animate-fadeIn gap-1 sm:gap-4"
           key={member.id}
           role="listitem"
         >
-          <div className="flex w-[140px] items-center gap-1.5 sm:gap-2 md:w-[440px]">
-            {!isCurrentUser && (
-              <button
-                onClick={() => handleOtherMemberMute(member.id)}
+          <div className="flex w-[200px] items-center gap-1 sm:w-[240px] sm:gap-2 md:w-[420px] md:gap-2">
+            <div className="w-5 sm:w-6 md:w-8 flex items-center justify-center shrink-0">
+              {!isCurrentUser && (
+                <button
+                  onClick={() => handleOtherMemberMute(member.id)}
 
-                aria-label={isMuted ? 'Unmute user' : 'Mute user'}
-                className="relative -ml-2 sm:-ml-5 cursor-pointer transition-transform duration-200 hover:scale-105"
-                title={isMuted ? 'Unmute user' : 'Mute user'}
-              >
-                <VoiceStatusIcon
-                  className="h-6 w-6 md:h-8 md:w-8"
-                  isOtherUser={true}
-                  status={voice_status}
-                />
-              </button>
-            )}
-            {isCurrentUser && (
-              <div
-                className="relative -ml-2 sm:-ml-5 cursor-not-allowed opacity-50"
-                title="Use the mute button below to control your microphone"
-              >
-                <VoiceStatusIcon
-                  className="h-6 w-6 md:h-8 md:w-8"
-                  isOtherUser={false}
-                  status={voice_status}
-                />
-              </div>
-            )}
+                  aria-label={isMuted ? 'Unmute user' : 'Mute user'}
+                  className="relative cursor-pointer transition-transform duration-200 hover:scale-105"
+                  title={isMuted ? 'Unmute user' : 'Mute user'}
+                >
+                  <VoiceStatusIcon
+                    className="h-5 w-5 sm:h-6 sm:w-6 md:h-8 md:w-8"
+                    isOtherUser={true}
+                    status={voice_status}
+                  />
+                </button>
+              )}
+              {isCurrentUser && (
+                <div
+                  className="relative cursor-not-allowed"
+                  title="Use the mute button below to control your microphone"
+                >
+                  <VoiceStatusIcon
+                    className="h-5 w-5 sm:h-6 sm:w-6 md:h-8 md:w-8"
+                    isOtherUser={false}
+                    status={voice_status}
+                  />
+                </div>
+              )}
+            </div>
 
             {/* Avatar */}
             <div
               aria-label={`${member.name}'s avatar`}
-              className="h-6 w-6 rounded-none md:h-8 md:w-8 transition-transform duration-200"
+              className="w-5 sm:w-6 md:w-8 flex items-center justify-center shrink-0"
               role="img"
             >
               <Image
@@ -155,22 +157,22 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
             </div>
 
             {/* Name */}
-            <span className="flex-1 truncate text-base font-semibold text-[#282b2f] [text-shadow:_0_1px_1px_rgba(0,0,0,0.15)_inset] md:text-2xl transition-colors duration-200">
+            <span className="flex-1 truncate text-sm font-semibold text-[#282b2f] [text-shadow:_0_1px_1px_rgba(0,0,0,0.15)_inset] sm:text-base md:text-2xl transition-colors duration-200">
               {member.name ?? 'Unknown'}
             </span>
           </div>
 
           {/* Game status */}
-          <div className="flex flex-1 items-center min-w-0 justify-start sm:ml-3 md:-ml-[35px] transition-transform duration-200">
+          <div className="flex items-center min-w-0 gap-2">
             {/* Game status icon */}
             <div
               aria-label="Game status icon"
-              className="flex-shrink-0 flex items-center mr-2 sm:mr-5 md:mr-2"
+              className="w-5 sm:w-6 md:w-8 flex items-center justify-center shrink-0"
               role="img"
             >
               <svg
                 aria-hidden="true"
-                className="h-6 w-6 md:h-8 md:w-8 transition-colors duration-200"
+                className="h-5 w-5 sm:h-6 sm:w-6 md:h-8 md:w-8 transition-colors duration-200"
                 fill="#acd43b"
                 viewBox="0 0 3000 3000"
                 xmlns="http://www.w3.org/2000/svg"
@@ -179,8 +181,8 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
                 <path d="M2165.59,956.59c183.48-9.01,184.83,221.64,190.49,350.33,17.79,404.09,2.4,809.43,12,1214,2.5,105.19,10.31,288.29-94.24,349.92-38.25,22.55-102.62,29.46-146.86,35.14-99.53,12.79-200.19,23.62-300,34-69.02,7.18-145.2,17.33-213.9,20.1-171.11,6.89-271.76-164.73-351.91-290.25-218.29-341.85-406.95-701.94-617.53-1048.47-50.4-111.32,94.65-228.8,179.02-275.71,29.83-16.58,60.03-23.16,88-42,391.63-108.17,781.28-229.69,1174.92-331.08,26.43-6.81,52.47-14.63,80.02-15.98Z" />
               </svg>
             </div>
-            <div className="flex items-center min-w-0 flex-1">
-              <span className="truncate text-base font-semibold text-[#282b2f] [text-shadow:_0_1px_1px_rgba(0,0,0,0.15)_inset] md:ml-[75px] md:text-2xl transition-colors duration-200">
+            <div className="flex items-center min-w-0 ml-4 sm:ml-6 md:ml-20">
+              <span className="truncate text-sm font-semibold text-[#282b2f] [text-shadow:_0_1px_1px_rgba(0,0,0,0.15)_inset] sm:text-base md:text-2xl transition-colors duration-200">
                 {member.game}
               </span>
             </div>
