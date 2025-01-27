@@ -4,7 +4,7 @@ import type { PartyControlsProps } from '@/lib/types/components/props';
 
 import React, { memo, useCallback } from 'react';
 
-import { AVATARS } from '@/lib/constants';
+import { AVATARS, STATUSES } from '@/lib/constants';
 import { useToast } from '@/lib/hooks/use-toast';
 import { useModalStore } from '@/lib/stores/useModalStore';
 import { isRateLimited } from '@/lib/utils/rateLimiter';
@@ -44,8 +44,8 @@ export const PartyControls = memo(function PartyControls({
   const handleJoinClick = useCallback(() => {
     showModal('join', {
       name: '',
-      avatar: '',
-      game: '',
+      avatar: AVATARS[Math.floor(Math.random() * AVATARS.length)]!,
+      game: STATUSES[Math.floor(Math.random() * STATUSES.length)]!,
     });
   }, [showModal]);
 
@@ -53,8 +53,8 @@ export const PartyControls = memo(function PartyControls({
     if (!currentUser) return;
     showModal('profile', {
       name: currentUser.name ?? '',
-      avatar: currentUser.avatar ?? AVATARS[0]!,
-      game: currentUser.game ?? 'Offline',
+      avatar: AVATARS[Math.floor(Math.random() * AVATARS.length)]!,
+      game: STATUSES[Math.floor(Math.random() * STATUSES.length)]!,
     });
   }, [showModal, currentUser]);
 
