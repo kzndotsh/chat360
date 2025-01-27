@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 
 import { BACKGROUND_VIDEO_URL, INTRO_VIDEO_URL } from '@/lib/constants';
+import { useIsMobile } from '@/lib/hooks/useIsMobile';
 import { logger } from '@/lib/logger';
 
 const PartyChat = dynamic(() => import('@/components/features/party/PartyChat'), {
@@ -23,44 +24,50 @@ const XboxIntro = dynamic(
 );
 
 export default function MainContent() {
-  const [showIntro, setShowIntro] = useState(true);
+  const isMobile = useIsMobile();
+  const [showIntro, setShowIntro] = useState(!isMobile);
   const [videoLoaded, setVideoLoaded] = useState(false);
-  const [showPartyChat, setShowPartyChat] = useState(false);
+  const [showPartyChat, setShowPartyChat] = useState(isMobile);
   const [introVideoLoaded, setIntroVideoLoaded] = useState(false);
 
-  // Preload both videos during initial load
+  // Preload videos sequentially to reduce resource contention
   useEffect(() => {
+    // Skip video preloading on mobile
+    if (isMobile) {
+      setVideoLoaded(true);
+      return;
+    }
+
     const controller = new AbortController();
-    const videoElements: HTMLVideoElement[] = [];
+    let mounted = true;
 
     const preloadVideo = async (url: string, onLoad: () => void) => {
       try {
+        // Create a video element for preloading
         const video = document.createElement('video');
+        video.preload = 'auto';
         video.muted = true;
         video.playsInline = true;
-        video.preload = 'auto';
 
-        // Create a promise to handle both success and error cases
+        // Create a promise that resolves when enough data is loaded
         const loadPromise = new Promise<void>((resolve, reject) => {
-          video.onloadeddata = () => {
-            onLoad();
-            resolve();
-          };
-
-          video.onerror = () => {
-            reject(new Error(`Failed to load video: ${video.error?.message || 'Unknown error'}`));
-          };
+          video.oncanplaythrough = () => resolve();
+          video.onerror = () => reject(video.error);
         });
 
+        // Start loading
         video.src = url;
-        videoElements.push(video);
+        video.load();
 
-        // Add to DOM temporarily to ensure loading
-        video.style.display = 'none';
-        document.body.appendChild(video);
+        // Wait for enough data or timeout after 10s
+        await Promise.race([
+          loadPromise,
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 10000))
+        ]);
 
-        await loadPromise;
-      } catch (error: unknown) {
+        if (!mounted) return;
+        onLoad();
+      } catch (error) {
         if (error instanceof Error && error.name !== 'AbortError') {
           logger.error('Video preload error', {
             action: 'videoPreload',
@@ -74,32 +81,21 @@ export default function MainContent() {
       }
     };
 
-    // Start preloading both videos
-    Promise.all([
-      preloadVideo(INTRO_VIDEO_URL, () => setIntroVideoLoaded(true)),
-      preloadVideo(BACKGROUND_VIDEO_URL, () => setVideoLoaded(true))
-    ]).catch(error => {
-      logger.error('Video preload batch error', {
-        action: 'videoPreloadBatch',
-        metadata: { error },
-      });
-    });
+    // Load intro video first, then background
+    const loadSequentially = async () => {
+      await preloadVideo(INTRO_VIDEO_URL, () => setIntroVideoLoaded(true));
+      if (mounted) {
+        await preloadVideo(BACKGROUND_VIDEO_URL, () => setVideoLoaded(true));
+      }
+    };
+
+    void loadSequentially();
 
     return () => {
+      mounted = false;
       controller.abort();
-      // Clean up video elements
-      videoElements.forEach(video => {
-        if (video.src) {
-          video.pause();
-          video.removeAttribute('src');
-          video.load();
-          if (video.parentNode) {
-            video.parentNode.removeChild(video);
-          }
-        }
-      });
     };
-  }, []);
+  }, [isMobile]);
 
   // Handle intro end
   const handleIntroEnd = () => {
@@ -119,6 +115,12 @@ isPreloaded={introVideoLoaded} />
         <main className="relative h-full w-full">
           <div className="absolute inset-0 z-0">
             <video
+              style={{
+                filter: 'blur(6px)',
+                willChange: 'transform',
+                backfaceVisibility: 'hidden',
+              }}
+
               onError={() => {
                 logger.error('Video playback error', {
                   action: 'videoPlayback',
@@ -133,9 +135,8 @@ isPreloaded={introVideoLoaded} />
 
               className="absolute left-1/2 top-1/2 min-h-full min-w-full -translate-x-1/2 -translate-y-1/2 transform object-cover"
               id="xbox-bg"
-              preload="metadata"
+              preload="auto"
               src={BACKGROUND_VIDEO_URL}
-              style={{ filter: 'blur(6px)' }}
             >
               <source src={BACKGROUND_VIDEO_URL} type="video/mp4" />
             </video>

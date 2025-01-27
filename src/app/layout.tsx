@@ -2,7 +2,6 @@ import type { Viewport } from 'next';
 import type { Metadata } from 'next';
 
 import { ClientLayout } from '@/components/layouts/ClientLayout';
-import { ServiceWorkerProvider } from '@/components/providers/ServiceWorkerProvider';
 
 import './globals.css';
 
@@ -73,9 +72,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
   return (
     <html lang="en">
       <body>
-        <ServiceWorkerProvider>
           <ClientLayout>{children}</ClientLayout>
-        </ServiceWorkerProvider>
       </body>
     </html>
   );

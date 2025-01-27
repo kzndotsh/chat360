@@ -227,7 +227,7 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
         </motion.div>
       );
     });
-  }, [members, currentUserId, volumeLevels, storeIsMuted, handleOtherMemberMute, localMutes]);
+  }, [members, currentUserId, volumeLevels, localMutes, storeIsMuted, handleOtherMemberMute]);
 
   return (
     <div

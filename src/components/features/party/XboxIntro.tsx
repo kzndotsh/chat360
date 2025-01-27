@@ -9,6 +9,20 @@ import { Button } from '@/components/ui/button';
 import { INTRO_VIDEO_URL } from '@/lib/constants';
 import { logger } from '@/lib/logger';
 
+type VideoFrameMetadata = {
+  presentationTime: DOMHighResTimeStamp;
+  expectedDisplayTime: DOMHighResTimeStamp;
+  width: number;
+  height: number;
+  mediaTime: number;
+  presentedFrames: number;
+  processingDuration?: number;
+};
+
+interface HTMLVideoElementWithCallback extends HTMLVideoElement {
+  requestVideoFrameCallback(callback: (now: DOMHighResTimeStamp, metadata: VideoFrameMetadata) => void): number;
+}
+
 interface XboxIntroProps {
   isPreloaded: boolean;
   onIntroEndAction: () => void;
@@ -19,148 +33,7 @@ export function XboxIntro({ onIntroEndAction, isPreloaded }: XboxIntroProps) {
   const [isMuted, setIsMuted] = useState(true);
   const [isLoading, setIsLoading] = useState(!isPreloaded);
   const [isEnded, setIsEnded] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const mountedRef = useRef(false);
-
-  // Pre-load the video before mounting the component
-  useEffect(() => {
-    mountedRef.current = true;
-    const videoElement = videoRef.current;
-    if (!videoElement) return;
-
-    const loadVideo = async () => {
-      try {
-        logger.info('Starting video load sequence', {
-          component: 'XboxIntro',
-          action: 'initLoad',
-          metadata: { url: INTRO_VIDEO_URL },
-        });
-
-        // Reset video element state
-        videoElement.muted = true;
-        videoElement.currentTime = 0;
-        videoElement.preload = 'auto';
-
-        // Set up video with mobile-friendly attributes
-        videoElement.playsInline = true;
-        videoElement.setAttribute('playsinline', '');
-        videoElement.setAttribute('webkit-playsinline', '');
-        videoElement.autoplay = true;
-
-        // Set source and begin loading
-        videoElement.src = INTRO_VIDEO_URL;
-        await videoElement.load();
-
-        if (!mountedRef.current) return;
-
-        // Wait for enough data to start playback
-        await new Promise<void>((resolve, reject) => {
-          const timeoutId = setTimeout(() => {
-            reject(new Error('Video load timeout'));
-          }, 5000);
-
-          const handleCanPlay = () => {
-            clearTimeout(timeoutId);
-            resolve();
-          };
-
-          const handleError = () => {
-            clearTimeout(timeoutId);
-            reject(new Error('Video load failed'));
-          };
-
-          videoElement.addEventListener('canplay', handleCanPlay, { once: true });
-          videoElement.addEventListener('error', handleError, { once: true });
-        });
-
-        if (!mountedRef.current) return;
-
-        // Start playback
-        await videoElement.play();
-        setIsLoading(false);
-        setLoadError(null);
-
-      } catch (error) {
-        if (!mountedRef.current) return;
-
-        logger.error('Video loading failed', {
-          component: 'XboxIntro',
-          action: 'loadVideo',
-          metadata: {
-            error,
-            videoState: videoElement ? {
-              readyState: videoElement.readyState,
-              networkState: videoElement.networkState,
-              error: videoElement.error?.code,
-              errorMessage: videoElement.error?.message,
-            } : 'no video element'
-          },
-        });
-
-        setLoadError('Failed to load intro video');
-        onIntroEndAction();
-      }
-    };
-
-    const handleEnded = () => {
-      if (!mountedRef.current) return;
-      setIsEnded(true);
-      const timeoutId = setTimeout(() => mountedRef.current && onIntroEndAction(), 700);
-      return () => clearTimeout(timeoutId);
-    };
-
-    const handleStalled = () => {
-      if (!mountedRef.current) return;
-      logger.warn('Video playback stalled', {
-        component: 'XboxIntro',
-        action: 'stalledPlayback',
-        metadata: {
-          readyState: videoElement.readyState,
-          networkState: videoElement.networkState,
-          currentTime: videoElement.currentTime,
-          duration: videoElement.duration,
-        },
-      });
-      // Skip intro if stalled for too long
-      const timeoutId = setTimeout(() => {
-        if (mountedRef.current && isLoading) {
-          setLoadError('Video playback stalled');
-          onIntroEndAction();
-        }
-      }, 3000);
-      return () => clearTimeout(timeoutId);
-    };
-
-    videoElement.addEventListener('ended', handleEnded);
-    videoElement.addEventListener('stalled', handleStalled);
-
-    void loadVideo();
-
-    return () => {
-      mountedRef.current = false;
-      if (videoElement) {
-        // Remove all event listeners
-        videoElement.removeEventListener('ended', handleEnded);
-        videoElement.removeEventListener('stalled', handleStalled);
-
-        try {
-          // Stop playback
-          videoElement.pause();
-          videoElement.currentTime = 0;
-          videoElement.src = '';
-          videoElement.load();
-        } catch (error) {
-          if (!(error instanceof DOMException && error.name === 'AbortError')) {
-            logger.debug('Video cleanup error', {
-              component: 'XboxIntro',
-              action: 'cleanup',
-              metadata: { error },
-            });
-          }
-        }
-      }
-    };
-  }, [onIntroEndAction, isLoading]);
 
   // Sync mute state with video element
   useEffect(() => {
@@ -168,56 +41,203 @@ export function XboxIntro({ onIntroEndAction, isPreloaded }: XboxIntroProps) {
     if (!videoElement) return;
 
     videoElement.muted = isMuted;
+
+    const handleMuteChange = () => {
+      if (mountedRef.current && videoElement.muted !== isMuted) {
+        setIsMuted(videoElement.muted);
+      }
+    };
+
+    videoElement.addEventListener('volumechange', handleMuteChange);
+    return () => videoElement.removeEventListener('volumechange', handleMuteChange);
   }, [isMuted]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    const videoElement = videoRef.current;
+    if (!videoElement) return;
+
+    const loadAndPlay = async () => {
+      try {
+        logger.info('Loading video', {
+          component: 'XboxIntro',
+          action: 'loadVideo',
+          metadata: { url: INTRO_VIDEO_URL },
+        });
+
+        // Set up video with all required attributes
+        videoElement.src = INTRO_VIDEO_URL;
+        videoElement.muted = true;
+        videoElement.playsInline = true;
+        videoElement.setAttribute('playsinline', '');
+        videoElement.setAttribute('webkit-playsinline', '');
+        videoElement.preload = isPreloaded ? 'none' : 'auto';
+
+        // If preloaded, we can start playing immediately
+        if (isPreloaded) {
+          setIsLoading(false);
+          await videoElement.play();
+        } else {
+          // Wait for metadata to load before playing
+          await new Promise<void>((resolve) => {
+            if (videoElement.readyState >= 1) {
+              resolve();
+            } else {
+              videoElement.addEventListener('loadedmetadata', () => resolve(), { once: true });
+            }
+          });
+
+          if (!mountedRef.current) return;
+
+          try {
+            // Use requestVideoFrameCallback if available for smoother playback
+            if ('requestVideoFrameCallback' in videoElement) {
+              await new Promise<void>((resolve) => {
+                (videoElement as HTMLVideoElementWithCallback).requestVideoFrameCallback(() => {
+                  resolve();
+                });
+              });
+            }
+
+            await videoElement.play();
+            setIsLoading(false);
+          } catch (error) {
+            if (mountedRef.current && !(error instanceof DOMException && error.name === 'AbortError')) {
+              logger.error('Video playback failed', {
+                component: 'XboxIntro',
+                action: 'playVideo',
+                metadata: {
+                  error,
+                  videoState: {
+                    muted: videoElement.muted,
+                    readyState: videoElement.readyState,
+                    networkState: videoElement.networkState,
+                    error: videoElement.error?.code,
+                    errorMessage: videoElement.error?.message,
+                  },
+                },
+              });
+            }
+            if (mountedRef.current) onIntroEndAction();
+          }
+        }
+      } catch (error) {
+        if (mountedRef.current && !(error instanceof DOMException && error.name === 'AbortError')) {
+          logger.error('Video loading failed', {
+            component: 'XboxIntro',
+            action: 'loadVideo',
+            metadata: { error },
+          });
+        }
+        if (mountedRef.current) onIntroEndAction();
+      }
+    };
+
+    const handleError = (e: Event) => {
+      if (mountedRef.current) {
+        const error = (e as ErrorEvent).error || videoElement.error;
+        if (!(error instanceof DOMException && error.name === 'AbortError')) {
+          logger.error('Video element error', {
+            component: 'XboxIntro',
+            action: 'videoError',
+            metadata: {
+              error,
+              errorCode: videoElement.error?.code,
+              errorMessage: videoElement.error?.message,
+              networkState: videoElement.networkState,
+              readyState: videoElement.readyState,
+            },
+          });
+        }
+        onIntroEndAction();
+      }
+    };
+
+    const handleEnded = () => {
+      if (!mountedRef.current) return;
+      setIsEnded(true);
+      setTimeout(() => mountedRef.current && onIntroEndAction(), 700);
+    };
+
+    videoElement.addEventListener('error', handleError);
+    videoElement.addEventListener('ended', handleEnded);
+    void loadAndPlay();
+
+    return () => {
+      mountedRef.current = false;
+      if (videoElement) {
+        videoElement.removeEventListener('error', handleError);
+        videoElement.removeEventListener('ended', handleEnded);
+        videoElement.pause();
+        videoElement.removeAttribute('src');
+        videoElement.load();
+      }
+    };
+  }, [isPreloaded, onIntroEndAction]);
 
   const handleSkip = () => {
     const videoElement = videoRef.current;
     if (videoElement) {
-      try {
-        // Immediately stop video playback and hide it
-        setIsLoading(true);
-        setIsEnded(true);
-
-        // Force immediate pause and cleanup
-        videoElement.pause();
-        videoElement.currentTime = 0;
-        videoElement.src = '';
-
-        // Remove video element from memory
-        videoElement.remove();
-      } catch (error) {
-        logger.debug('Skip cleanup error', {
-          component: 'XboxIntro',
-          action: 'skip',
-          metadata: { error },
-        });
-      }
+      videoElement.pause();
+      videoElement.removeAttribute('src');
+      videoElement.load();
     }
-    // Call the end action immediately
     onIntroEndAction();
   };
 
-  const toggleMute = () => {
-    setIsMuted(!isMuted);
+  const toggleMute = async () => {
+    const videoElement = videoRef.current;
+    if (!videoElement) return;
+
+    try {
+      const newMutedState = !isMuted;
+      setIsMuted(newMutedState);
+      videoElement.muted = newMutedState;
+
+      // If unmuting, we need to ensure the video is playing
+      if (!newMutedState) {
+        try {
+          await videoElement.play();
+        } catch (error) {
+          logger.warn('Failed to unmute - browser policy prevents unmuted autoplay', {
+            component: 'XboxIntro',
+            action: 'toggleMute',
+            metadata: { error },
+          });
+          // Revert to muted state
+          setIsMuted(true);
+          videoElement.muted = true;
+        }
+      }
+    } catch (error) {
+      logger.error('Failed to toggle mute state', {
+        component: 'XboxIntro',
+        action: 'toggleMute',
+        metadata: { error },
+      });
+      // Ensure UI reflects actual state
+      setIsMuted(videoElement.muted);
+    }
   };
 
   return (
     <div
-      className={`fixed inset-0 z-50 bg-white ${isEnded ? 'scale-105 opacity-0' : 'scale-100 opacity-100'} transition-[transform,opacity] duration-700 overflow-hidden`}
+      className={`fixed inset-0 z-50 bg-white ${isEnded ? 'scale-105 opacity-0' : 'scale-100 opacity-100'} transition-[transform,opacity] duration-700`}
     >
-      <div className="relative h-full w-full overflow-hidden">
-        {loadError && (
-          <div className="absolute inset-0 flex items-center justify-center text-gray-500">
-            {loadError}
-          </div>
-        )}
+      <div className="h-full w-full">
         <video
+          style={{
+            willChange: 'transform, opacity',
+            backfaceVisibility: 'hidden',
+          }}
+
           muted
           playsInline
 
-          className={`absolute inset-0 h-full w-full object-contain transition-opacity duration-700 md:object-cover ${isLoading ? 'opacity-0' : 'opacity-100'} m-0 p-0`}
+          className={`h-full w-full object-contain transition-opacity duration-700 md:object-cover ${isLoading ? 'opacity-0' : 'opacity-100'}`}
+          preload="auto"
           ref={videoRef}
-          style={{ display: 'block' }}
+          webkit-playsinline=""
         />
       </div>
       <div
@@ -240,8 +260,7 @@ export function XboxIntro({ onIntroEndAction, isPreloaded }: XboxIntroProps) {
         <Button
           onClick={handleSkip}
 
-          className="touch-manipulation rounded-md bg-white px-3 py-1.5 text-sm text-black transition-colors hover:bg-gray-100 active:bg-gray-100 sm:px-4 sm:py-2 sm:text-base [@media(hover:hover)]:hover:bg-gray-100"
-          style={{ WebkitTapHighlightColor: 'transparent' }}
+          className="rounded-md bg-white px-3 py-1.5 text-sm text-black transition-colors hover:bg-gray-100 active:bg-gray-100 sm:px-4 sm:py-2 sm:text-base [@media(hover:hover)]:hover:bg-gray-100"
         >
           Skip Intro
         </Button>
