@@ -19,7 +19,7 @@ const nextConfig: NextConfig = {
         hostname: 'i.imgur.com',
         port: '',
         pathname: '/*',
-      },
+      }
     ],
   },
   experimental: {

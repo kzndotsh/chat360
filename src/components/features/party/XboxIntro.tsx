@@ -52,20 +52,8 @@ export function XboxIntro({ onIntroEndAction, isPreloaded }: XboxIntroProps) {
           metadata: { url: INTRO_VIDEO_URL },
         });
 
-        const response = await fetch(INTRO_VIDEO_URL);
-        if (!response.ok) throw new Error(`Failed to fetch video: ${response.status}`);
-
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        videoUrlRef.current = url;
-
-        if (!mountedRef.current) {
-          URL.revokeObjectURL(url);
-          return;
-        }
-
         // Set up video with all required attributes
-        videoElement.setAttribute('src', url);
+        videoElement.src = INTRO_VIDEO_URL;
         videoElement.muted = true;
         videoElement.playsInline = true;
         videoElement.setAttribute('playsinline', '');
@@ -79,10 +67,7 @@ export function XboxIntro({ onIntroEndAction, isPreloaded }: XboxIntroProps) {
           });
         }
 
-        if (!mountedRef.current) {
-          URL.revokeObjectURL(url);
-          return;
-        }
+        if (!mountedRef.current) return;
 
         try {
           await videoElement.play();
@@ -173,30 +158,9 @@ export function XboxIntro({ onIntroEndAction, isPreloaded }: XboxIntroProps) {
             // Ignore currentTime errors during navigation
           }
 
-          // Clear the source and revoke URL in a specific order
-          const currentSrc = videoElement.getAttribute('src');
-          if (currentSrc) {
-            // Remove the src attribute first
-            videoElement.removeAttribute('src');
-
-            // Then clear any other sources
-            while (videoElement.firstChild) {
-              videoElement.removeChild(videoElement.firstChild);
-            }
-
-            // Force a reload to clear any internal state
-            try {
-              videoElement.load();
-            } catch {
-              // Ignore load errors during navigation
-            }
-          }
-
-          // Finally revoke the object URL if we created one
-          if (videoUrlRef.current) {
-            URL.revokeObjectURL(videoUrlRef.current);
-            videoUrlRef.current = null;
-          }
+          // Clear the source
+          videoElement.removeAttribute('src');
+          videoElement.load();
         } catch (error) {
           // Only log cleanup errors if they're not related to navigation
           if (!(error instanceof DOMException && error.name === 'AbortError')) {
@@ -305,6 +269,7 @@ export function XboxIntro({ onIntroEndAction, isPreloaded }: XboxIntroProps) {
         <video
           muted
           playsInline
+
           className={`h-full w-full object-contain transition-opacity duration-700 md:object-cover ${isLoading ? 'opacity-0' : 'opacity-100'}`}
           preload="auto"
           ref={videoRef}
@@ -318,6 +283,7 @@ export function XboxIntro({ onIntroEndAction, isPreloaded }: XboxIntroProps) {
       >
         <Button
           onClick={toggleMute}
+
           aria-label={isMuted ? 'Unmute' : 'Mute'}
           className="rounded-md bg-white px-3 py-1.5 text-black transition-colors hover:bg-gray-100 active:bg-gray-100 sm:px-4 sm:py-2 [@media(hover:hover)]:hover:bg-gray-100"
         >
@@ -335,6 +301,7 @@ export function XboxIntro({ onIntroEndAction, isPreloaded }: XboxIntroProps) {
         </Button>
         <Button
           onClick={handleSkip}
+
           className="rounded-md bg-white px-3 py-1.5 text-sm text-black transition-colors hover:bg-gray-100 active:bg-gray-100 sm:px-4 sm:py-2 sm:text-base [@media(hover:hover)]:hover:bg-gray-100"
         >
           Skip Intro

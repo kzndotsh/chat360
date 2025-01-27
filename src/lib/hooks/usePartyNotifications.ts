@@ -3,6 +3,11 @@ import { useEffect, useRef } from 'react';
 import { useParty } from '@/lib/contexts/partyContext';
 import { useToast } from '@/lib/hooks/use-toast';
 
+// Preload the achievement toast component
+const preloadAchievementToast = () => {
+  void import('@/components/ui/achievement-toast');
+};
+
 export function usePartyNotifications() {
   const { toast } = useToast();
   const { members, currentMember } = useParty();
@@ -27,6 +32,10 @@ export function usePartyNotifications() {
         newMembers.some(m => m.id === currentMember.id) &&
         !achievementShownRef.current) {
       achievementShownRef.current = true;
+
+      // Start preloading the achievement toast component
+      preloadAchievementToast();
+
       // Longer delay to ensure modal is closed and create a more distinct sequence
       setTimeout(() => {
         toast({

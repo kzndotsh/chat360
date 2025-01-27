@@ -35,23 +35,17 @@ export default function MainContent() {
 
     const preloadVideo = async (url: string, onLoad: () => void) => {
       try {
-        const response = await fetch(url, { signal: controller.signal });
-        const blob = await response.blob();
-        const objectUrl = URL.createObjectURL(blob);
-
         const video = document.createElement('video');
-        video.src = objectUrl;
+        video.src = url;
         video.preload = 'auto';
         video.onloadedmetadata = () => {
           onLoad();
-          URL.revokeObjectURL(objectUrl); // Clean up object URL after metadata loaded
         };
         video.onerror = () => {
           logger.error('Video preload error', {
             action: 'videoPreload',
             metadata: { url },
           });
-          URL.revokeObjectURL(objectUrl);
         };
         videoElements.push(video);
       } catch (error: unknown) {
@@ -73,7 +67,6 @@ export default function MainContent() {
       // Clean up video elements
       videoElements.forEach(video => {
         if (video.src) {
-          URL.revokeObjectURL(video.src);
           video.src = '';
           video.load();
         }

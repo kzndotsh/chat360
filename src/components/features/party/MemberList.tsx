@@ -6,6 +6,8 @@ import { useMemo, useCallback } from 'react';
 
 import Image from 'next/image';
 
+import { motion, AnimatePresence } from 'framer-motion';
+
 import { VoiceStatusIcon } from '@/components/features/party/icons/VoiceStatusIcon';
 
 import { AVATARS } from '@/lib/constants';
@@ -55,7 +57,7 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
         duration: 2000,
       });
     }
-  }, [members, volumeLevels, toast]);
+  }, [members, toast, volumeLevels]);
 
   // Memoize member rendering to prevent unnecessary recalculations
   const renderedMembers = useMemo(() => {
@@ -84,30 +86,22 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
       return 0;
     });
 
-    return sortedMembers.map((member, index) => {
+    return sortedMembers.map(member => {
       const isCurrentUser = member.id === currentUserId;
       const volumeState = volumeLevels[member.id];
-
-      // For current user: only use store state
-      // For other users: use volume state with fallback
-      const isMuted = isCurrentUser
-        ? storeIsMuted
-        : volumeState?.muted ?? false;
-
-      // Use voice status directly from volume state, with fallback to silent
+      const isMuted = isCurrentUser ? storeIsMuted : volumeState?.muted ?? false;
       const voice_status = volumeState?.voice_status ?? 'silent';
 
       return (
-        <div
-          style={{
-            animationDelay: `${50 + index * 25}ms`,
-            animationFillMode: 'forwards'
-          }}
-
+        <motion.div
+          animate={{ opacity: 1, y: 0 }}
           aria-label={`${member.name} - ${member.game} - ${voice_status}`}
-          className="flex h-[48px] items-center border-t border-[#e5e5e5] px-1 sm:px-3 transition-all duration-200 ease-out first:border-t-0 hover:bg-[#f5f5f5] opacity-0 animate-fadeIn gap-1 sm:gap-4"
+          className="flex h-[48px] items-center border-t border-[#e5e5e5] px-1 sm:px-3 transition-all duration-200 ease-out first:border-t-0 hover:bg-[#f5f5f5] gap-1 sm:gap-4"
+          exit={{ opacity: 0, y: 10 }}
+          initial={{ opacity: 0, y: -10 }}
           key={member.id}
           role="listitem"
+          transition={{ duration: 0.2 }}
         >
           <div className="flex w-[200px] items-center gap-1 sm:w-[240px] sm:gap-2 md:w-[420px] md:gap-2">
             <div className="w-5 sm:w-6 md:w-8 flex items-center justify-center shrink-0">
@@ -151,7 +145,6 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
                 className="transition-opacity duration-200"
                 height={32}
                 src={member.avatar ?? AVATARS[0]!}
-                unoptimized={true}
                 width={32}
               />
             </div>
@@ -187,10 +180,10 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
               </span>
             </div>
           </div>
-        </div>
+        </motion.div>
       );
     });
-  }, [currentUserId, members, volumeLevels, storeIsMuted, handleOtherMemberMute]);
+  }, [members, currentUserId, volumeLevels, storeIsMuted, handleOtherMemberMute]);
 
   return (
     <div
@@ -198,7 +191,11 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
       className="flex h-full flex-col"
       role="list"
     >
-      <div className="flex flex-1 flex-col">{renderedMembers}</div>
+      <div className="flex flex-1 flex-col">
+        <AnimatePresence>
+          {renderedMembers}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }
