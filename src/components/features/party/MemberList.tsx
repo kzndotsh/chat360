@@ -97,8 +97,9 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
               onClick={() => isCurrentUser ? handleSelfMute() : handleOtherMemberMute(member.id)}
 
               aria-label={isCurrentUser ? (isMuted ? 'Unmute yourself' : 'Mute yourself') : (isMuted ? 'Unmute user' : 'Mute user')}
-              className="relative -ml-2 sm:-ml-5 cursor-pointer transition-transform duration-200 hover:scale-105"
-              title={isCurrentUser ? (isMuted ? 'Unmute yourself' : 'Mute yourself') : (isMuted ? 'Unmute user' : 'Mute user')}
+              className="relative -ml-2 sm:-ml-5 cursor-pointer transition-transform duration-200 hover:scale-105 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
+              disabled={isCurrentUser}
+              title={isCurrentUser ? (isMuted ? 'Can\'t unmute yourself' : 'Can\'t mute yourself') : (isMuted ? 'Unmute user' : 'Mute user')}
             >
               <VoiceStatusIcon
                 className="h-6 w-6 md:h-8 md:w-8"

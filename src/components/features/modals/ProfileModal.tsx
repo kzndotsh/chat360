@@ -378,7 +378,7 @@ export function ProfileModal({ onSubmitAction, onCloseAction, initialData }: Pro
               <button
                 onClick={onCloseAction}
 
-                className="flex items-center gap-2 opacity-80 transition-all hover:opacity-100 hover:scale-105 disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex items-center gap-2 rounded px-3 py-1.5 bg-white border border-red-500/20 hover:border-red-500/40 hover:bg-red-50/50 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={isSubmitting}
                 type="button"
               >
@@ -389,11 +389,11 @@ export function ProfileModal({ onSubmitAction, onCloseAction, initialData }: Pro
               </button>
 
               <button
-                className="flex items-center gap-2 opacity-80 transition-all hover:opacity-100 hover:scale-105 disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex items-center gap-2 rounded px-3 py-1.5 bg-white border border-[#ACD43B]/20 hover:border-[#ACD43B]/40 hover:bg-[#ACD43B]/5 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={isSubmitting || !isValid}
                 type="submit"
               >
-                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#ACD43B] text-xs font-bold text-black shadow-[0_0_10px_rgba(170,205,67,0.3)]">
+                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#ACD43B] text-xs font-bold text-white shadow-[0_0_10px_rgba(170,205,67,0.3)]">
                   A
                 </div>
                 <span className="text-sm text-[#282828] sm:text-base font-semibold">
