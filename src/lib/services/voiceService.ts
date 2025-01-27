@@ -1613,8 +1613,13 @@ export class VoiceService {
     const oldState = this.memberVoiceStates.get(memberId);
     const isLocallyMuted = this.memberMuteStates.get(memberId) || false;
 
-    // If user is muted, force level to 0 and status to muted
-    if (isLocallyMuted) {
+    // Get remote user's audio track to check if they're self-muted
+    const agoraUid = this.getAgoraUidFromMemberId(memberId);
+    const remoteUser = agoraUid ? this.client.remoteUsers.find(user => user.uid.toString() === agoraUid) : null;
+    const isSelfMuted = remoteUser?.hasAudio === false;
+
+    // If user is muted (either locally or self-muted), force level to 0 and status to muted
+    if (isLocallyMuted || isSelfMuted) {
       const voiceState: VoiceMemberState = {
         id: memberId,
         level: 0,
@@ -1664,17 +1669,18 @@ export class VoiceService {
           volumeChanged: oldState?.level !== level,
           statusChanged: oldState?.voice_status !== newStatus,
           vadSpeaking,
-          isLocallyMuted
+          isLocallyMuted,
+          isSelfMuted
         },
       });
 
-      // Update member state
+      // Update member state while preserving mute state
       const voiceState: VoiceMemberState = {
         id: memberId,
         level,
         voice_status: newStatus,
-        muted: false,
-        is_deafened: false,
+        muted: oldState?.muted ?? false, // Preserve existing mute state
+        is_deafened: oldState?.is_deafened ?? false, // Preserve deafened state
         agora_uid: this.getAgoraUidFromMemberId(memberId),
         timestamp: Date.now(),
       };
