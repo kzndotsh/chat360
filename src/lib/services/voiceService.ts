@@ -55,6 +55,29 @@ export class VoiceService {
   constructor(client: IAgoraRTCClient, supabase: SupabaseClient) {
     this.client = client;
     this.supabase = supabase;
+
+    // Restore saved mute states from localStorage
+    try {
+      const savedMutes = localStorage.getItem('localMutes');
+      if (savedMutes) {
+        const muteStates = JSON.parse(savedMutes);
+        Object.entries(muteStates).forEach(([memberId, isMuted]) => {
+          this.memberMuteStates.set(memberId, isMuted as boolean);
+        });
+        logger.debug('Restored mute states from localStorage', {
+          component: 'VoiceService',
+          action: 'constructor',
+          metadata: { restoredStates: this.memberMuteStates.size }
+        });
+      }
+    } catch (error) {
+      logger.error('Failed to restore mute states', {
+        component: 'VoiceService',
+        action: 'constructor',
+        metadata: { error }
+      });
+    }
+
     this.setupEventHandlers();
     this.setupAIDenoiser();
 
@@ -1085,7 +1108,7 @@ export class VoiceService {
           action: 'toggleMute',
           metadata: { error }
         });
-        return false;
+        return this._isMuted; // Return current state instead of false
       }
     }
 
@@ -1094,7 +1117,7 @@ export class VoiceService {
         component: 'VoiceService',
         action: 'toggleMute',
       });
-      return false;
+      return this._isMuted; // Return current state instead of false
     }
 
     try {
@@ -1152,12 +1175,26 @@ export class VoiceService {
         // Update local state and notify UI immediately
         this.memberVoiceStates.set(this.currentMemberId, voiceState);
 
+        // Also update member mute state to ensure persistence
+        this.memberMuteStates.set(this.currentMemberId, newMuteState);
+
         if (this.volumeCallback) {
           this.volumeCallback(Array.from(this.memberVoiceStates.values()));
         }
 
         // Ensure state is broadcast before returning
         await this.broadcastVoiceUpdate(voiceState);
+
+        logger.debug('Mute state updated and broadcast', {
+          component: 'VoiceService',
+          action: 'toggleMute',
+          metadata: {
+            memberId: this.currentMemberId,
+            newState: voiceState,
+            memberMuteState: this.memberMuteStates.get(this.currentMemberId),
+            voiceState: this.memberVoiceStates.get(this.currentMemberId),
+          },
+        });
       }
 
       return this._isMuted;
@@ -1574,10 +1611,10 @@ export class VoiceService {
   private handleVolumeUpdate(memberId: string, level: number, vadSpeaking: boolean) {
     // Get current state
     const oldState = this.memberVoiceStates.get(memberId);
-    const isMuted = this.memberMuteStates.get(memberId) || false;
+    const isLocallyMuted = this.memberMuteStates.get(memberId) || false;
 
     // If user is muted, force level to 0 and status to muted
-    if (isMuted) {
+    if (isLocallyMuted) {
       const voiceState: VoiceMemberState = {
         id: memberId,
         level: 0,
@@ -1589,11 +1626,16 @@ export class VoiceService {
       };
 
       // Only update if state changed
-      if (!oldState || oldState.voice_status !== 'muted' || oldState.level !== 0) {
+      if (!oldState ||
+          oldState.voice_status !== 'muted' ||
+          oldState.level !== 0 ||
+          !oldState.muted) {
         this.memberVoiceStates.set(memberId, voiceState);
         if (this.volumeCallback) {
           this.volumeCallback(Array.from(this.memberVoiceStates.values()));
         }
+        // Broadcast the update to ensure consistency
+        void this.broadcastVoiceUpdate(voiceState);
       }
       return;
     }
@@ -1622,6 +1664,7 @@ export class VoiceService {
           volumeChanged: oldState?.level !== level,
           statusChanged: oldState?.voice_status !== newStatus,
           vadSpeaking,
+          isLocallyMuted
         },
       });
 
@@ -1637,11 +1680,11 @@ export class VoiceService {
       };
 
       this.memberVoiceStates.set(memberId, voiceState);
-
-      // Notify UI of changes
       if (this.volumeCallback) {
         this.volumeCallback(Array.from(this.memberVoiceStates.values()));
       }
+      // Broadcast the update to ensure consistency
+      void this.broadcastVoiceUpdate(voiceState);
     }
   }
 
@@ -1723,6 +1766,20 @@ export class VoiceService {
       // Update local mute state first to prevent race conditions
       this.memberMuteStates.set(memberId, newMuteState);
 
+      // Persist to localStorage
+      try {
+        const savedMutes = localStorage.getItem('localMutes');
+        const muteStates = savedMutes ? JSON.parse(savedMutes) : {};
+        muteStates[memberId] = newMuteState;
+        localStorage.setItem('localMutes', JSON.stringify(muteStates));
+      } catch (error) {
+        logger.error('Failed to persist mute state', {
+          component: 'VoiceService',
+          action: 'toggleMemberMute',
+          metadata: { error, memberId, newMuteState }
+        });
+      }
+
       // Find remote user
       const remoteUser = this.client.remoteUsers.find(user => user.uid.toString() === agoraUid);
 
@@ -1740,7 +1797,7 @@ export class VoiceService {
             if (remoteUser.audioTrack) {
               remoteUser.audioTrack.play();
             }
-          } catch (error: unknown) {
+          } catch (error) {
             // If subscription fails because user is not publishing, just update local state
             if (error && typeof error === 'object' && 'code' in error && error.code === 'INVALID_REMOTE_USER') {
               logger.info('Remote user not currently publishing audio', {
@@ -1773,24 +1830,42 @@ export class VoiceService {
         this.volumeCallback(Array.from(this.memberVoiceStates.values()));
       }
 
-      logger.debug('Member mute state toggled locally', {
+      // Broadcast the update to ensure consistency
+      void this.broadcastVoiceUpdate(voiceState);
+
+      logger.debug('Member mute state toggled', {
         component: 'VoiceService',
         action: 'toggleMemberMute',
         metadata: {
           memberId,
           agoraUid,
           newMuteState,
-          hasAudioTrack: !!remoteUser?.audioTrack
+          voiceState
         }
       });
     } catch (error) {
-      logger.error('Failed to toggle member mute state', {
+      // Revert local state on error
+      this.memberMuteStates.set(memberId, currentState);
+
+      // Also revert localStorage
+      try {
+        const savedMutes = localStorage.getItem('localMutes');
+        const muteStates = savedMutes ? JSON.parse(savedMutes) : {};
+        muteStates[memberId] = currentState;
+        localStorage.setItem('localMutes', JSON.stringify(muteStates));
+      } catch (storageError) {
+        logger.error('Failed to revert persisted mute state', {
+          component: 'VoiceService',
+          action: 'toggleMemberMute',
+          metadata: { storageError, memberId, currentState }
+        });
+      }
+
+      logger.error('Failed to toggle member mute', {
         component: 'VoiceService',
         action: 'toggleMemberMute',
-        metadata: { memberId, agoraUid, error }
+        metadata: { error, memberId, currentState }
       });
-      // Revert mute state on error
-      this.memberMuteStates.set(memberId, currentState);
       throw error;
     }
   }

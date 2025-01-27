@@ -110,10 +110,42 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
       );
     }
 
-    // Sort members to ensure current user is first
+    // Sort members with the following priority:
+    // 1. Current user always first
+    // 2. Currently speaking members
+    // 3. Members who have spoken before
+    // 4. Members who haven't spoken
     const sortedMembers = [...activeMembers].sort((a, b) => {
+      // Current user always first
       if (a.id === currentUserId) return -1;
       if (b.id === currentUserId) return 1;
+
+      // Get voice states for both members
+      const aVoiceState = volumeLevels[a.id];
+      const bVoiceState = volumeLevels[b.id];
+
+      // Check current speaking state
+      const aIsSpeaking = aVoiceState?.voice_status === 'speaking' && !aVoiceState?.muted;
+      const bIsSpeaking = bVoiceState?.voice_status === 'speaking' && !bVoiceState?.muted;
+
+      // Check if they have ever spoken (has a timestamp)
+      const aHasSpoken = aVoiceState?.timestamp != null;
+      const bHasSpoken = bVoiceState?.timestamp != null;
+
+      // Currently speaking members go to the top
+      if (aIsSpeaking && !bIsSpeaking) return -1;
+      if (!aIsSpeaking && bIsSpeaking) return 1;
+
+      // Members who have spoken stay above those who haven't
+      if (aHasSpoken && !bHasSpoken) return -1;
+      if (!aHasSpoken && bHasSpoken) return 1;
+
+      // If both have spoken, most recent speaker goes first
+      if (aHasSpoken && bHasSpoken) {
+        return (bVoiceState?.timestamp ?? 0) - (aVoiceState?.timestamp ?? 0);
+      }
+
+      // Keep original order for members who haven't spoken
       return 0;
     });
 

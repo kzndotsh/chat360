@@ -126,26 +126,41 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
         volumes.forEach((vol) => {
           const prevLevel = prevLevels[vol.id]?.level ?? 0;
           const levelDiff = Math.abs(vol.level - prevLevel);
+          const prevState = prevLevels[vol.id];
 
-          // Only update if there's a significant change in volume or status
-          if (levelDiff >= VOICE_CONSTANTS.MIN_VOLUME_CHANGE ||
-              vol.voice_status !== prevLevels[vol.id]?.voice_status ||
-              vol.muted !== prevLevels[vol.id]?.muted) {
-
+          // If there's a mute state change, always update
+          if (vol.muted !== prevState?.muted) {
             newLevels[vol.id] = vol;
             hasSignificantChanges = true;
+            return;
+          }
 
-            // Only update local volume for current user if change is significant
-            if (vol.id === currentMember?.id) {
-              updateVolume(vol.level);
-            }
-          } else if (prevLevels[vol.id]) {
-            // Keep previous state if no significant change and it exists
-            newLevels[vol.id] = prevLevels[vol.id] as VoiceMemberState;
-          } else {
-            // If no previous state exists, use the new state
+          // For volume changes, only update if significant and not muted
+          if (!vol.muted && levelDiff >= VOICE_CONSTANTS.MIN_VOLUME_CHANGE) {
+            newLevels[vol.id] = {
+              ...vol,
+              // Preserve previous mute state if it exists
+              muted: prevState?.muted ?? vol.muted
+            };
+            hasSignificantChanges = true;
+          }
+          // Keep previous state if it exists
+          else if (prevState) {
+            newLevels[vol.id] = {
+              ...prevState,
+              level: vol.level,
+              timestamp: vol.timestamp
+            };
+          }
+          // If no previous state exists, add the new state
+          else {
             newLevels[vol.id] = vol;
             hasSignificantChanges = true;
+          }
+
+          // Only update local volume for current user if change is significant
+          if (vol.id === currentMember?.id && levelDiff >= VOICE_CONSTANTS.MIN_VOLUME_CHANGE) {
+            updateVolume(vol.level);
           }
         });
 
