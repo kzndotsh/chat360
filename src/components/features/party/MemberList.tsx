@@ -88,7 +88,7 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
         duration: 2000,
       });
     }
-  }, [members, toast]);
+  }, [members, toast, localMutes]);
 
   // Memoize member rendering to prevent unnecessary recalculations
   const renderedMembers = useMemo(() => {
@@ -227,7 +227,7 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
         </motion.div>
       );
     });
-  }, [members, currentUserId, volumeLevels, storeIsMuted, handleOtherMemberMute]);
+  }, [members, currentUserId, volumeLevels, storeIsMuted, handleOtherMemberMute, localMutes]);
 
   return (
     <div
