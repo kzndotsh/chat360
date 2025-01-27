@@ -173,10 +173,27 @@ export function XboxIntro({ onIntroEndAction, isPreloaded }: XboxIntroProps) {
   const handleSkip = () => {
     const videoElement = videoRef.current;
     if (videoElement) {
-      videoElement.pause();
-      videoElement.src = '';
-      videoElement.load();
+      try {
+        // Immediately stop video playback and hide it
+        setIsLoading(true);
+        setIsEnded(true);
+
+        // Force immediate pause and cleanup
+        videoElement.pause();
+        videoElement.currentTime = 0;
+        videoElement.src = '';
+
+        // Remove video element from memory
+        videoElement.remove();
+      } catch (error) {
+        logger.debug('Skip cleanup error', {
+          component: 'XboxIntro',
+          action: 'skip',
+          metadata: { error },
+        });
+      }
     }
+    // Call the end action immediately
     onIntroEndAction();
   };
 
@@ -186,9 +203,9 @@ export function XboxIntro({ onIntroEndAction, isPreloaded }: XboxIntroProps) {
 
   return (
     <div
-      className={`fixed inset-0 z-50 bg-white ${isEnded ? 'scale-105 opacity-0' : 'scale-100 opacity-100'} transition-[transform,opacity] duration-700`}
+      className={`fixed inset-0 z-50 bg-white ${isEnded ? 'scale-105 opacity-0' : 'scale-100 opacity-100'} transition-[transform,opacity] duration-700 overflow-hidden`}
     >
-      <div className="h-full w-full">
+      <div className="relative h-full w-full overflow-hidden">
         {loadError && (
           <div className="absolute inset-0 flex items-center justify-center text-gray-500">
             {loadError}
@@ -198,8 +215,9 @@ export function XboxIntro({ onIntroEndAction, isPreloaded }: XboxIntroProps) {
           muted
           playsInline
 
-          className={`h-full w-full object-contain transition-opacity duration-700 md:object-cover ${isLoading ? 'opacity-0' : 'opacity-100'}`}
+          className={`absolute inset-0 h-full w-full object-contain transition-opacity duration-700 md:object-cover ${isLoading ? 'opacity-0' : 'opacity-100'} m-0 p-0`}
           ref={videoRef}
+          style={{ display: 'block' }}
         />
       </div>
       <div
@@ -222,7 +240,8 @@ export function XboxIntro({ onIntroEndAction, isPreloaded }: XboxIntroProps) {
         <Button
           onClick={handleSkip}
 
-          className="rounded-md bg-white px-3 py-1.5 text-sm text-black transition-colors hover:bg-gray-100 active:bg-gray-100 sm:px-4 sm:py-2 sm:text-base [@media(hover:hover)]:hover:bg-gray-100"
+          className="touch-manipulation rounded-md bg-white px-3 py-1.5 text-sm text-black transition-colors hover:bg-gray-100 active:bg-gray-100 sm:px-4 sm:py-2 sm:text-base [@media(hover:hover)]:hover:bg-gray-100"
+          style={{ WebkitTapHighlightColor: 'transparent' }}
         >
           Skip Intro
         </Button>
