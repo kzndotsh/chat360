@@ -18,10 +18,11 @@ export const VoiceStatusIcon = memo(function VoiceStatusIcon({
   className,
   isOtherUser = false,
 }: VoiceStatusIconProps) {
-  // Set color based on status
+  // Set color based on status and whether it's a client-side mute
   const getIconClass = (status: VoiceStatus) => {
     switch (status) {
       case 'muted':
+        // Only show red for client-side mutes
         return isOtherUser ? 'text-[#bd2727]' : 'text-[#282b2f]';
       default:
         return 'text-[#282b2f]';
@@ -43,7 +44,9 @@ export const VoiceStatusIcon = memo(function VoiceStatusIcon({
   // Show appropriate icon based on voice status
   switch (status) {
     case 'muted':
-      return isOtherUser ? <IoMdVolumeOff className={iconClass} /> : <IoVolumeMuteSharp className={iconClass} />;
+      // Use IoMdVolumeOff only for client-side mutes (when we muted another user)
+      // Use IoVolumeMuteSharp for self-mutes (both for us and when others see us muted)
+      return !isOtherUser ? <IoVolumeMuteSharp className={iconClass} /> : <IoMdVolumeOff className={iconClass} />;
     case 'speaking':
       return <IoVolumeHighSharp className={iconClass} />;
     case 'silent':
