@@ -122,13 +122,15 @@ function PartyChat() {
       <div className="w-full max-w-full px-4 sm:px-6 lg:w-auto">
         <div className="flex flex-col">
           <TopBar />
-          <Card className="flex h-[calc(100vh-180px)] w-full flex-col rounded-none border-0 bg-[#dce4e7] lg:h-[600px] lg:min-w-[900px]">
+          <Card className="relative flex h-[calc(100vh-180px)] w-full flex-col rounded-none border-0 bg-[#dce4e7] lg:h-[600px] lg:min-w-[900px]">
             <PartyHeader membersCount={members.length} />
-            <div className="flex-1 overflow-y-auto bg-[#dce4e7]">
+            <div className="flex-1 overflow-y-auto bg-[#dce4e7] bubble-scrollbar">
               <PartyContent />
             </div>
+            <div className="sticky bottom-0 left-0 right-0 z-10 bg-[#dce4e7]">
+              <PartyActions />
+            </div>
           </Card>
-          <PartyActions />
         </div>
       </div>
       <ModalManager

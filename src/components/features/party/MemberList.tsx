@@ -129,9 +129,7 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
       if (isCurrentUser) {
         effectiveStatus = storeIsMuted ? 'muted' : voice_status;
       } else {
-        if (isLocallyMuted) {
-          effectiveStatus = 'muted';
-        } else if (isSelfMuted) {
+        if (isLocallyMuted || isSelfMuted) {
           effectiveStatus = 'muted';
         }
       }

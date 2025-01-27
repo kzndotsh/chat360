@@ -1603,7 +1603,7 @@ export class VoiceService {
 
     // Determine new voice status
     let newStatus: VoiceStatus = 'silent';
-    if (isLoudEnough && vadSpeaking) {
+    if (isLoudEnough) {
       newStatus = 'speaking';
     }
 
