@@ -1,6 +1,5 @@
 import { memo } from 'react';
 
-import { IoMdVolumeOff } from "react-icons/io";
 import { IoVolumeHighSharp, IoVolumeMuteSharp, IoVolumeOffSharp } from 'react-icons/io5';
 
 import { logger } from '@/lib/logger';
@@ -18,11 +17,10 @@ export const VoiceStatusIcon = memo(function VoiceStatusIcon({
   className,
   isOtherUser = false,
 }: VoiceStatusIconProps) {
-  // Set color based on status and whether it's a client-side mute
+  // Set color based on status
   const getIconClass = (status: VoiceStatus) => {
     switch (status) {
       case 'muted':
-        // Only show red for client-side mutes
         return isOtherUser ? 'text-[#bd2727]' : 'text-[#282b2f]';
       default:
         return 'text-[#282b2f]';
@@ -44,9 +42,7 @@ export const VoiceStatusIcon = memo(function VoiceStatusIcon({
   // Show appropriate icon based on voice status
   switch (status) {
     case 'muted':
-      // Use IoMdVolumeOff only for client-side mutes (when we muted another user)
-      // Use IoVolumeMuteSharp for self-mutes (both for us and when others see us muted)
-      return !isOtherUser ? <IoVolumeMuteSharp className={iconClass} /> : <IoMdVolumeOff className={iconClass} />;
+      return <IoVolumeMuteSharp className={iconClass} />;
     case 'speaking':
       return <IoVolumeHighSharp className={iconClass} />;
     case 'silent':

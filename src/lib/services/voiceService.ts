@@ -468,9 +468,7 @@ export class VoiceService {
         }
 
         const level = vol.level / 100; // Convert Agora's 0-100 level to 0-1
-        const isMuted = this._isMuted && memberId === this.currentMemberId;
-
-        this.handleVolumeUpdate(memberId, level, isMuted);
+        this.handleVolumeUpdate(memberId, level, this.isVadSpeaking);
       });
     });
 
@@ -1573,135 +1571,77 @@ export class VoiceService {
     }
   }
 
-  private handleVolumeUpdate(memberId: string, level: number, isMuted: boolean): void {
-    // Check if we're in a valid state to process updates
-    if (!this._isJoined || !this.currentMemberId) {
-        logger.debug('Ignoring volume update - not in valid state', {
-            component: 'VoiceService',
-            action: 'handleVolumeUpdate',
-            metadata: {
-                isJoined: this._isJoined,
-                hasMemberId: !!this.currentMemberId,
-                memberId,
-                level,
-                isMuted
-            }
-        });
-        return;
-    }
-
-    // Validate member mapping exists
-    const agoraUid = this.getAgoraUidFromMemberId(memberId);
-    if (!agoraUid) {
-        logger.debug('Ignoring volume update - no member mapping', {
-            component: 'VoiceService',
-            action: 'handleVolumeUpdate',
-            metadata: { memberId }
-        });
-        return;
-    }
-
+  private handleVolumeUpdate(memberId: string, level: number, vadSpeaking: boolean) {
     // Get current state
-    let currentState = this.memberVoiceStates.get(memberId);
-    if (!currentState) {
-        currentState = {
-            id: memberId,
-            level: 0,
-            voice_status: isMuted ? ('muted' as const) : ('silent' as const),
-            muted: isMuted,
-            is_deafened: false,
-            agora_uid: agoraUid,
-            timestamp: Date.now()
-        };
-        this.memberVoiceStates.set(memberId, currentState);
-    }
+    const oldState = this.memberVoiceStates.get(memberId);
+    const isMuted = this.memberMuteStates.get(memberId) || false;
 
-    // If member is muted, maintain muted state and don't process volume updates
-    if (currentState.voice_status === 'muted' || isMuted) {
-        if (currentState.voice_status !== 'muted' || currentState.level !== 0) {
-            const updatedState: VoiceMemberState = {
-                ...currentState,
-                level: 0,
-                voice_status: 'muted',
-                muted: true,
-                timestamp: Date.now()
-            };
-            this.memberVoiceStates.set(memberId, updatedState);
+    // If user is muted, force level to 0 and status to muted
+    if (isMuted) {
+      const voiceState: VoiceMemberState = {
+        id: memberId,
+        level: 0,
+        voice_status: 'muted',
+        muted: true,
+        is_deafened: false,
+        agora_uid: this.getAgoraUidFromMemberId(memberId),
+        timestamp: Date.now(),
+      };
 
-            // Notify callback of state change
-            if (this.volumeCallback) {
-                this.volumeCallback(Array.from(this.memberVoiceStates.values()));
-            }
+      // Only update if state changed
+      if (!oldState || oldState.voice_status !== 'muted' || oldState.level !== 0) {
+        this.memberVoiceStates.set(memberId, voiceState);
+        if (this.volumeCallback) {
+          this.volumeCallback(Array.from(this.memberVoiceStates.values()));
         }
-        return;
+      }
+      return;
     }
 
-    // Check if member is below noise floor
-    if (level <= VOICE_CONSTANTS.NOISE_FLOOR) {
-        level = 0;
+    // Determine if volume is loud enough to be considered speaking
+    const isLoudEnough = level > VOICE_CONSTANTS.SPEAKING_THRESHOLD;
+
+    // Determine new voice status
+    let newStatus: VoiceStatus = 'silent';
+    if (isLoudEnough && vadSpeaking) {
+      newStatus = 'speaking';
     }
 
-    const isCurrentUser = memberId === this.currentMemberId;
-    const rawLevel = level;
-    const smoothedLevel = isCurrentUser ? rawLevel : this.smoothVolume(rawLevel);
+    // Only update state if something changed
+    if (!oldState || oldState.level !== level || oldState.voice_status !== newStatus) {
+      // Log state changes
+      logger.debug('Voice state changed', {
+        component: 'VoiceService',
+        action: 'handleVolumeUpdate',
+        metadata: {
+          memberId,
+          oldState: oldState?.voice_status ?? 'silent',
+          newState: newStatus,
+          level,
+          isLoudEnough,
+          volumeChanged: oldState?.level !== level,
+          statusChanged: oldState?.voice_status !== newStatus,
+          vadSpeaking,
+        },
+      });
 
-    const isLoudEnough = smoothedLevel > VOICE_CONSTANTS.SPEAKING_THRESHOLD;
-    const isAboveHoldThreshold = smoothedLevel > VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD;
+      // Update member state
+      const voiceState: VoiceMemberState = {
+        id: memberId,
+        level,
+        voice_status: newStatus,
+        muted: false,
+        is_deafened: false,
+        agora_uid: this.getAgoraUidFromMemberId(memberId),
+        timestamp: Date.now(),
+      };
 
-    // Determine new voice status with improved state transition logic
-    const oldState = currentState.voice_status;
-    let newState: VoiceStatus = 'silent';
-    const now = Date.now();
+      this.memberVoiceStates.set(memberId, voiceState);
 
-    if (oldState === 'speaking') {
-        // If currently speaking, use stricter criteria to maintain state
-        if (isLoudEnough || (isAboveHoldThreshold && ((now - (currentState.timestamp || now)) < VOICE_CONSTANTS.MAX_HOLD_TIME))) {
-            newState = 'speaking';
-        }
-    } else {
-        // If not speaking, require clear speech signal to enter speaking state
-        if (isLoudEnough && (isCurrentUser || this.isVadSpeaking)) {
-            newState = 'speaking';
-        }
-    }
-
-    // Update state if changed
-    const volumeChanged = Math.abs(currentState.level - smoothedLevel) > VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD;
-    const statusChanged = oldState !== newState;
-
-    if (volumeChanged || statusChanged) {
-        logger.debug('Voice state changed', {
-            component: 'VoiceService',
-            action: 'handleVolumeUpdate',
-            metadata: {
-                memberId,
-                oldState,
-                newState,
-                level: smoothedLevel,
-                isLoudEnough,
-                volumeChanged,
-                statusChanged,
-                vadSpeaking: this.isVadSpeaking
-            }
-        });
-
-        const updatedState: VoiceMemberState = {
-            ...currentState,
-            level: smoothedLevel,
-            voice_status: newState,
-            muted: false,
-            timestamp: now
-        };
-
-        this.memberVoiceStates.set(memberId, updatedState);
-
-        // Broadcast update and handle errors
-        void this.broadcastVoiceUpdate(updatedState);
-    }
-
-    // Always notify callback of current state
-    if (this.volumeCallback) {
+      // Notify UI of changes
+      if (this.volumeCallback) {
         this.volumeCallback(Array.from(this.memberVoiceStates.values()));
+      }
     }
   }
 

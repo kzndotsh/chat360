@@ -2,7 +2,7 @@
 
 import type { MemberListProps } from '@/lib/types/components/props';
 
-import { useMemo, useCallback } from 'react';
+import { useMemo, useCallback, useState, useEffect } from 'react';
 
 import Image from 'next/image';
 
@@ -13,7 +13,6 @@ import { VoiceStatusIcon } from '@/components/features/party/icons/VoiceStatusIc
 import { AVATARS } from '@/lib/constants';
 import { useToast } from '@/lib/hooks/use-toast';
 import { logger } from '@/lib/logger';
-import { VoiceService } from '@/lib/services/voiceService';
 import { usePartyStore } from '@/lib/stores/partyStore';
 import { isRateLimited } from '@/lib/utils/rateLimiter';
 
@@ -22,6 +21,28 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
     voice: { isMuted: storeIsMuted },
   } = usePartyStore();
   const { toast } = useToast();
+  const [localMutes, setLocalMutes] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    // Load saved local mutes from localStorage
+    const savedMutes = localStorage.getItem('localMutes');
+    if (savedMutes) {
+      try {
+        setLocalMutes(JSON.parse(savedMutes));
+      } catch (error) {
+        logger.error('Failed to load saved mutes', {
+          component: 'MemberList',
+          action: 'loadSavedMutes',
+          metadata: { error },
+        });
+      }
+    }
+  }, []);
+
+  // Save local mutes whenever they change
+  useEffect(() => {
+    localStorage.setItem('localMutes', JSON.stringify(localMutes));
+  }, [localMutes]);
 
   // Handle muting/unmuting other users
   const handleOtherMemberMute = useCallback(async (memberId: string) => {
@@ -35,29 +56,39 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
     }
 
     const member = members.find(m => m.id === memberId);
-    const volumeState = volumeLevels[memberId];
-    const isMuted = volumeState?.muted ?? false;
+    const isLocallyMuted = localMutes[memberId] ?? false;
 
     try {
-      const voiceService = await VoiceService.createInstance();
-      await voiceService.toggleMemberMute(memberId);
+      // Toggle local mute state
+      const newMuteState = !isLocallyMuted;
+      setLocalMutes(prev => ({
+        ...prev,
+        [memberId]: newMuteState
+      }));
 
+      // Show toast after successful toggle
       toast({
-        description: `${member?.name ?? 'User'} ${!isMuted ? 'muted' : 'unmuted'}`,
+        description: `${member?.name ?? 'User'} ${newMuteState ? 'muted' : 'unmuted'} locally`,
         duration: 1000,
       });
     } catch (error) {
+      // Revert local mute state on error
+      setLocalMutes(prev => ({
+        ...prev,
+        [memberId]: isLocallyMuted
+      }));
+
       logger.error('Failed to toggle member mute', {
         component: 'MemberList',
         action: 'handleOtherMemberMute',
-        metadata: { error, memberId },
+        metadata: { error, memberId, currentState: isLocallyMuted },
       });
       toast({
         description: 'Failed to update mute state',
         duration: 2000,
       });
     }
-  }, [members, toast, volumeLevels]);
+  }, [members, toast]);
 
   // Memoize member rendering to prevent unnecessary recalculations
   const renderedMembers = useMemo(() => {
@@ -89,13 +120,26 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
     return sortedMembers.map(member => {
       const isCurrentUser = member.id === currentUserId;
       const volumeState = volumeLevels[member.id];
-      const isMuted = isCurrentUser ? storeIsMuted : volumeState?.muted ?? false;
+      const isLocallyMuted = localMutes[member.id] ?? false;
+      const isSelfMuted = volumeState?.muted ?? false;
       const voice_status = volumeState?.voice_status ?? 'silent';
+
+      // Determine the effective voice status based on mute states
+      let effectiveStatus = voice_status;
+      if (isCurrentUser) {
+        effectiveStatus = storeIsMuted ? 'muted' : voice_status;
+      } else {
+        if (isLocallyMuted) {
+          effectiveStatus = 'muted';
+        } else if (isSelfMuted) {
+          effectiveStatus = 'muted';
+        }
+      }
 
       return (
         <motion.div
           animate={{ opacity: 1, y: 0 }}
-          aria-label={`${member.name} - ${member.game} - ${voice_status}`}
+          aria-label={`${member.name} - ${member.game} - ${effectiveStatus}`}
           className="flex h-[48px] items-center border-t border-[#e5e5e5] px-1 sm:px-3 transition-all duration-200 ease-out first:border-t-0 hover:bg-[#f5f5f5] gap-1 sm:gap-4"
           exit={{ opacity: 0, y: 10 }}
           initial={{ opacity: 0, y: -10 }}
@@ -109,14 +153,14 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
                 <button
                   onClick={() => handleOtherMemberMute(member.id)}
 
-                  aria-label={isMuted ? 'Toggle user mute' : 'Mute user'}
+                  aria-label={isLocallyMuted ? 'Unmute user locally' : 'Mute user locally'}
                   className="relative cursor-pointer transition-transform duration-200 hover:scale-105"
-                  title={isMuted ? 'Toggle user mute' : 'Mute user'}
+                  title={isLocallyMuted ? 'Unmute user locally' : 'Mute user locally'}
                 >
                   <VoiceStatusIcon
                     className="h-5 w-5 sm:h-6 sm:w-6 md:h-8 md:w-8"
                     isOtherUser={true}
-                    status={voice_status}
+                    status={effectiveStatus}
                   />
                 </button>
               )}
@@ -128,7 +172,7 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
                   <VoiceStatusIcon
                     className="h-5 w-5 sm:h-6 sm:w-6 md:h-8 md:w-8"
                     isOtherUser={false}
-                    status={voice_status}
+                    status={effectiveStatus}
                   />
                 </div>
               )}
