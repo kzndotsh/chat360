@@ -1,9 +1,6 @@
 import type { VoiceStatus } from '@/lib/types/party/member';
 
-import { useState, useEffect, useRef, useMemo } from 'react';
-
-import { Subject } from 'rxjs';
-import { debounceTime, map } from 'rxjs/operators';
+import { useState, useEffect, useRef, useCallback } from 'react';
 
 import { VOICE_CONSTANTS } from '../constants/voice';
 
@@ -38,56 +35,50 @@ export function determineVoiceStatus(
   return currentStatus;
 }
 
-export function useVolumeControl(options: UseVolumeControlOptions) {
-  const { onVolumeChange, onVoiceStatusChange, isMuted = false } = options;
+export function useVolumeControl({
+  isMuted = false,
+  onVoiceStatusChange,
+  onVolumeChange,
+}: UseVolumeControlOptions) {
+  const [volume, setVolume] = useState<number>(0);
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>('silent');
-  const volumeSubject = useMemo(() => new Subject<number>(), []);
-  const lastVolume = useRef<number>(0);
-  const silenceTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const mountedRef = useRef<boolean>(true);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
-    const subscription = volumeSubject
-      .pipe(
-        debounceTime(VOICE_CONSTANTS.UPDATE_DEBOUNCE),
-        map((volume) => {
-          // Use raw volume for immediate response
-          lastVolume.current = volume;
-          return volume;
-        })
-      )
-      .subscribe((volume) => {
-        const newStatus = determineVoiceStatus(volume, voiceStatus, isMuted);
-
-        // Clear any existing timeout
-        if (silenceTimeoutRef.current) {
-          clearTimeout(silenceTimeoutRef.current);
-        }
-
-        // Set timeout to transition to silent if volume stays low
-        if (newStatus === 'speaking' && volume < VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD) {
-          silenceTimeoutRef.current = setTimeout(() => {
-            setVoiceStatus('silent');
-            onVoiceStatusChange?.('silent');
-          }, VOICE_CONSTANTS.SPEAKING_TIMEOUT);
-        }
-
-        if (newStatus !== voiceStatus) {
-          setVoiceStatus(newStatus);
-          onVoiceStatusChange?.(newStatus);
-        }
-        onVolumeChange?.(volume);
-      });
-
+    mountedRef.current = true;
     return () => {
-      subscription.unsubscribe();
-      if (silenceTimeoutRef.current) {
-        clearTimeout(silenceTimeoutRef.current);
+      mountedRef.current = false;
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
       }
     };
-  }, [isMuted, voiceStatus, onVoiceStatusChange, onVolumeChange, volumeSubject]);
+  }, []);
 
-  return {
-    voiceStatus,
-    updateVolume: (volume: number) => volumeSubject.next(volume),
-  };
+  const updateVolume = useCallback((newVolume: number) => {
+    if (!mountedRef.current) return;
+
+    // Clear existing timeout
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+
+    // Debounce volume updates
+    timeoutRef.current = setTimeout(() => {
+      if (!mountedRef.current) return;
+
+      const roundedVolume = Math.round(newVolume * 100);
+      setVolume(roundedVolume);
+      onVolumeChange?.(roundedVolume);
+
+      // Update voice status
+      const newStatus = determineVoiceStatus(roundedVolume, voiceStatus, isMuted);
+      if (newStatus !== voiceStatus) {
+        setVoiceStatus(newStatus);
+        onVoiceStatusChange?.(newStatus);
+      }
+    }, VOICE_CONSTANTS.UPDATE_DEBOUNCE);
+  }, [voiceStatus, isMuted, onVolumeChange, onVoiceStatusChange]);
+
+  return { updateVolume, volume, voiceStatus };
 }

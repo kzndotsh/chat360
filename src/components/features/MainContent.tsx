@@ -30,27 +30,53 @@ export default function MainContent() {
 
   // Preload both videos during initial load
   useEffect(() => {
-    // Preload intro video
-    const introVideo = document.createElement('video');
-    introVideo.src = INTRO_VIDEO_URL;
-    introVideo.preload = 'auto';
-    introVideo.onloadedmetadata = () => setIntroVideoLoaded(true);
-    introVideo.onerror = () => {
-      logger.error('Intro video preload error', {
-        action: 'introVideoPreload',
-        metadata: { url: INTRO_VIDEO_URL },
-      });
+    const controller = new AbortController();
+    const videoElements: HTMLVideoElement[] = [];
+
+    const preloadVideo = async (url: string, onLoad: () => void) => {
+      try {
+        const response = await fetch(url, { signal: controller.signal });
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+
+        const video = document.createElement('video');
+        video.src = objectUrl;
+        video.preload = 'auto';
+        video.onloadedmetadata = () => {
+          onLoad();
+          URL.revokeObjectURL(objectUrl); // Clean up object URL after metadata loaded
+        };
+        video.onerror = () => {
+          logger.error('Video preload error', {
+            action: 'videoPreload',
+            metadata: { url },
+          });
+          URL.revokeObjectURL(objectUrl);
+        };
+        videoElements.push(video);
+      } catch (error: unknown) {
+        if (error instanceof Error && error.name !== 'AbortError') {
+          logger.error('Video preload error', {
+            action: 'videoPreload',
+            metadata: { error, url },
+          });
+        }
+      }
     };
 
-    // Preload background video
-    const bgVideo = document.createElement('video');
-    bgVideo.src = BACKGROUND_VIDEO_URL;
-    bgVideo.preload = 'auto';
-    bgVideo.onloadedmetadata = () => setVideoLoaded(true);
-    bgVideo.onerror = () => {
-      logger.error('Background video preload error', {
-        action: 'videoPreload',
-        metadata: { url: BACKGROUND_VIDEO_URL },
+    // Start preloading both videos
+    preloadVideo(INTRO_VIDEO_URL, () => setIntroVideoLoaded(true));
+    preloadVideo(BACKGROUND_VIDEO_URL, () => setVideoLoaded(true));
+
+    return () => {
+      controller.abort();
+      // Clean up video elements
+      videoElements.forEach(video => {
+        if (video.src) {
+          URL.revokeObjectURL(video.src);
+          video.src = '';
+          video.load();
+        }
       });
     };
   }, []);

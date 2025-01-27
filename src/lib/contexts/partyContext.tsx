@@ -1,7 +1,7 @@
 import type { PartyMember, VoiceMemberState } from '@/lib/types/party/member';
 import type { PartyStatus } from '@/lib/types/party/state';
 
-import { createContext, useCallback, useContext, useMemo, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useMemo, useEffect, useState, useRef } from 'react';
 
 import { useAgoraContext } from '@/components/providers/AgoraProvider';
 
@@ -91,6 +91,7 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
   const [volumeLevels, setVolumeLevels] = useState<Record<string, VoiceMemberState>>({});
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [testMembers, setTestMembers] = useState<PartyMember[]>([]);
+  const joinControllerRef = useRef<AbortController | null>(null);
 
   const { getClient } = useAgoraContext();
 
@@ -219,8 +220,26 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
 
   const { initializePresence, cleanupPresence, updatePresence } = usePartyStore();
 
+  // Cleanup join operation if component unmounts during join
+  useEffect(() => {
+    return () => {
+      if (joinControllerRef.current) {
+        joinControllerRef.current.abort();
+      }
+    };
+  }, []);
+
   const join = useCallback(
     async (member: PartyMember) => {
+      // Cleanup any existing join operation
+      if (joinControllerRef.current) {
+        joinControllerRef.current.abort();
+      }
+
+      // Create new controller for this join operation
+      const controller = new AbortController();
+      joinControllerRef.current = controller;
+
       try {
         // Initialize presence first
         await initializePresence(member);
@@ -245,13 +264,26 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
           throw new Error('Voice service not initialized');
         }
 
-        // Join voice channel
-        await voiceService.join(CHANNEL_NAME, member.id);
+        // Join voice channel with signal for potential abort
+        await Promise.race([
+          voiceService.join(CHANNEL_NAME, member.id),
+          new Promise((_, reject) => {
+            controller.signal.addEventListener('abort', () =>
+              reject(new Error('Join operation aborted'))
+            );
+          })
+        ]);
 
         logger.debug('[PartyChat][handleJoinParty] Join completed');
-      } catch (error) {
-        logger.error('Join error', { metadata: { error } });
-        throw error;
+      } catch (error: unknown) {
+        if (error instanceof Error && error.name !== 'AbortError') {
+          logger.error('Join error', { metadata: { error } });
+          throw error;
+        }
+      } finally {
+        if (joinControllerRef.current === controller) {
+          joinControllerRef.current = null;
+        }
       }
     },
     [initializePresence, getClient]

@@ -27,13 +27,13 @@ export function usePartyNotifications() {
         newMembers.some(m => m.id === currentMember.id) &&
         !achievementShownRef.current) {
       achievementShownRef.current = true;
-      // Small delay to ensure modal is closed
+      // Longer delay to ensure modal is closed and create a more distinct sequence
       setTimeout(() => {
         toast({
           description: 'Achievement Unlocked: Joined the Party!',
           duration: 2000,
         });
-      }, 500);
+      }, 1000);
     }
 
     // Update previous members reference

@@ -1,6 +1,11 @@
 import type { NextConfig } from 'next';
 
+import bundleAnalyzer from '@next/bundle-analyzer';
 import CopyPlugin from 'copy-webpack-plugin';
+
+const withBundleAnalyzer = bundleAnalyzer({
+  enabled: process.env.ANALYZE === 'true'
+});
 
 const nextConfig: NextConfig = {
   eslint: {
@@ -62,6 +67,36 @@ const nextConfig: NextConfig = {
 
     return config;
   },
+  modularizeImports: {
+    'lucide-react': {
+      transform: 'lucide-react/dist/esm/icons/{{member}}',
+    },
+    '@radix-ui/react-*': {
+      transform: '@radix-ui/react-{{member}}',
+    },
+  },
+  async headers() {
+    return [
+      {
+        source: '/fonts/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          },
+        ],
+      },
+      {
+        source: '/images/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=86400, must-revalidate',
+          },
+        ],
+      },
+    ];
+  },
 };
 
-export default nextConfig;
+export default withBundleAnalyzer(nextConfig);
