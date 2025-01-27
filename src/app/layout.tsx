@@ -1,8 +1,8 @@
 import type { Viewport } from 'next';
 import type { Metadata } from 'next';
-import type { ReactNode } from 'react';
 
 import { ClientLayout } from '@/components/layouts/ClientLayout';
+import { ServiceWorkerProvider } from '@/components/providers/ServiceWorkerProvider';
 
 import './globals.css';
 
@@ -42,48 +42,16 @@ export const metadata: Metadata = {
       { url: '/favicons/favicon-60x60.png', sizes: '60x60', type: 'image/png' },
       { url: '/favicons/favicon-72x72.png', sizes: '72x72', type: 'image/png' },
       { url: '/favicons/favicon-76x76.png', sizes: '76x76', type: 'image/png' },
-      {
-        url: '/favicons/favicon-114x114.png',
-        sizes: '114x114',
-        type: 'image/png',
-      },
-      {
-        url: '/favicons/favicon-120x120.png',
-        sizes: '120x120',
-        type: 'image/png',
-      },
-      {
-        url: '/favicons/favicon-144x144.png',
-        sizes: '144x144',
-        type: 'image/png',
-      },
-      {
-        url: '/favicons/favicon-152x152.png',
-        sizes: '152x152',
-        type: 'image/png',
-      },
-      {
-        url: '/favicons/favicon-180x180.png',
-        sizes: '180x180',
-        type: 'image/png',
-      },
+      { url: '/favicons/favicon-114x114.png', sizes: '114x114', type: 'image/png' },
+      { url: '/favicons/favicon-120x120.png', sizes: '120x120', type: 'image/png' },
+      { url: '/favicons/favicon-144x144.png', sizes: '144x144', type: 'image/png' },
+      { url: '/favicons/favicon-152x152.png', sizes: '152x152', type: 'image/png' },
+      { url: '/favicons/favicon-180x180.png', sizes: '180x180', type: 'image/png' },
     ],
     other: [
-      {
-        url: '/favicons/favicon-192x192.png',
-        sizes: '192x192',
-        type: 'image/png',
-      },
-      {
-        url: '/favicons/favicon-310x310.png',
-        sizes: '310x310',
-        type: 'image/png',
-      },
-      {
-        url: '/favicons/favicon-150x150.png',
-        sizes: '150x150',
-        type: 'image/png',
-      },
+      { url: '/favicons/favicon-192x192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/favicons/favicon-310x310.png', sizes: '310x310', type: 'image/png' },
+      { url: '/favicons/favicon-150x150.png', sizes: '150x150', type: 'image/png' },
       { url: '/favicons/favicon-70x70.png', sizes: '70x70', type: 'image/png' },
       { url: '/favicons/browserconfig.xml', rel: 'msapplication-config' },
     ],
@@ -93,28 +61,21 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  themeColor: 'black',
+  maximumScale: 1,
+  userScalable: false,
 };
 
 interface RootLayoutProps {
-  children: ReactNode;
+  children: React.ReactNode;
 }
 
 export default function RootLayout({ children }: RootLayoutProps) {
   return (
-    <html
-      suppressHydrationWarning
-
-      className="bg-white"
-      lang="en"
-    >
-      <body
-        suppressHydrationWarning
-
-      >
-        <div className="min-h-screen">
+    <html lang="en">
+      <body>
+        <ServiceWorkerProvider>
           <ClientLayout>{children}</ClientLayout>
-        </div>
+        </ServiceWorkerProvider>
       </body>
     </html>
   );

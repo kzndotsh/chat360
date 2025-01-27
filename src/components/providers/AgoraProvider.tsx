@@ -62,6 +62,16 @@ async function loadAgoraSDK(): Promise<{ agora: IAgoraRTC }> {
   AgoraRTC.disableLogUpload();
   AgoraRTC.setLogLevel(0); // Set to INFO level
 
+  // Disable stats collection and logging
+  // @ts-expect-error - These parameters exist but are not in type definitions
+  AgoraRTC.setParameter('DISABLE_STATS_COLLECTOR', true);
+  // @ts-expect-error - These parameters exist but are not in type definitions
+  AgoraRTC.setParameter('UPLOAD_LOG', false);
+  // @ts-expect-error - These parameters exist but are not in type definitions
+  AgoraRTC.setParameter('REPORT_APP_SCENARIO', false);
+  // @ts-expect-error - These parameters exist but are not in type definitions
+  AgoraRTC.setParameter('UPLOAD_EXCEPTION', false);
+
   return { agora: AgoraRTC };
 }
 
@@ -83,7 +93,11 @@ export function AgoraProvider({ children }: AgoraProviderProps) {
         const { agora } = await loadAgoraSDK();
         if (!agora) throw new Error('Failed to load Agora SDK');
 
-        const newClient = agora.createClient({ mode: 'rtc', codec: 'vp8' });
+        // Create client with minimal configuration
+        const newClient = agora.createClient({
+          mode: 'rtc',
+          codec: 'vp8'
+        });
         if (mountedRef.current) {
           setClient(newClient);
           retryCountRef.current = 0;
