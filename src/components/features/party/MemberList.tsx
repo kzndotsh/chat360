@@ -109,9 +109,9 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
                 <button
                   onClick={() => handleOtherMemberMute(member.id)}
 
-                  aria-label={isMuted ? 'Unmute user' : 'Mute user'}
+                  aria-label={isMuted ? 'Toggle user mute' : 'Mute user'}
                   className="relative cursor-pointer transition-transform duration-200 hover:scale-105"
-                  title={isMuted ? 'Unmute user' : 'Mute user'}
+                  title={isMuted ? 'Toggle user mute' : 'Mute user'}
                 >
                   <VoiceStatusIcon
                     className="h-5 w-5 sm:h-6 sm:w-6 md:h-8 md:w-8"

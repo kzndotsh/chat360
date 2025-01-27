@@ -1,5 +1,6 @@
 import { memo } from 'react';
 
+import { IoMdVolumeOff } from "react-icons/io";
 import { IoVolumeHighSharp, IoVolumeMuteSharp, IoVolumeOffSharp } from 'react-icons/io5';
 
 import { logger } from '@/lib/logger';
@@ -42,7 +43,7 @@ export const VoiceStatusIcon = memo(function VoiceStatusIcon({
   // Show appropriate icon based on voice status
   switch (status) {
     case 'muted':
-      return <IoVolumeMuteSharp className={iconClass} />;
+      return isOtherUser ? <IoMdVolumeOff className={iconClass} /> : <IoVolumeMuteSharp className={iconClass} />;
     case 'speaking':
       return <IoVolumeHighSharp className={iconClass} />;
     case 'silent':

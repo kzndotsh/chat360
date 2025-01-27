@@ -16,20 +16,11 @@ self.addEventListener('fetch', (event) => {
     'webcollector-1.agora.io',
     'webcollector-2.agora.io',
     'webcollector-3.agora.io',
-    'webrtc2-ap-web-1.agora.io',
-    'webrtc2-2.ap.sd-rtn.com',
-    'cds-ap-web-1.agora.io',
-    'cds-web-2.ap.sd-rtn.com',
-    'cds-ap-web-3.agora.io',
     'web-2.statscollector.sd-rtn.com',
   ];
 
   // Block any domain containing 'statscollector' or 'logservice'
-  const isBlockedDomain =
-    blockedDomains.includes(url.hostname) ||
-    url.hostname.includes('statscollector') ||
-    url.hostname.includes('logservice') ||
-    url.hostname.includes('webcollector');
+  const isBlockedDomain = blockedDomains.includes(url.hostname);
 
   if (isBlockedDomain) {
     console.debug('[ServiceWorker] Blocked request to:', url.hostname);
@@ -47,6 +38,13 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Let other requests pass through
-  event.respondWith(fetch(event.request));
+  // For all other requests, pass through to the network
+  event.respondWith(
+    fetch(event.request)
+      .then((response) => response)
+      .catch((error) => {
+        console.error('[ServiceWorker] Fetch error:', error);
+        throw error;
+      })
+  );
 });
