@@ -118,25 +118,27 @@ function PartyChat() {
   };
 
   return (
-    <div className="flex min-h-screen w-full items-center justify-center overflow-y-auto p-0 lg:p-12">
-      <div className="w-full max-w-full px-4 sm:px-6 lg:w-auto">
-        <div className="flex flex-col">
-          <TopBar />
-          <Card className="flex h-[calc(100vh-180px)] w-full flex-col rounded-none border-0 bg-[#dce4e7] lg:h-[600px] lg:min-w-[900px]">
-            <PartyHeader membersCount={members.length} />
-            <div className="flex-1 overflow-y-auto bg-[#dce4e7] bubble-scrollbar">
-              <PartyContent />
+    <div className="min-h-screen w-full overflow-y-auto">
+      <div className="flex min-h-screen w-full items-center justify-center p-0 lg:p-12">
+        <div className="w-full max-w-full px-4 sm:px-6 lg:w-auto">
+          <div className="flex flex-col">
+            <TopBar />
+            <Card className="flex h-[calc(100vh-180px)] w-full flex-col rounded-none border-0 shadow-none bg-[#dce4e7] lg:h-[600px] lg:min-w-[900px]">
+              <PartyHeader membersCount={members.length} />
+              <div className="flex-1 overflow-y-auto bg-[#dce4e7] bubble-scrollbar">
+                <PartyContent />
+              </div>
+            </Card>
+            <div className="mt-0">
+              <PartyActions />
             </div>
-          </Card>
-          <div className="mt-0">
-            <PartyActions />
           </div>
         </div>
+        <ModalManager
+          onEditProfileAction={handleEditProfile}
+          onJoinPartyAction={handleJoinParty}
+        />
       </div>
-      <ModalManager
-        onEditProfileAction={handleEditProfile}
-        onJoinPartyAction={handleJoinParty}
-      />
     </div>
   );
 }
