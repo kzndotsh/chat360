@@ -26,7 +26,7 @@ const XboxIntro = dynamic(
 export default function MainContent() {
   const isMobile = useIsMobile();
   const [showIntro, setShowIntro] = useState(!isMobile);
-  const [videoLoaded, setVideoLoaded] = useState(false);
+  const [videoLoaded, setVideoLoaded] = useState(isMobile);
   const [showPartyChat, setShowPartyChat] = useState(isMobile);
   const [introVideoLoaded, setIntroVideoLoaded] = useState(false);
 
@@ -35,6 +35,7 @@ export default function MainContent() {
     // Skip video preloading on mobile
     if (isMobile) {
       setVideoLoaded(true);
+      setShowPartyChat(true);
       return;
     }
 
@@ -107,7 +108,7 @@ export default function MainContent() {
 
   return (
     <div className="fixed inset-0 min-h-screen overflow-hidden bg-white">
-      {showIntro ? (
+      {showIntro && !isMobile ? (
         <XboxIntro onIntroEndAction={handleIntroEnd}
 
 isPreloaded={introVideoLoaded} />
