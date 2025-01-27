@@ -129,7 +129,7 @@ function PartyChat() {
                 <PartyContent />
               </div>
             </Card>
-            <div className="mt-0">
+            <div className="mt-0 pb-[env(safe-area-inset-bottom,20px)]">
               <PartyActions />
             </div>
           </div>
