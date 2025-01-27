@@ -262,16 +262,16 @@ export const PartyHeader = React.memo(
 
           aria-label="Copy CA"
           aria-live="polite"
-          className="flex h-[40px] w-full cursor-pointer items-center gap-2 bg-gradient-to-b from-[#70cc00] to-[#409202] pl-[30px] shadow-[inset_0_-2px_4px_rgba(0,0,0,0.1)] transition-all hover:brightness-110"
+          className="flex h-[40px] sm:h-[40px] w-full cursor-pointer items-center gap-2 bg-gradient-to-b from-[#70cc00] to-[#409202] pl-[30px] shadow-[inset_0_-2px_4px_rgba(0,0,0,0.1)] transition-all hover:brightness-110"
         >
-          <span className="text-xl font-semibold text-white">
+          <span className="text-lg sm:text-xl font-semibold text-white">
             {copyStatus === 'success' ? 'Copied!' : copyStatus === 'error' ? 'Failed!' : 'Copy CA'}
           </span>
           <Clipboard className="h-4 w-4 text-white opacity-90" />
         </button>
 
-        <div className="h-[40px] w-full border-b border-gray-400 bg-[#eff3f6] pl-[30px]">
-          <span className="text-xl font-semibold leading-[38px] text-[#282b2f]">
+        <div className="h-[35px] sm:h-[40px] w-full border-b border-gray-400 bg-[#eff3f6] pl-[30px]">
+          <span className="text-lg sm:text-xl font-semibold leading-[35px] sm:leading-[38px] text-[#282b2f]">
             Party Options: Party Chat
           </span>
         </div>
