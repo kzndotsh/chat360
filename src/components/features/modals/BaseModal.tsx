@@ -16,7 +16,7 @@ export function BaseModal({
   const [isClosing, setIsClosing] = React.useState<boolean>(false);
   const [isAnimating, setIsAnimating] = React.useState<boolean>(false);
   const mounted = React.useRef(true);
-  const closeTimer = React.useRef<ReturnType<typeof setTimeout>>();
+  const closeTimer = React.useRef<ReturnType<typeof setTimeout>>(null);
 
   React.useEffect(() => {
     mounted.current = true;
