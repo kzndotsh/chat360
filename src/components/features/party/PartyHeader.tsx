@@ -15,6 +15,12 @@ import { logger } from '@/lib/logger';
 import { Chat360Icon } from './icons/Chat360Icon';
 import { UserIcon } from './icons/UserIcon';
 
+const HEADER_CONFIG = {
+  COPY_CA_VALUE: '',
+  TWITTER_URL: 'https://x.com/chat360fun',
+  CHART_URL: '',
+} as const;
+
 const MemoizedUserIcon = React.memo(UserIcon);
 const MemoizedBarChartIcon = React.memo(BiSolidBarChartAlt2);
 const MemoizedXIcon = React.memo(TbBrandX);
@@ -40,13 +46,15 @@ const HeaderButton = React.memo(({
     <button
       onClick={onClick}
 
-      className={`relative flex h-[50px] cursor-pointer items-center justify-center bg-[#6B717D] transition-colors hover:bg-[#5D626D] ${width}`}
+      className={`relative flex cursor-pointer items-center justify-center bg-[#6B717D] transition-colors ${width} ${children ? 'h-[35px] sm:h-[50px]' : 'h-[35px] sm:h-[50px]'} group overflow-hidden`}
     >
       <div className="absolute inset-0 shadow-[inset_0_-1px_1px_rgba(0,0,0,0.05)]"></div>
       <div className="absolute bottom-0 left-0 top-0 w-[1px] bg-[#5D626D]/50"></div>
+      <div className="absolute bottom-0 right-0 top-0 w-[1px] bg-[#5D626D]/50"></div>
       <div className="absolute bottom-0 left-0 top-0 w-5 bg-gradient-to-r from-black/5 to-transparent"></div>
-      <Icon className={`${iconSize} text-white opacity-90`} />
-      {children}
+      <div className="absolute inset-0 bg-black/0 transition-all duration-200 group-hover:bg-black/10"></div>
+      <Icon className={`${iconSize} text-white opacity-90 relative z-10`} />
+      {children && <div className="relative z-10">{children}</div>}
     </button>
   );
 
@@ -67,31 +75,32 @@ HeaderButton.displayName = 'HeaderButton';
 
 const MobileButtons = React.memo(({ membersCount }: { membersCount: number }) => (
   <>
-    <div className="flex h-[40px] w-full sm:hidden">
+    <div className="flex h-[35px] w-full sm:hidden">
       <div className="flex-1">
         <HeaderButton
           icon={MemoizedBarChartIcon}
-          iconSize="w-7 h-7"
+          iconSize="w-6 h-6"
+          url={HEADER_CONFIG.CHART_URL}
           width="w-full"
         />
       </div>
       <div className="flex-1">
         <HeaderButton
           icon={MemoizedXIcon}
-          iconSize="w-7 h-7"
-          url="https://x.com/chat360fun"
+          iconSize="w-6 h-6"
+          url={HEADER_CONFIG.TWITTER_URL}
           width="w-full"
         />
       </div>
     </div>
 
-    <div className="h-[40px] w-full sm:hidden">
+    <div className="h-[35px] w-full sm:hidden">
       <HeaderButton
         icon={MemoizedUserIcon}
-        iconSize="w-7 h-6"
+        iconSize="w-6 h-5"
         width="w-full"
       >
-        <span className="ml-2 truncate text-sm font-bold text-white opacity-90">
+        <span className="ml-2 truncate text-xs font-bold text-white opacity-90 sm:text-sm">
           {membersCount}
         </span>
       </HeaderButton>
@@ -116,13 +125,14 @@ const DesktopButtons = React.memo(({ membersCount }: { membersCount: number }) =
     <HeaderButton
       icon={MemoizedBarChartIcon}
       iconSize="w-7 h-7"
+      url={HEADER_CONFIG.CHART_URL}
       width="w-[140px]"
     />
 
     <HeaderButton
       icon={MemoizedXIcon}
       iconSize="w-7 h-7"
-      url="https://x.com/chat360fun"
+      url={HEADER_CONFIG.TWITTER_URL}
       width="w-[140px]"
     />
   </div>
@@ -131,7 +141,7 @@ const DesktopButtons = React.memo(({ membersCount }: { membersCount: number }) =
 DesktopButtons.displayName = 'DesktopButtons';
 
 const Logo = React.memo(() => (
-  <div className="order-2 flex h-[50px] flex-1 items-center justify-center bg-[#f7ffff] pt-1 sm:order-1 sm:justify-start sm:py-0">
+  <div className="order-2 flex h-[50px] flex-1 items-center justify-center bg-[#f7ffff] pt-0 sm:order-1 sm:justify-start sm:py-0">
     <div className="flex items-center gap-2 sm:pl-[30px]">
       <MemoizedChat360Icon className="h-14 w-14 text-[#282b2f] opacity-90" />
       <span className="text-2xl font-semibold text-[#282b2f]">Chat360 Party</span>
@@ -152,16 +162,16 @@ export const PartyHeader = React.memo(
       loggerRef.current.info('Attempting to copy party URL', {
         component: 'PartyHeader',
         action: 'copyURL',
-        metadata: { url: window.location.href },
+        metadata: { url: HEADER_CONFIG.COPY_CA_VALUE },
       });
 
       try {
-        await navigator.clipboard.writeText(window.location.href);
+        await navigator.clipboard.writeText(HEADER_CONFIG.COPY_CA_VALUE);
         setCopyStatus('success');
         loggerRef.current.info('Successfully copied party URL', {
           component: 'PartyHeader',
           action: 'copyURL',
-          metadata: { status: 'success', url: window.location.href },
+          metadata: { status: 'success', url: HEADER_CONFIG.COPY_CA_VALUE },
         });
 
         if (timeoutRef.current) {
@@ -180,7 +190,7 @@ export const PartyHeader = React.memo(
           action: 'copyURL',
           metadata: {
             error: error instanceof Error ? error : new Error(String(error)),
-            url: window.location.href,
+            url: HEADER_CONFIG.COPY_CA_VALUE,
           },
         });
         setCopyStatus('error');
@@ -238,7 +248,7 @@ export const PartyHeader = React.memo(
       >
         <div className="flex w-full flex-col sm:flex-row">
           <Logo />
-          <div className="order-1 flex h-[80px] w-full flex-col gap-[1px] sm:order-2 sm:h-[40px] sm:w-auto sm:flex-row sm:gap-0">
+          <div className="order-1 flex h-[70px] w-full flex-col gap-0 sm:order-2 sm:h-[40px] sm:w-auto sm:flex-row sm:gap-0">
             <MobileButtons membersCount={membersCount} />
             <DesktopButtons membersCount={membersCount} />
           </div>
