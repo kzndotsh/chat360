@@ -59,7 +59,16 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
     const isLocallyMuted = localMutes[memberId] ?? false;
 
     try {
-      // Toggle local mute state
+      // Get VoiceService instance
+      const voiceService = (await import('@/lib/services/voiceService')).VoiceService.getInstance();
+      if (!voiceService) {
+        throw new Error('VoiceService not available');
+      }
+
+      // Toggle mute state in VoiceService
+      await voiceService.toggleMemberMute(memberId);
+
+      // Update local UI state
       const newMuteState = !isLocallyMuted;
       setLocalMutes(prev => ({
         ...prev,
