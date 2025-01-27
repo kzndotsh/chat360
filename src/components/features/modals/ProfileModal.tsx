@@ -243,77 +243,90 @@ interface ProfileModalProps {
 
 export function ProfileModal({ onSubmitAction, onCloseAction, initialData }: ProfileModalProps) {
   const [error, setError] = React.useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const submitLock = React.useRef(false);
+  const isMounted = React.useRef(true);
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
-    defaultValues:
-      initialData?.avatar && initialData?.game
-        ? initialData
-        : {
-            name: initialData?.name || '',
-            avatar: AVATARS[Math.floor(Math.random() * AVATARS.length)] ?? AVATARS[0]!,
-            game: STATUSES[Math.floor(Math.random() * STATUSES.length)] ?? STATUSES[0]!,
-          },
+    defaultValues: React.useMemo(
+      () =>
+        initialData?.avatar && initialData?.game
+          ? initialData
+          : {
+              name: initialData?.name || '',
+              avatar: AVATARS[Math.floor(Math.random() * AVATARS.length)] ?? AVATARS[0]!,
+              game: STATUSES[Math.floor(Math.random() * STATUSES.length)] ?? STATUSES[0]!,
+            },
+      [initialData]
+    ),
     mode: 'onSubmit',
-    criteriaMode: 'all',
   });
 
-  const formState = React.useMemo(
-    () => ({
-      isSubmitting: form.formState.isSubmitting,
-      isValid: form.formState.isValid,
-      errors: form.formState.errors,
-    }),
-    [form.formState]
-  );
+  React.useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+      submitLock.current = false;
+    };
+  }, []);
 
-  const { isSubmitting, isValid, errors } = formState;
+  const onSubmitForm = React.useCallback(async (data: FormData) => {
+    if (isSubmitting || submitLock.current || !isMounted.current) return;
 
-  const onSubmitForm = async (data: FormData) => {
+    submitLock.current = true;
     try {
+      setIsSubmitting(true);
+      setError(null);
+
       logger.debug('Submitting profile form', {
         component: 'ProfileModal',
         action: 'submitForm',
         metadata: { data },
       });
 
-      setError(null);
       await onSubmitAction(data);
 
-      logger.debug('Profile form submitted successfully', {
-        component: 'ProfileModal',
-        action: 'submitForm',
-      });
+      if (isMounted.current) {
+        logger.debug('Profile form submitted successfully', {
+          component: 'ProfileModal',
+          action: 'submitForm',
+        });
+      }
     } catch (err) {
-      logger.error('Failed to submit profile', {
-        component: 'ProfileModal',
-        action: 'submitForm',
-        metadata: { error: err },
-      });
-      setError(err instanceof Error ? err.message : 'Failed to submit profile');
+      if (isMounted.current) {
+        logger.error('Failed to submit profile', {
+          component: 'ProfileModal',
+          action: 'submitForm',
+          metadata: { error: err },
+        });
+        setError(err instanceof Error ? err.message : 'Failed to submit profile');
+      }
+    } finally {
+      if (isMounted.current) {
+        setIsSubmitting(false);
+        submitLock.current = false;
+      }
     }
-  };
+  }, [isSubmitting, onSubmitAction]);
+
+  const formState = React.useMemo(
+    () => ({
+      isSubmitting,
+      isValid: form.formState.isValid,
+      errors: form.formState.errors,
+    }),
+    [form.formState.isValid, form.formState.errors, isSubmitting]
+  );
+
+  const { isValid, errors } = formState;
 
   return (
     <BaseModal
       onCloseAction={onCloseAction}
 
-      preventOutsideClick={true}
+      preventOutsideClick={isSubmitting}
     >
-      {isSubmitting && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-[2px]">
-          <div className="flex flex-col items-center gap-4">
-            <div className="relative h-16 w-16">
-              <div className="absolute inset-0 animate-[spin_1.5s_linear_infinite] rounded-full border-[6px] border-[#ACD43B]/20 border-t-[#ACD43B]" />
-              <div className="absolute inset-3 animate-[spin_2s_linear_infinite] rounded-full border-[6px] border-[#ACD43B]/30 border-t-[#ACD43B]" />
-            </div>
-            <div className="text-base font-semibold text-white">
-              {initialData ? 'Saving Changes...' : 'Joining Party...'}
-            </div>
-          </div>
-        </div>
-      )}
-
       <div className="max-h-[90vh] w-[95vw] overflow-y-auto rounded-lg bg-[#F7FFFF] p-2 sm:w-[90vw] sm:p-6 lg:w-[700px]">
         <div className="relative mb-4 flex items-center justify-center">
           <h2 className="relative text-base font-bold text-[#282828] sm:text-xl">
@@ -329,83 +342,15 @@ export function ProfileModal({ onSubmitAction, onCloseAction, initialData }: Pro
             className="flex h-full flex-col bg-white rounded-lg p-2 sm:p-4 shadow-sm border border-[#ACD43B]/20"
           >
             <div className="flex flex-col items-center flex-1 space-y-3 sm:space-y-6 sm:items-stretch">
-              <FormField
-                render={({ field }) => (
-                  <FormItem className="w-full max-w-[280px] sm:max-w-none">
-                    <FormLabel className="text-sm font-semibold text-[#282828] block">Username</FormLabel>
-                    <FormControl>
-                      <Input
-                        {...field}
-                        autoComplete="off"
-                        className="w-full rounded-md border border-[#ACD43B]/50 bg-white px-3 py-2 text-[#282828] transition-all focus:border-[#ACD43B] hover:bg-gray-50 focus:bg-gray-50 focus:shadow-[0_0_10px_rgba(170,205,67,0.2)] focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                        disabled={isSubmitting}
-                        placeholder="Enter your username"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-
+              <FormFields
                 control={form.control}
-                name="name"
-              />
-
-              <FormField
-                render={({ field }) => (
-                  <FormItem className="w-full max-w-[280px] sm:max-w-none">
-                    <FormLabel className="text-sm font-semibold text-[#282828] block">
-                      Select Avatar
-                    </FormLabel>
-                    <div
-                      className={`grid grid-cols-3 justify-items-center sm:grid-cols-7 gap-x-8 gap-y-2 sm:gap-x-6 sm:gap-y-2 ${!!errors.avatar ? 'rounded-md ring-2 ring-red-500' : ''} p-4 bg-gray-100/50 rounded-lg`}
-                    >
-                      {AVATARS.map((avatar, index) => (
-                        <button
-                          onClick={() => field.onChange(avatar)}
-
-                          className={`h-[85px] w-[85px] overflow-hidden rounded-md transition-all sm:h-20 sm:w-20 ${field.value === avatar ? 'ring-[3px] ring-[#ACD43B] shadow-[0_0_15px_rgba(170,205,67,0.3)]' : 'hover:ring-2 hover:ring-[#ACD43B]/50 hover:shadow-[0_0_10px_rgba(170,205,67,0.2)] bg-white'}`}
-                          disabled={isSubmitting}
-                          key={index}
-                          type="button"
-                        >
-                          <AvatarImage
-                            className="h-full w-full object-cover shadow-[inset_0_2px_4px_rgba(0,0,0,0.2),inset_0_-2px_4px_rgba(0,0,0,0.1)]"
-                            index={index}
-                            src={avatar}
-                          />
-                        </button>
-                      ))}
-                    </div>
-                    <FormMessage className="mt-2 text-sm text-red-500" />
-                  </FormItem>
-                )}
-
-                control={form.control}
-                name="avatar"
-              />
-
-              <FormField
-                render={({ field }) => (
-                  <FormItem className="w-full max-w-[280px] sm:max-w-none mb-6">
-                    <FormLabel className="text-sm font-semibold text-[#282828] block">
-                      Current Game
-                    </FormLabel>
-                    <GameSelect
-                      field={field}
-                      hasError={!!errors.game}
-                      isSubmitting={isSubmitting}
-                    />
-                    <FormMessage className="mt-2 text-sm text-red-500" />
-                  </FormItem>
-                )}
-
-                control={form.control}
-                name="game"
+                errors={errors}
+                isSubmitting={isSubmitting}
               />
             </div>
 
             {error && (
-              <div className="rounded-md bg-red-50 border border-red-200 p-4">
+              <div className="rounded-md bg-red-50 border border-red-200 p-4 mt-4">
                 <div className="flex">
                   <div className="flex-shrink-0">
                     <svg

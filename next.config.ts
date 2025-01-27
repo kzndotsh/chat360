@@ -1,6 +1,5 @@
 import type { NextConfig } from 'next';
 
-import MillionLint from '@million/lint';
 import CopyPlugin from 'copy-webpack-plugin';
 
 const nextConfig: NextConfig = {
@@ -65,7 +64,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default MillionLint.next({
-  enabled: true,
-  rsc: false,
-})(nextConfig);
+export default nextConfig;

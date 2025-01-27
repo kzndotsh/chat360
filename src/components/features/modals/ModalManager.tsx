@@ -57,7 +57,16 @@ export function ModalManager({ onJoinPartyAction, onEditProfileAction }: ModalMa
           action: type === 'join' ? 'joinParty' : 'editProfile',
           metadata: { error },
         });
-        throw error; // Let ProfileModal handle the error display
+
+        const enhancedError = error instanceof Error
+          ? error
+          : new Error('Failed to submit profile');
+
+        if (enhancedError.message === 'Failed to submit profile') {
+          enhancedError.message = `Failed to ${type === 'join' ? 'join party' : 'update profile'}. Please try again.`;
+        }
+
+        throw enhancedError;
       }
     },
     [onJoinPartyAction, onEditProfileAction, type, hideModal]

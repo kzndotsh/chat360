@@ -6,10 +6,13 @@ export const VOICE_CONSTANTS = {
   NOISE_FLOOR: 0.02,
 
   // Timing constants (ms)
-  SPEAKING_TIMEOUT: 100,
-  UPDATE_DEBOUNCE: 30,
+  SPEAKING_TIMEOUT: 200,
+  UPDATE_DEBOUNCE: 100,
   RECOVERY_DELAY: 1000,
-  MAX_HOLD_TIME: 100,
+  MAX_HOLD_TIME: 200,
+
+  // Volume change threshold
+  MIN_VOLUME_CHANGE: 0.05,
 
   // Audio quality monitoring
   MAX_LOW_AUDIO_COUNT: 3,

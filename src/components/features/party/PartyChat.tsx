@@ -94,7 +94,27 @@ function PartyChat() {
   };
 
   const handleEditProfile = async (name: string, avatar: string, game: string) => {
-    await updateProfile({ name, avatar, game });
+    try {
+      logger.debug('Updating profile', {
+        component: 'PartyChat',
+        action: 'handleEditProfile',
+        metadata: { name, avatar, game },
+      });
+
+      await updateProfile({ name, avatar, game });
+
+      logger.debug('Profile update completed', {
+        component: 'PartyChat',
+        action: 'handleEditProfile',
+      });
+    } catch (error) {
+      logger.error('Failed to update profile', {
+        component: 'PartyChat',
+        action: 'handleEditProfile',
+        metadata: { error },
+      });
+      throw error; // Re-throw to let modal handle error display
+    }
   };
 
   return (

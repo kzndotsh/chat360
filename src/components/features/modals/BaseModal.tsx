@@ -2,8 +2,6 @@
 
 import React from 'react';
 
-import { AnimatePresence, motion } from 'framer-motion';
-
 interface BaseModalProps {
   children: React.ReactNode;
   preventOutsideClick?: boolean;
@@ -15,28 +13,63 @@ export function BaseModal({
   onCloseAction,
   preventOutsideClick = false,
 }: BaseModalProps) {
-  return (
-    <AnimatePresence mode="wait">
-      <div className="fixed inset-0 z-50 flex items-center justify-center">
-        <motion.div
-          onClick={preventOutsideClick ? undefined : onCloseAction}
+  const [isClosing, setIsClosing] = React.useState<boolean>(false);
+  const [isAnimating, setIsAnimating] = React.useState<boolean>(false);
+  const mounted = React.useRef(true);
+  const closeTimer = React.useRef<ReturnType<typeof setTimeout>>();
 
-          animate={{ opacity: 1 }}
-          className="absolute inset-0 bg-black/50"
-          exit={{ opacity: 0 }}
-          initial={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
-        />
-        <motion.div
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          className="relative z-50"
-          exit={{ opacity: 0, scale: 0.95, y: 20 }}
-          initial={{ opacity: 0, scale: 0.95, y: 20 }}
-          transition={{ duration: 0.2 }}
-        >
-          {children}
-        </motion.div>
+  React.useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      if (closeTimer.current) {
+        clearTimeout(closeTimer.current);
+      }
+    };
+  }, []);
+
+  const handleClose = React.useCallback(() => {
+    if (!preventOutsideClick && mounted.current && !isAnimating) {
+      setIsAnimating(true);
+      setIsClosing(true);
+      closeTimer.current = setTimeout(() => {
+        if (mounted.current) {
+          setIsAnimating(false);
+          onCloseAction();
+        }
+      }, 200);
+    }
+  }, [preventOutsideClick, onCloseAction, isAnimating]);
+
+  const overlayStyles = React.useMemo(() => {
+    return `absolute inset-0 bg-black/50 transition-opacity duration-200 ${
+      isClosing ? 'opacity-0' : 'opacity-100'
+    }`;
+  }, [isClosing]);
+
+  const contentStyles = React.useMemo(() => {
+    return `relative z-50 transition-all duration-200 ${
+      isClosing
+        ? 'opacity-0 scale-95 translate-y-5'
+        : 'opacity-100 scale-100 translate-y-0'
+    }`;
+  }, [isClosing]);
+
+  return (
+    <div
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      role="dialog"
+    >
+      <div
+        onClick={handleClose}
+
+        className={overlayStyles}
+        role="presentation"
+      />
+      <div className={contentStyles}>
+        {children}
       </div>
-    </AnimatePresence>
+    </div>
   );
 }

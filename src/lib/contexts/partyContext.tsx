@@ -5,6 +5,7 @@ import { createContext, useCallback, useContext, useMemo, useEffect, useState } 
 
 import { useAgoraContext } from '@/components/providers/AgoraProvider';
 
+import { VOICE_CONSTANTS } from '@/lib/constants/voice';
 import { useVolumeControl } from '@/lib/hooks/useVolumeControl';
 import { logger } from '@/lib/logger';
 import { usePartyStore } from '@/lib/stores/partyStore';
@@ -81,24 +82,36 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
     (volumes: VoiceMemberState[]) => {
       setVolumeLevels((prevLevels) => {
         const newLevels = { ...prevLevels };
+        let hasSignificantChanges = false;
 
         volumes.forEach((vol) => {
-          // Always update volume levels for all users
-          newLevels[vol.id] = vol;
+          const prevLevel = prevLevels[vol.id]?.level ?? 0;
+          const levelDiff = Math.abs(vol.level - prevLevel);
 
-          // Only update local volume for current user
-          if (vol.id === currentMember?.id) {
-            updateVolume(vol.level);
+          // Only update if there's a significant change in volume or status
+          if (levelDiff >= VOICE_CONSTANTS.MIN_VOLUME_CHANGE ||
+              vol.voice_status !== prevLevels[vol.id]?.voice_status ||
+              vol.muted !== prevLevels[vol.id]?.muted) {
+
+            newLevels[vol.id] = vol;
+            hasSignificantChanges = true;
+
+            // Only update local volume for current user if change is significant
+            if (vol.id === currentMember?.id) {
+              updateVolume(vol.level);
+            }
+          } else if (prevLevels[vol.id]) {
+            // Keep previous state if no significant change and it exists
+            newLevels[vol.id] = prevLevels[vol.id] as VoiceMemberState;
+          } else {
+            // If no previous state exists, use the new state
+            newLevels[vol.id] = vol;
+            hasSignificantChanges = true;
           }
         });
 
-        logger.debug('Volume levels updated', {
-          component: 'PartyContext',
-          action: 'handleVolumeChange',
-          metadata: { volumes, newLevels },
-        });
-
-        return newLevels;
+        // Only trigger re-render if there were significant changes
+        return hasSignificantChanges ? newLevels : prevLevels;
       });
     },
     [currentMember, updateVolume]
