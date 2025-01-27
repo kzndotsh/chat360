@@ -10,8 +10,10 @@ import { VoiceStatusIcon } from '@/components/features/party/icons/VoiceStatusIc
 
 import { AVATARS } from '@/lib/constants';
 import { useToast } from '@/lib/hooks/use-toast';
+import { logger } from '@/lib/logger';
 import { VoiceService } from '@/lib/services/voiceService';
 import { usePartyStore } from '@/lib/stores/partyStore';
+import { isRateLimited } from '@/lib/utils/rateLimiter';
 
 export function MemberList({ members, currentUserId, volumeLevels = {} }: MemberListProps) {
   const {
@@ -21,24 +23,39 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
 
   // Handle muting/unmuting other users
   const handleOtherMemberMute = useCallback(async (memberId: string) => {
+    // Rate limit to 1 action per second per member
+    if (isRateLimited(`mute-${memberId}`, 2000)) {
+      toast({
+        description: 'Please wait before toggling mute again',
+        duration: 1000,
+      });
+      return;
+    }
+
     const member = members.find(m => m.id === memberId);
     const volumeState = volumeLevels[memberId];
     const isMuted = volumeState?.muted ?? false;
 
-    const voiceService = await VoiceService.createInstance();
-    await voiceService.toggleMemberMute(memberId);
+    try {
+      const voiceService = await VoiceService.createInstance();
+      await voiceService.toggleMemberMute(memberId);
 
-    toast({
-      description: `${member?.name ?? 'User'} ${!isMuted ? 'muted' : 'unmuted'}`,
-      duration: 1000,
-    });
+      toast({
+        description: `${member?.name ?? 'User'} ${!isMuted ? 'muted' : 'unmuted'}`,
+        duration: 1000,
+      });
+    } catch (error) {
+      logger.error('Failed to toggle member mute', {
+        component: 'MemberList',
+        action: 'handleOtherMemberMute',
+        metadata: { error, memberId },
+      });
+      toast({
+        description: 'Failed to update mute state',
+        duration: 2000,
+      });
+    }
   }, [members, volumeLevels, toast]);
-
-  // Handle self mute toggle - use store state as single source of truth
-  const handleSelfMute = useCallback(async () => {
-    const voiceService = await VoiceService.createInstance();
-    await voiceService.toggleMute();
-  }, []);
 
   // Memoize member rendering to prevent unnecessary recalculations
   const renderedMembers = useMemo(() => {
@@ -93,20 +110,33 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
           role="listitem"
         >
           <div className="flex w-[140px] items-center gap-1.5 sm:gap-2 md:w-[440px]">
-            <button
-              onClick={() => isCurrentUser ? handleSelfMute() : handleOtherMemberMute(member.id)}
+            {!isCurrentUser && (
+              <button
+                onClick={() => handleOtherMemberMute(member.id)}
 
-              aria-label={isCurrentUser ? (isMuted ? 'Unmute yourself' : 'Mute yourself') : (isMuted ? 'Unmute user' : 'Mute user')}
-              className="relative -ml-2 sm:-ml-5 cursor-pointer transition-transform duration-200 hover:scale-105 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
-              disabled={isCurrentUser}
-              title={isCurrentUser ? (isMuted ? 'Can\'t unmute yourself' : 'Can\'t mute yourself') : (isMuted ? 'Unmute user' : 'Mute user')}
-            >
-              <VoiceStatusIcon
-                className="h-6 w-6 md:h-8 md:w-8"
-                isOtherUser={!isCurrentUser}
-                status={voice_status}
-              />
-            </button>
+                aria-label={isMuted ? 'Unmute user' : 'Mute user'}
+                className="relative -ml-2 sm:-ml-5 cursor-pointer transition-transform duration-200 hover:scale-105"
+                title={isMuted ? 'Unmute user' : 'Mute user'}
+              >
+                <VoiceStatusIcon
+                  className="h-6 w-6 md:h-8 md:w-8"
+                  isOtherUser={true}
+                  status={voice_status}
+                />
+              </button>
+            )}
+            {isCurrentUser && (
+              <div
+                className="relative -ml-2 sm:-ml-5 cursor-not-allowed opacity-50"
+                title="Use the mute button below to control your microphone"
+              >
+                <VoiceStatusIcon
+                  className="h-6 w-6 md:h-8 md:w-8"
+                  isOtherUser={false}
+                  status={voice_status}
+                />
+              </div>
+            )}
 
             {/* Avatar */}
             <div
@@ -158,7 +188,7 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
         </div>
       );
     });
-  }, [currentUserId, members, volumeLevels, storeIsMuted, handleOtherMemberMute, handleSelfMute]);
+  }, [currentUserId, members, volumeLevels, storeIsMuted, handleOtherMemberMute]);
 
   return (
     <div

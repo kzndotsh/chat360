@@ -9,6 +9,7 @@ import { VOICE_CONSTANTS } from '@/lib/constants/voice';
 import { logger } from '@/lib/logger';
 import { PresenceService } from '@/lib/services/presenceService';
 import { supabase } from '@/lib/supabase';
+import { isRateLimited } from '@/lib/utils/rateLimiter';
 
 import { PartyMember } from '../types/party/member';
 
@@ -1047,6 +1048,15 @@ export class VoiceService {
   }
 
   public async toggleMute(): Promise<boolean> {
+    // Rate limit to 1 toggle every 500ms
+    if (isRateLimited('voice-mute-toggle', 500)) {
+      logger.debug('Mute toggle rate limited', {
+        component: 'VoiceService',
+        action: 'toggleMute',
+      });
+      return this._isMuted;
+    }
+
     logger.info('Attempting to toggle mute state', {
       component: 'VoiceService',
       action: 'toggleMute',

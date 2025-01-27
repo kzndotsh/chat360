@@ -7,6 +7,7 @@ import React, { memo, useCallback } from 'react';
 import { AVATARS } from '@/lib/constants';
 import { useToast } from '@/lib/hooks/use-toast';
 import { useModalStore } from '@/lib/stores/useModalStore';
+import { isRateLimited } from '@/lib/utils/rateLimiter';
 
 export const PartyControls = memo(function PartyControls({
   currentUser,
@@ -23,6 +24,16 @@ export const PartyControls = memo(function PartyControls({
 
   const handleMuteToggle = useCallback(async () => {
     if (!onToggleMute) return;
+
+    // Rate limit to 1 toggle every 500ms
+    if (isRateLimited('mute-toggle', 500)) {
+      toast({
+        description: 'Please wait before toggling mute again',
+        duration: 1000,
+      });
+      return;
+    }
+
     await onToggleMute();
     toast({
       description: `Microphone ${!isMuted ? 'muted' : 'unmuted'}`,

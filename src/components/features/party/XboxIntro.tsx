@@ -301,15 +301,16 @@ export function XboxIntro({ onIntroEndAction, isPreloaded }: XboxIntroProps) {
     <div
       className={`fixed inset-0 z-50 bg-white ${isEnded ? 'scale-105 opacity-0' : 'scale-100 opacity-100'} transition-[transform,opacity] duration-700`}
     >
-      <video
-        muted
-        playsInline
-
-        className={`h-full w-full object-contain transition-opacity duration-700 md:object-cover ${isLoading ? 'opacity-0' : 'opacity-100'}`}
-        preload="auto"
-        ref={videoRef}
-        webkit-playsinline=""
-      />
+      <div className="h-full w-full">
+        <video
+          muted
+          playsInline
+          className={`h-full w-full object-contain transition-opacity duration-700 md:object-cover ${isLoading ? 'opacity-0' : 'opacity-100'}`}
+          preload="auto"
+          ref={videoRef}
+          webkit-playsinline=""
+        />
+      </div>
       <div
         className={`absolute flex space-x-2 transition-[transform,opacity] duration-700 ${
           isEnded || isLoading ? 'translate-y-4 opacity-0' : 'opacity-100'
@@ -317,7 +318,6 @@ export function XboxIntro({ onIntroEndAction, isPreloaded }: XboxIntroProps) {
       >
         <Button
           onClick={toggleMute}
-
           aria-label={isMuted ? 'Unmute' : 'Mute'}
           className="rounded-md bg-white px-3 py-1.5 text-black transition-colors hover:bg-gray-100 active:bg-gray-100 sm:px-4 sm:py-2 [@media(hover:hover)]:hover:bg-gray-100"
         >
@@ -335,7 +335,6 @@ export function XboxIntro({ onIntroEndAction, isPreloaded }: XboxIntroProps) {
         </Button>
         <Button
           onClick={handleSkip}
-
           className="rounded-md bg-white px-3 py-1.5 text-sm text-black transition-colors hover:bg-gray-100 active:bg-gray-100 sm:px-4 sm:py-2 sm:text-base [@media(hover:hover)]:hover:bg-gray-100"
         >
           Skip Intro

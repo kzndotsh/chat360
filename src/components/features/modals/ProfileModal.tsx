@@ -27,6 +27,7 @@ import {
 
 import { AVATARS, STATUSES } from '@/lib/constants';
 import { logger } from '@/lib/logger';
+import { isRateLimited } from '@/lib/utils/rateLimiter';
 
 import { BaseModal } from './BaseModal';
 
@@ -273,6 +274,12 @@ export function ProfileModal({ onSubmitAction, onCloseAction, initialData }: Pro
 
   const onSubmitForm = React.useCallback(async (data: FormData) => {
     if (isSubmitting || submitLock.current || !isMounted.current) return;
+
+    // Rate limit to 1 submission every 2 seconds
+    if (isRateLimited('profile-submit', 2000)) {
+      setError('Please wait before submitting again');
+      return;
+    }
 
     submitLock.current = true;
     try {
