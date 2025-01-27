@@ -64,7 +64,7 @@ export const PartyControls = memo(function PartyControls({
     }`;
 
   return (
-    <div className="flex flex-col px-[30px] py-3">
+    <div className="flex flex-col px-[30px] pb-[env(safe-area-inset-bottom,20px)] pt-3">
       <div className="flex min-w-[300px] flex-nowrap gap-2 text-xs md:gap-4 md:text-sm">
         {!currentUser && (
           <button

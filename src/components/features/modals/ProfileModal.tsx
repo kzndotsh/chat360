@@ -33,8 +33,11 @@ import { BaseModal } from './BaseModal';
 
 const formSchema = z.object({
   name: z.string()
-    .min(2, 'Name must be at least 2 characters')
-    .max(20, 'Name cannot be longer than 20 characters'),
+    .min(2, 'Username must be at least 2 characters')
+    .max(20, 'Username cannot be longer than 20 characters')
+    .refine((val) => /^[a-zA-Z0-9_\- ]+$/.test(val), {
+      message: 'Username can only contain letters, numbers, spaces, hyphens and underscores',
+    }),
   avatar: z.string().refine((val) => AVATARS.includes(val), {
     message: 'Please select an avatar',
   }),
@@ -165,12 +168,12 @@ const FormFields = React.memo(
               <Input
                 {...field}
                 autoComplete="off"
-                className="w-full rounded-md border border-[#ACD43B]/50 bg-white px-3 py-2 text-[#282828] transition-all focus:border-[#ACD43B] hover:bg-gray-50 focus:bg-gray-50 focus:shadow-[0_0_10px_rgba(170,205,67,0.2)] focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                className={`w-full rounded-md border ${!!errors.name ? 'border-red-500/50 focus:border-red-500 focus:shadow-[0_0_10px_rgba(239,68,68,0.2)]' : 'border-[#ACD43B]/50 focus:border-[#ACD43B] focus:shadow-[0_0_10px_rgba(170,205,67,0.2)]'} bg-white px-3 py-2 text-[#282828] transition-all hover:bg-gray-50 focus:bg-gray-50 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50`}
                 disabled={isSubmitting}
                 placeholder="Enter your username"
               />
             </FormControl>
-            <FormMessage />
+            <FormMessage className="mt-2 text-sm text-red-500" />
           </FormItem>
         )}
 
