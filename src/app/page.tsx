@@ -11,7 +11,7 @@ const MainContent = dynamic(() => import('@/components/features/MainContent'), {
 
 export default function Home() {
   return (
-    <Suspense fallback={<div className="fixed inset-0 min-h-screen overflow-hidden" />}>
+    <Suspense fallback={<div className="fixed inset-0 min-h-screen overflow-hidden bg-white" />}>
       <MainContent />
     </Suspense>
   );

@@ -17,7 +17,7 @@ const XboxIntro = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="fixed inset-0 z-50 bg-black" />
+      <div className="fixed inset-0 z-50 bg-white" />
     ),
   }
 );
@@ -64,7 +64,7 @@ export default function MainContent() {
   };
 
   return (
-    <div className="fixed inset-0 min-h-screen overflow-hidden bg-black">
+    <div className="fixed inset-0 min-h-screen overflow-hidden bg-white">
       {showIntro ? (
         <XboxIntro onIntroEndAction={handleIntroEnd}
 

@@ -105,7 +105,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
     <html
       suppressHydrationWarning
 
-      className="bg-black"
+      className="bg-white"
       lang="en"
     >
       <body
