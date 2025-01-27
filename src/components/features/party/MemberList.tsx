@@ -145,7 +145,7 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
           role="listitem"
           transition={{ duration: 0.2 }}
         >
-          <div className="flex w-[200px] items-center gap-1 sm:w-[240px] sm:gap-2 md:w-[420px] md:gap-2">
+          <div className="flex w-[160px] items-center gap-1 sm:w-[240px] sm:gap-2 md:w-[420px] md:gap-2">
             <div className="w-5 sm:w-6 md:w-8 flex items-center justify-center shrink-0">
               {!isCurrentUser && (
                 <button
@@ -198,7 +198,7 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
           </div>
 
           {/* Game status */}
-          <div className="flex items-center min-w-0 gap-2">
+          <div className="flex items-center min-w-0">
             {/* Game status icon */}
             <div
               aria-label="Game status icon"
@@ -216,7 +216,7 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
                 <path d="M2165.59,956.59c183.48-9.01,184.83,221.64,190.49,350.33,17.79,404.09,2.4,809.43,12,1214,2.5,105.19,10.31,288.29-94.24,349.92-38.25,22.55-102.62,29.46-146.86,35.14-99.53,12.79-200.19,23.62-300,34-69.02,7.18-145.2,17.33-213.9,20.1-171.11,6.89-271.76-164.73-351.91-290.25-218.29-341.85-406.95-701.94-617.53-1048.47-50.4-111.32,94.65-228.8,179.02-275.71,29.83-16.58,60.03-23.16,88-42,391.63-108.17,781.28-229.69,1174.92-331.08,26.43-6.81,52.47-14.63,80.02-15.98Z" />
               </svg>
             </div>
-            <div className="flex items-center min-w-0 ml-4 sm:ml-6 md:ml-20">
+            <div className="flex items-center min-w-0 ml-1 sm:ml-6 md:ml-20 mr-2">
               <span className="truncate text-sm font-semibold text-[#282b2f] [text-shadow:_0_1px_1px_rgba(0,0,0,0.15)_inset] sm:text-base md:text-2xl transition-colors duration-200">
                 {member.game}
               </span>
