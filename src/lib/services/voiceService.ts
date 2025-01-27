@@ -741,7 +741,7 @@ export class VoiceService {
       return;
     }
 
-    // Check if this member is locally muted - this takes precedence over remote state
+    // Check if this member is locally muted - this only affects local UI
     const isLocallyMuted = this.memberMuteStates.get(update.id) ?? false;
 
     // For local user updates, ignore our own broadcasts to prevent feedback loops
@@ -757,39 +757,12 @@ export class VoiceService {
     // Get existing state to preserve agora_uid if needed
     const existingState = this.memberVoiceStates.get(update.id);
 
-    // If member is locally muted, maintain muted state regardless of remote updates
-    if (isLocallyMuted) {
-      const voiceState: VoiceMemberState = {
-        ...update, // Preserve all incoming properties
-        level: 0,
-        voice_status: 'muted',
-        muted: true,
-        agora_uid: update.agora_uid ?? existingState?.agora_uid,
-        timestamp: Date.now(),
-      };
-
-      this.memberVoiceStates.set(update.id, voiceState);
-      if (this.volumeCallback) {
-        this.volumeCallback(Array.from(this.memberVoiceStates.values()));
-      }
-
-      // Ensure audio remains stopped for locally muted users
-      const agoraUid = this.getAgoraUidFromMemberId(update.id);
-      if (agoraUid) {
-        const remoteUser = this.client.remoteUsers.find(user => user.uid.toString() === agoraUid);
-        if (remoteUser?.audioTrack) {
-          remoteUser.audioTrack.stop();
-        }
-      }
-      return;
-    }
-
-    // For non-locally muted members, update with incoming state
+    // Create new voice state, applying local mute only for local UI
     const voiceState: VoiceMemberState = {
       id: update.id,
-      level: update.level,
-      voice_status: update.voice_status,
-      muted: update.muted,
+      level: isLocallyMuted ? 0 : update.level,
+      voice_status: isLocallyMuted ? 'muted' : update.voice_status,
+      muted: isLocallyMuted || update.muted, // Combine local and remote mute states
       is_deafened: update.is_deafened,
       agora_uid: update.agora_uid ?? existingState?.agora_uid,
       timestamp: update.timestamp,
@@ -1818,26 +1791,24 @@ export class VoiceService {
         }
       }
 
-      // Update local voice state
-      const voiceState: VoiceMemberState = {
-        id: memberId,
-        level: 0,
-        voice_status: newMuteState ? 'muted' : 'silent',
-        muted: newMuteState,
-        is_deafened: false,
-        agora_uid: agoraUid,
-        timestamp: Date.now(),
-      };
+      // Update local voice state without broadcasting
+      const existingState = this.memberVoiceStates.get(memberId);
+      if (existingState) {
+        const voiceState: VoiceMemberState = {
+          ...existingState,
+          level: 0,
+          voice_status: newMuteState ? 'muted' : 'silent',
+          muted: newMuteState,
+          timestamp: Date.now(),
+        };
 
-      this.memberVoiceStates.set(memberId, voiceState);
+        this.memberVoiceStates.set(memberId, voiceState);
 
-      // Update UI
-      if (this.volumeCallback) {
-        this.volumeCallback(Array.from(this.memberVoiceStates.values()));
+        // Update UI
+        if (this.volumeCallback) {
+          this.volumeCallback(Array.from(this.memberVoiceStates.values()));
+        }
       }
-
-      // Broadcast the update to ensure consistency
-      void this.broadcastVoiceUpdate(voiceState);
 
       logger.debug('Member mute state toggled', {
         component: 'VoiceService',
@@ -1846,7 +1817,6 @@ export class VoiceService {
           memberId,
           agoraUid,
           newMuteState,
-          voiceState
         }
       });
     } catch (error) {
