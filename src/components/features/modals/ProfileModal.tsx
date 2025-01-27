@@ -254,7 +254,7 @@ export function ProfileModal({ onSubmitAction, onCloseAction, initialData }: Pro
             avatar: AVATARS[Math.floor(Math.random() * AVATARS.length)] ?? AVATARS[0]!,
             game: STATUSES[Math.floor(Math.random() * STATUSES.length)] ?? STATUSES[0]!,
           },
-    mode: 'onChange',
+    mode: 'onSubmit',
     criteriaMode: 'all',
   });
 

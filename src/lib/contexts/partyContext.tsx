@@ -283,13 +283,15 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
     });
   }, [isMuted]);
 
+  const memoizedMembers = useMemo(() => Array.from(members.values()), [members]);
+
   const contextValue = useMemo<PartyContextType>(
     () => ({
       currentMember,
       error: presenceError || partyError,
       isLeaving: false,
       isMuted,
-      members: Array.from(members.values()),
+      members: memoizedMembers,
       micPermissionDenied: false,
       partyState,
       volumeLevels,
@@ -303,7 +305,7 @@ export function PartyProvider({ children }: { children: React.ReactNode }) {
       presenceError,
       partyError,
       isMuted,
-      members,
+      memoizedMembers,
       partyState,
       volumeLevels,
       join,

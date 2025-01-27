@@ -9,6 +9,7 @@ import Image from 'next/image';
 import { VoiceStatusIcon } from '@/components/features/party/icons/VoiceStatusIcon';
 
 import { AVATARS } from '@/lib/constants';
+import { useToast } from '@/lib/hooks/use-toast';
 import { VoiceService } from '@/lib/services/voiceService';
 import { usePartyStore } from '@/lib/stores/partyStore';
 
@@ -16,12 +17,22 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
   const {
     voice: { isMuted: storeIsMuted },
   } = usePartyStore();
+  const { toast } = useToast();
 
   // Handle muting/unmuting other users
   const handleOtherMemberMute = useCallback(async (memberId: string) => {
+    const member = members.find(m => m.id === memberId);
+    const volumeState = volumeLevels[memberId];
+    const isMuted = volumeState?.muted ?? false;
+
     const voiceService = await VoiceService.createInstance();
     await voiceService.toggleMemberMute(memberId);
-  }, []);
+
+    toast({
+      description: `${member?.name ?? 'User'} ${!isMuted ? 'muted' : 'unmuted'}`,
+      duration: 1000,
+    });
+  }, [members, volumeLevels, toast]);
 
   // Handle self mute toggle - use store state as single source of truth
   const handleSelfMute = useCallback(async () => {

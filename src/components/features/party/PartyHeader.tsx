@@ -2,7 +2,7 @@
 
 import type { PartyHeaderProps } from '@/lib/types/components/props';
 
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useCallback, useEffect } from 'react';
 
 import { Clipboard } from 'lucide-react';
 import { BiSolidBarChartAlt2 } from 'react-icons/bi';
@@ -16,6 +16,7 @@ import { UserIcon } from './icons/UserIcon';
 const MemoizedUserIcon = React.memo(UserIcon);
 const MemoizedBarChartIcon = React.memo(BiSolidBarChartAlt2);
 const MemoizedXIcon = React.memo(TbBrandX);
+const MemoizedChat360Icon = React.memo(Chat360Icon);
 
 const HeaderButton = React.memo(({
   icon: Icon,
@@ -57,164 +58,201 @@ const HeaderButton = React.memo(({
 
 HeaderButton.displayName = 'HeaderButton';
 
-export function PartyHeader({ membersCount }: PartyHeaderProps) {
-  const [copyStatus, setCopyStatus] = useState<'error' | 'idle' | 'success'>('idle');
-  const loggerRef = useRef(logger);
-
-  const handleCopyURL = async () => {
-    loggerRef.current.info('Attempting to copy party URL', {
-      component: 'PartyHeader',
-      action: 'copyURL',
-      metadata: { url: window.location.href },
-    });
-
-    try {
-      await navigator.clipboard.writeText(window.location.href);
-      setCopyStatus('success');
-      loggerRef.current.info('Successfully copied party URL', {
-        component: 'PartyHeader',
-        action: 'copyURL',
-        metadata: { status: 'success', url: window.location.href },
-      });
-      setTimeout(() => {
-        setCopyStatus('idle');
-        loggerRef.current.debug('Reset copy status', {
-          component: 'PartyHeader',
-          action: 'resetCopyStatus',
-        });
-      }, 2000);
-    } catch (error) {
-      loggerRef.current.error('Failed to copy URL to clipboard', {
-        component: 'PartyHeader',
-        action: 'copyURL',
-        metadata: {
-          error: error instanceof Error ? error : new Error(String(error)),
-          url: window.location.href,
-        },
-      });
-      setCopyStatus('error');
-      setTimeout(() => {
-        setCopyStatus('idle');
-        loggerRef.current.debug('Reset copy status', {
-          component: 'PartyHeader',
-          action: 'resetCopyStatus',
-        });
-      }, 2000);
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
-    if (e.key === 'Enter') {
-      loggerRef.current.debug('Copy URL triggered via keyboard', {
-        component: 'PartyHeader',
-        action: 'keyPress',
-        metadata: { key: e.key },
-      });
-      e.currentTarget.click();
-    }
-  };
-
-  // Log initial render with member count
-  React.useEffect(() => {
-    loggerRef.current.debug('Party header rendered', {
-      component: 'PartyHeader',
-      action: 'render',
-      metadata: { membersCount },
-    });
-  }, [membersCount]);
-
-  return (
-    <div
-      className="flex flex-col items-center justify-between"
-      role="banner"
-    >
-      <div className="flex w-full flex-col sm:flex-row">
-        <div className="order-2 flex h-[50px] flex-1 items-center justify-center bg-[#f7ffff] pt-1 sm:order-1 sm:justify-start sm:py-0">
-          <div className="flex items-center gap-2 sm:pl-[30px]">
-            <Chat360Icon className="h-14 w-14 text-[#282b2f] opacity-90" />
-            <span className="text-2xl font-semibold text-[#282b2f]">Chat360 Party</span>
-          </div>
-        </div>
-
-        <div className="order-1 flex h-[80px] w-full flex-col gap-[1px] sm:order-2 sm:h-[40px] sm:w-auto sm:flex-row sm:gap-0">
-          <div className="flex h-[40px] w-full sm:hidden">
-            <div className="flex-1">
-              <HeaderButton
-                icon={MemoizedBarChartIcon}
-                iconSize="w-7 h-7"
-                width="w-full"
-              />
-            </div>
-            <div className="flex-1">
-              <HeaderButton
-                icon={MemoizedXIcon}
-                iconSize="w-7 h-7"
-                url="https://x.com/chat360fun"
-                width="w-full"
-              />
-            </div>
-          </div>
-
-          <div className="h-[40px] w-full sm:hidden">
-            <HeaderButton
-              icon={MemoizedUserIcon}
-              iconSize="w-7 h-6"
-              width="w-full"
-            >
-              <span className="ml-2 truncate text-sm font-bold text-white opacity-90">
-                {membersCount}
-              </span>
-            </HeaderButton>
-          </div>
-
-          <div className="hidden sm:flex">
-            <HeaderButton
-              icon={MemoizedUserIcon}
-              iconSize="w-7 h-6"
-              width="w-[140px]"
-            >
-              <span className="ml-2 truncate text-sm font-bold text-white opacity-90">
-                {membersCount}
-              </span>
-            </HeaderButton>
-
-            <HeaderButton
-              icon={MemoizedBarChartIcon}
-              iconSize="w-7 h-7"
-              width="w-[140px]"
-            />
-
-            <HeaderButton
-              icon={MemoizedXIcon}
-              iconSize="w-7 h-7"
-              url="https://x.com/chat360fun"
-              width="w-[140px]"
-            />
-          </div>
-        </div>
+const MobileButtons = React.memo(({ membersCount }: { membersCount: number }) => (
+  <>
+    <div className="flex h-[40px] w-full sm:hidden">
+      <div className="flex-1">
+        <HeaderButton
+          icon={MemoizedBarChartIcon}
+          iconSize="w-7 h-7"
+          width="w-full"
+        />
       </div>
-
-      <div className="hidden h-[15px] w-full border-b border-gray-200 bg-[#f7ffff] sm:block"></div>
-
-      <button
-        onClick={handleCopyURL}
-        onKeyDown={handleKeyDown}
-
-        aria-label="Copy CA"
-        aria-live="polite"
-        className="flex h-[40px] w-full cursor-pointer items-center gap-2 bg-gradient-to-b from-[#70cc00] to-[#409202] pl-[30px] shadow-[inset_0_-2px_4px_rgba(0,0,0,0.1)] transition-all hover:brightness-110"
-      >
-        <span className="text-xl font-semibold text-white">
-          {copyStatus === 'success' ? 'Copied!' : copyStatus === 'error' ? 'Failed!' : 'Copy CA'}
-        </span>
-        <Clipboard className="h-4 w-4 text-white opacity-90" />
-      </button>
-
-      <div className="h-[40px] w-full border-b border-gray-400 bg-[#eff3f6] pl-[30px]">
-        <span className="text-xl font-semibold leading-[38px] text-[#282b2f]">
-          Party Options: Party Chat
-        </span>
+      <div className="flex-1">
+        <HeaderButton
+          icon={MemoizedXIcon}
+          iconSize="w-7 h-7"
+          url="https://x.com/chat360fun"
+          width="w-full"
+        />
       </div>
     </div>
-  );
-}
+
+    <div className="h-[40px] w-full sm:hidden">
+      <HeaderButton
+        icon={MemoizedUserIcon}
+        iconSize="w-7 h-6"
+        width="w-full"
+      >
+        <span className="ml-2 truncate text-sm font-bold text-white opacity-90">
+          {membersCount}
+        </span>
+      </HeaderButton>
+    </div>
+  </>
+));
+
+MobileButtons.displayName = 'MobileButtons';
+
+const DesktopButtons = React.memo(({ membersCount }: { membersCount: number }) => (
+  <div className="hidden sm:flex">
+    <HeaderButton
+      icon={MemoizedUserIcon}
+      iconSize="w-7 h-6"
+      width="w-[140px]"
+    >
+      <span className="ml-2 truncate text-sm font-bold text-white opacity-90">
+        {membersCount}
+      </span>
+    </HeaderButton>
+
+    <HeaderButton
+      icon={MemoizedBarChartIcon}
+      iconSize="w-7 h-7"
+      width="w-[140px]"
+    />
+
+    <HeaderButton
+      icon={MemoizedXIcon}
+      iconSize="w-7 h-7"
+      url="https://x.com/chat360fun"
+      width="w-[140px]"
+    />
+  </div>
+));
+
+DesktopButtons.displayName = 'DesktopButtons';
+
+const Logo = React.memo(() => (
+  <div className="order-2 flex h-[50px] flex-1 items-center justify-center bg-[#f7ffff] pt-1 sm:order-1 sm:justify-start sm:py-0">
+    <div className="flex items-center gap-2 sm:pl-[30px]">
+      <MemoizedChat360Icon className="h-14 w-14 text-[#282b2f] opacity-90" />
+      <span className="text-2xl font-semibold text-[#282b2f]">Chat360 Party</span>
+    </div>
+  </div>
+));
+
+Logo.displayName = 'Logo';
+
+export const PartyHeader = React.memo(
+  function PartyHeader({ membersCount }: PartyHeaderProps) {
+    const [copyStatus, setCopyStatus] = useState<'error' | 'idle' | 'success'>('idle');
+    const loggerRef = useRef(logger);
+    const timeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
+
+    const handleCopyURL = useCallback(async () => {
+      loggerRef.current.info('Attempting to copy party URL', {
+        component: 'PartyHeader',
+        action: 'copyURL',
+        metadata: { url: window.location.href },
+      });
+
+      try {
+        await navigator.clipboard.writeText(window.location.href);
+        setCopyStatus('success');
+        loggerRef.current.info('Successfully copied party URL', {
+          component: 'PartyHeader',
+          action: 'copyURL',
+          metadata: { status: 'success', url: window.location.href },
+        });
+
+        if (timeoutRef.current) {
+          clearTimeout(timeoutRef.current);
+        }
+        timeoutRef.current = setTimeout(() => {
+          setCopyStatus('idle');
+          loggerRef.current.debug('Reset copy status', {
+            component: 'PartyHeader',
+            action: 'resetCopyStatus',
+          });
+        }, 2000);
+      } catch (error) {
+        loggerRef.current.error('Failed to copy URL to clipboard', {
+          component: 'PartyHeader',
+          action: 'copyURL',
+          metadata: {
+            error: error instanceof Error ? error : new Error(String(error)),
+            url: window.location.href,
+          },
+        });
+        setCopyStatus('error');
+
+        if (timeoutRef.current) {
+          clearTimeout(timeoutRef.current);
+        }
+        timeoutRef.current = setTimeout(() => {
+          setCopyStatus('idle');
+          loggerRef.current.debug('Reset copy status', {
+            component: 'PartyHeader',
+            action: 'resetCopyStatus',
+          });
+        }, 2000);
+      }
+    }, []);
+
+    const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLButtonElement>) => {
+      if (e.key === 'Enter') {
+        loggerRef.current.debug('Copy URL triggered via keyboard', {
+          component: 'PartyHeader',
+          action: 'keyPress',
+          metadata: { key: e.key },
+        });
+        e.currentTarget.click();
+      }
+    }, []);
+
+    useEffect(() => {
+      return () => {
+        if (timeoutRef.current) {
+          clearTimeout(timeoutRef.current);
+        }
+      };
+    }, []);
+
+    useEffect(() => {
+      loggerRef.current.debug('Party header rendered', {
+        component: 'PartyHeader',
+        action: 'render',
+        metadata: { membersCount },
+      });
+    }, [membersCount]);
+
+    return (
+      <div
+        className="flex flex-col items-center justify-between"
+        role="banner"
+      >
+        <div className="flex w-full flex-col sm:flex-row">
+          <Logo />
+          <div className="order-1 flex h-[80px] w-full flex-col gap-[1px] sm:order-2 sm:h-[40px] sm:w-auto sm:flex-row sm:gap-0">
+            <MobileButtons membersCount={membersCount} />
+            <DesktopButtons membersCount={membersCount} />
+          </div>
+        </div>
+
+        <div className="hidden h-[15px] w-full border-b border-gray-200 bg-[#f7ffff] sm:block"></div>
+
+        <button
+          onClick={handleCopyURL}
+          onKeyDown={handleKeyDown}
+
+          aria-label="Copy CA"
+          aria-live="polite"
+          className="flex h-[40px] w-full cursor-pointer items-center gap-2 bg-gradient-to-b from-[#70cc00] to-[#409202] pl-[30px] shadow-[inset_0_-2px_4px_rgba(0,0,0,0.1)] transition-all hover:brightness-110"
+        >
+          <span className="text-xl font-semibold text-white">
+            {copyStatus === 'success' ? 'Copied!' : copyStatus === 'error' ? 'Failed!' : 'Copy CA'}
+          </span>
+          <Clipboard className="h-4 w-4 text-white opacity-90" />
+        </button>
+
+        <div className="h-[40px] w-full border-b border-gray-400 bg-[#eff3f6] pl-[30px]">
+          <span className="text-xl font-semibold leading-[38px] text-[#282b2f]">
+            Party Options: Party Chat
+          </span>
+        </div>
+      </div>
+    );
+  },
+  (prevProps, nextProps) => prevProps.membersCount === nextProps.membersCount
+);

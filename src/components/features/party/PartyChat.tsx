@@ -2,7 +2,7 @@
 
 import type { VoiceStatus, MemberStatus } from '@/lib/types/party/member';
 
-import React, { memo } from 'react';
+import React, { memo, useMemo } from 'react';
 
 import { Card } from '@/components/ui/card';
 
@@ -20,11 +20,13 @@ import { TopBar } from './TopBar';
 const PartyContent = memo(() => {
   const { members, currentMember, volumeLevels } = useParty();
 
+  const memoizedMembers = useMemo(() => members, [members]);
+
   return (
     <div className="flex flex-col">
       <MemberList
         currentUserId={currentMember?.id}
-        members={members}
+        members={memoizedMembers}
         volumeLevels={volumeLevels}
       />
     </div>

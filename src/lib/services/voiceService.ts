@@ -126,31 +126,45 @@ export class VoiceService {
         // Clean up existing instance if it exists
         if (VoiceService.instance?.client) {
             try {
-                // Ensure we're fully disconnected before cleanup
-                if (VoiceService.instance._isJoined) {
-                    await VoiceService.instance.leave();
-                }
+                // If we're already joined, this is likely a reconnection attempt
+                const isReconnecting = VoiceService.instance._isJoined;
 
-                // Additional cleanup to ensure no lingering state
-                if (VoiceService.instance.audioTrack) {
-                    try {
-                        VoiceService.instance.audioTrack.stop();
-                        VoiceService.instance.audioTrack.close();
-                    } catch (error) {
-                        logger.warn('Error cleaning up audio track during instance creation', {
-                            component: 'VoiceService',
-                            action: 'createInstance',
-                            metadata: { error },
-                        });
+                // Only do full cleanup if not reconnecting
+                if (!isReconnecting) {
+                    if (VoiceService.instance._isJoined) {
+                        await VoiceService.instance.leave();
                     }
+
+                    // Additional cleanup to ensure no lingering state
+                    if (VoiceService.instance.audioTrack) {
+                        try {
+                            VoiceService.instance.audioTrack.stop();
+                            VoiceService.instance.audioTrack.close();
+                        } catch (error) {
+                            logger.warn('Error cleaning up audio track during instance creation', {
+                                component: 'VoiceService',
+                                action: 'createInstance',
+                                metadata: { error },
+                            });
+                        }
+                    }
+
+                    // Reset critical state
+                    VoiceService.instance._isJoined = false;
+                    VoiceService.instance._isMuted = false;
+                    VoiceService.instance.audioTrack = null;
+                } else {
+                    // For reconnection, preserve existing state
+                    logger.debug('Preserving state during reconnection', {
+                        component: 'VoiceService',
+                        action: 'createInstance',
+                        metadata: {
+                            memberCount: VoiceService.instance.memberVoiceStates.size,
+                            mappingCount: VoiceService.instance.memberIdToAgoraUid.size
+                        }
+                    });
+                    return VoiceService.instance;
                 }
-
-                // Reset critical state
-                VoiceService.instance._isJoined = false;
-                VoiceService.instance._isMuted = false;
-                VoiceService.instance.audioTrack = null;
-                VoiceService.instance.volumeCallback = null;
-
             } catch (error) {
                 logger.warn('Failed to cleanup existing instance', {
                     component: 'VoiceService',
@@ -979,56 +993,56 @@ export class VoiceService {
   }
 
   public async leave(): Promise<void> {
-    if (!this._isJoined) return;
+    if (!this.client || !this.currentMemberId) {
+        return;
+    }
+
+    // Clean up member mapping before leaving - use full cleanup since we're actually leaving
+    this.cleanupMemberMapping(this.currentMemberId, true, false);
 
     try {
-      // Clean up member mapping if we have a current member
-      if (this.currentMemberId) {
-        this.cleanupMemberMapping(this.currentMemberId);
-      }
+        // First unpublish audio track if it exists
+        if (this.audioTrack) {
+            try {
+                await this.client.unpublish(this.audioTrack);
+            } catch (error) {
+                logger.warn('Failed to unpublish audio track', {
+                    component: 'VoiceService',
+                    action: 'leave',
+                    metadata: { error },
+                });
+            }
+        }
 
-      // First unpublish audio track if it exists
-      if (this.audioTrack) {
+        // Then leave the channel
         try {
-          await this.client.unpublish(this.audioTrack);
+            await this.client.leave();
         } catch (error) {
-          logger.warn('Failed to unpublish audio track', {
+            logger.warn('Failed to leave Agora channel', {
+                component: 'VoiceService',
+                action: 'leave',
+                metadata: { error },
+            });
+            throw error; // Rethrow to trigger cleanup
+        }
+
+        // Finally clean up all state
+        this.cleanupInstance();
+
+        logger.info('Left voice channel', {
+            component: 'VoiceService',
+            action: 'leave',
+        });
+    } catch (error) {
+        // Ensure cleanup happens even on error
+        this.cleanupInstance();
+
+        logger.error('Error leaving voice channel', {
             component: 'VoiceService',
             action: 'leave',
             metadata: { error },
-          });
-        }
-      }
-
-      // Then leave the channel
-      try {
-        await this.client.leave();
-      } catch (error) {
-        logger.warn('Failed to leave Agora channel', {
-          component: 'VoiceService',
-          action: 'leave',
-          metadata: { error },
         });
-        throw error; // Rethrow to trigger cleanup
-      }
-
-      // Finally clean up all state
-      this.cleanupInstance();
-
-      logger.info('Left voice channel', {
-        component: 'VoiceService',
-        action: 'leave',
-      });
-    } catch (error) {
-      // Ensure cleanup happens even on error
-      this.cleanupInstance();
-
-      logger.error('Error leaving voice channel', {
-        component: 'VoiceService',
-        action: 'leave',
-        metadata: { error },
-      });
-      throw error;
+        throw error;
     }
   }
 
@@ -1302,50 +1316,121 @@ export class VoiceService {
     return this.lastVolume;
   }
 
-  private async cleanupMemberMapping(memberId: string) {
+  private cleanupMemberMapping(memberId: string, shouldClearDatabase = false, isTemporary = false) {
     const agoraUid = this.memberIdToAgoraUid.get(memberId);
-    if (agoraUid) {
-        // Clean up both mappings
-        this.memberIdToAgoraUid.delete(memberId);
-        this.agoraUidToMemberId.delete(agoraUid);
 
-        // Also cleanup voice states
+    if (agoraUid) {
+        this.agoraUidToMemberId.delete(agoraUid);
+    }
+
+    // Only clear voice states if this is not a temporary cleanup
+    if (!isTemporary) {
         this.memberVoiceStates.delete(memberId);
         this.memberMuteStates.delete(memberId);
-
-        // If this was the current member, clear that too
-        if (memberId === this.currentMemberId) {
-            this.currentMemberId = null;
-        }
-
-        logger.debug('Cleaned up member mappings', {
-            component: 'VoiceService',
-            action: 'cleanupMemberMapping',
-            metadata: { memberId, agoraUid }
-        });
     }
+
+    if (memberId === this.currentMemberId) {
+        this.currentMemberId = null;
+    }
+
+    this.memberIdToAgoraUid.delete(memberId);
+
+    // Only clear database if explicitly requested and not temporary
+    if (shouldClearDatabase && !isTemporary) {
+        void this.supabase
+            .from('party_members')
+            .update({ agora_uid: null })
+            .eq('id', memberId)
+            .then(({ error }) => {
+                if (error) {
+                    logger.error('Failed to clear member agora_uid in database', {
+                        component: 'VoiceService',
+                        action: 'cleanupMemberMapping',
+                        metadata: { error, memberId, agoraUid }
+                    });
+                } else {
+                    logger.debug('Cleared member agora_uid in database', {
+                        component: 'VoiceService',
+                        action: 'cleanupMemberMapping',
+                        metadata: { memberId, agoraUid }
+                    });
+                }
+            });
+    }
+
+    logger.debug('Cleaned up member mappings', {
+        component: 'VoiceService',
+        action: 'cleanupMemberMapping',
+        metadata: {
+            memberId,
+            agoraUid,
+            isTemporary,
+            shouldClearDatabase,
+            voiceStatesCleared: !isTemporary,
+            databaseCleared: shouldClearDatabase && !isTemporary
+        }
+    });
   }
 
   private setMemberMapping(memberId: string, agoraUid: number | string) {
-    // Clean up any existing mapping first
-    this.cleanupMemberMapping(memberId);
-
     const uidStr = agoraUid.toString();
 
     // Check for any existing reverse mapping conflicts
     const existingMemberId = this.agoraUidToMemberId.get(uidStr);
     if (existingMemberId && existingMemberId !== memberId) {
-        // Clean up the conflicting mapping
-        this.cleanupMemberMapping(existingMemberId);
+        // Clean up the conflicting mapping - use temporary cleanup since this could be a reconnection
+        this.cleanupMemberMapping(existingMemberId, false, true);
     }
 
+    // Check if this is a reconnection (same member, different UID)
+    const existingUid = this.memberIdToAgoraUid.get(memberId);
+    if (existingUid && existingUid !== uidStr) {
+        // Clean up old mapping but preserve states since this is a reconnection
+        this.agoraUidToMemberId.delete(existingUid);
+        logger.debug('Handling member reconnection', {
+            component: 'VoiceService',
+            action: 'setMemberMapping',
+            metadata: {
+                memberId,
+                oldUid: existingUid,
+                newUid: uidStr
+            }
+        });
+    }
+
+    // Update local mappings
     this.memberIdToAgoraUid.set(memberId, uidStr);
     this.agoraUidToMemberId.set(uidStr, memberId);
+
+    // Update database
+    void this.supabase
+        .from('party_members')
+        .update({ agora_uid: parseInt(uidStr) })
+        .eq('id', memberId)
+        .then(({ error }) => {
+            if (error) {
+                logger.error('Failed to update member agora_uid in database', {
+                    component: 'VoiceService',
+                    action: 'setMemberMapping',
+                    metadata: { error, memberId, agoraUid: uidStr }
+                });
+            } else {
+                logger.debug('Updated member agora_uid in database', {
+                    component: 'VoiceService',
+                    action: 'setMemberMapping',
+                    metadata: { memberId, agoraUid: uidStr }
+                });
+            }
+        });
 
     logger.debug('Set member mapping', {
         component: 'VoiceService',
         action: 'setMemberMapping',
-        metadata: { memberId, agoraUid: uidStr }
+        metadata: {
+            memberId,
+            agoraUid: uidStr,
+            isReconnection: !!existingUid && existingUid !== uidStr
+        }
     });
   }
 
@@ -1387,10 +1472,9 @@ export class VoiceService {
       }
 
       // Second pass: clean up any mappings for UIDs that are no longer in the channel
-      const currentUidMappings = Array.from(this.agoraUidToMemberId.entries());
-      for (const [agoraUid, memberId] of currentUidMappings) {
+      for (const [memberId, agoraUid] of Array.from(this.memberIdToAgoraUid.entries())) {
         if (!validAgoraUids.has(agoraUid)) {
-          this.cleanupMemberMapping(memberId);
+          this.cleanupMemberMapping(memberId, false, true);
         }
       }
 
@@ -1399,7 +1483,7 @@ export class VoiceService {
       for (const [memberId, agoraUid] of currentMemberMappings) {
         const member = members.find(m => m.id === memberId);
         if (!member || !validAgoraUids.has(agoraUid)) {
-          this.cleanupMemberMapping(memberId);
+          this.cleanupMemberMapping(memberId, false, true);
         }
       }
 
@@ -1507,36 +1591,7 @@ export class VoiceService {
         return;
     }
 
-    // Check if member is muted or below noise floor - if so, force level to 0
-    const isLocallyMuted = this.memberMuteStates.get(memberId) || false;
-    if (isLocallyMuted || level <= VOICE_CONSTANTS.NOISE_FLOOR) {
-        level = 0;
-    }
-
-    const isCurrentUser = memberId === this.currentMemberId;
-    const rawLevel = level;
-    const smoothedLevel = isCurrentUser ? rawLevel : this.smoothVolume(rawLevel);
-
-    const isLoudEnough = smoothedLevel > VOICE_CONSTANTS.SPEAKING_THRESHOLD;
-    const isAboveHoldThreshold = smoothedLevel > VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD;
-
-    logger.debug('Processing volume update', {
-        component: 'VoiceService',
-        action: 'handleVolumeUpdate',
-        metadata: {
-            memberId,
-            rawLevel,
-            smoothedLevel,
-            isLoudEnough,
-            speakingThreshold: VOICE_CONSTANTS.SPEAKING_THRESHOLD,
-            holdThreshold: VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD,
-            isCurrentUser,
-            vadSpeaking: this.isVadSpeaking,
-            hasVolumeCallback: !!this.volumeCallback
-        }
-    });
-
-    // Get or create voice state
+    // Get current state
     let currentState = this.memberVoiceStates.get(memberId);
     if (!currentState) {
         currentState = {
@@ -1551,28 +1606,56 @@ export class VoiceService {
         this.memberVoiceStates.set(memberId, currentState);
     }
 
+    // If member is muted, maintain muted state and don't process volume updates
+    if (currentState.voice_status === 'muted' || isMuted) {
+        if (currentState.voice_status !== 'muted' || currentState.level !== 0) {
+            const updatedState: VoiceMemberState = {
+                ...currentState,
+                level: 0,
+                voice_status: 'muted',
+                muted: true,
+                timestamp: Date.now()
+            };
+            this.memberVoiceStates.set(memberId, updatedState);
+
+            // Notify callback of state change
+            if (this.volumeCallback) {
+                this.volumeCallback(Array.from(this.memberVoiceStates.values()));
+            }
+        }
+        return;
+    }
+
+    // Check if member is below noise floor
+    if (level <= VOICE_CONSTANTS.NOISE_FLOOR) {
+        level = 0;
+    }
+
+    const isCurrentUser = memberId === this.currentMemberId;
+    const rawLevel = level;
+    const smoothedLevel = isCurrentUser ? rawLevel : this.smoothVolume(rawLevel);
+
+    const isLoudEnough = smoothedLevel > VOICE_CONSTANTS.SPEAKING_THRESHOLD;
+    const isAboveHoldThreshold = smoothedLevel > VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD;
+
     // Determine new voice status with improved state transition logic
     const oldState = currentState.voice_status;
-    let newState: VoiceStatus = isMuted ? 'muted' : 'silent';
-    const now = Date.now(); // Declare now at the top level of the function
+    let newState: VoiceStatus = 'silent';
+    const now = Date.now();
 
-    if (!isMuted) {
-        const timeSinceLastTransition = now - (currentState.timestamp || 0);
-
-        if (oldState === 'speaking') {
-            // If currently speaking, use stricter criteria to maintain state
-            if (isLoudEnough || (isAboveHoldThreshold && timeSinceLastTransition < VOICE_CONSTANTS.MAX_HOLD_TIME)) {
-                newState = 'speaking';
-            }
-        } else {
-            // If not speaking, require clear speech signal to enter speaking state
-            if (isLoudEnough && (isCurrentUser || this.isVadSpeaking)) {
-                newState = 'speaking';
-            }
+    if (oldState === 'speaking') {
+        // If currently speaking, use stricter criteria to maintain state
+        if (isLoudEnough || (isAboveHoldThreshold && ((now - (currentState.timestamp || now)) < VOICE_CONSTANTS.MAX_HOLD_TIME))) {
+            newState = 'speaking';
+        }
+    } else {
+        // If not speaking, require clear speech signal to enter speaking state
+        if (isLoudEnough && (isCurrentUser || this.isVadSpeaking)) {
+            newState = 'speaking';
         }
     }
 
-    // Update state if changed - more lenient volume change detection
+    // Update state if changed
     const volumeChanged = Math.abs(currentState.level - smoothedLevel) > VOICE_CONSTANTS.SPEAKING_HOLD_THRESHOLD;
     const statusChanged = oldState !== newState;
 
@@ -1596,7 +1679,7 @@ export class VoiceService {
             ...currentState,
             level: smoothedLevel,
             voice_status: newState,
-            muted: isMuted,
+            muted: false,
             timestamp: now
         };
 
@@ -1606,7 +1689,7 @@ export class VoiceService {
         void this.broadcastVoiceUpdate(updatedState);
     }
 
-    // Always notify callback of current state, even if unchanged
+    // Always notify callback of current state
     if (this.volumeCallback) {
         this.volumeCallback(Array.from(this.memberVoiceStates.values()));
     }
