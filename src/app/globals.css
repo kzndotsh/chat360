@@ -129,11 +129,7 @@
 @keyframes fadeIn {
   0% {
     opacity: 0;
-    transform: translateY(8px);
-  }
-
-  50% {
-    opacity: 0.3;
+    transform: translateY(4px);
   }
 
   100% {
@@ -202,7 +198,7 @@
 }
 
 .animate-fadeIn {
-  animation: fadeIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: fadeIn 0.2s ease-out;
   will-change: opacity, transform;
   backface-visibility: hidden;
 }

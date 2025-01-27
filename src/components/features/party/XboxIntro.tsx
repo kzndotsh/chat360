@@ -299,7 +299,7 @@ export function XboxIntro({ onIntroEndAction, isPreloaded }: XboxIntroProps) {
 
   return (
     <div
-      className={`fixed inset-0 z-50 bg-black ${isEnded ? 'scale-105 opacity-0' : 'scale-100 opacity-100'} transition-[transform,opacity] duration-700`}
+      className={`fixed inset-0 z-50 bg-white ${isEnded ? 'scale-105 opacity-0' : 'scale-100 opacity-100'} transition-[transform,opacity] duration-700`}
     >
       <video
         muted

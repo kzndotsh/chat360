@@ -83,12 +83,12 @@ export function MemberList({ members, currentUserId, volumeLevels = {} }: Member
       return (
         <div
           style={{
-            animationDelay: `${150 + index * 50}ms`,
+            animationDelay: `${50 + index * 25}ms`,
             animationFillMode: 'forwards'
           }}
 
           aria-label={`${member.name} - ${member.game} - ${voice_status}`}
-          className="flex h-[48px] items-center border-t border-[#e5e5e5] px-3 sm:px-6 transition-all duration-300 ease-in-out first:border-t-0 hover:bg-[#f5f5f5] opacity-0 animate-fadeIn"
+          className="flex h-[48px] items-center border-t border-[#e5e5e5] px-3 sm:px-6 transition-all duration-200 ease-out first:border-t-0 hover:bg-[#f5f5f5] opacity-0 animate-fadeIn"
           key={member.id}
           role="listitem"
         >
