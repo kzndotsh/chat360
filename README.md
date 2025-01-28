@@ -1,4 +1,4 @@
-# Chat360 - Next-Generation Voice Chat Platform
+# Chat360 - Nostalgic Voice Chat Platform
 
 A modern, real-time voice chat platform built with Next.js 15, Agora RTC, and Supabase. Chat360 delivers high-quality voice communication with an Xbox-inspired interface, advanced audio processing, and real-time presence tracking.
 
