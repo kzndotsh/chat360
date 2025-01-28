@@ -1,39 +1,38 @@
-# Chat360 - Next-Generation Voice Chat Platform
+# Chat360 - Voice Chat Platform
 
-A modern, real-time voice chat platform built with Next.js 15, Agora RTC, and Supabase. Chat360 delivers high-quality voice communication with an Xbox-inspired interface, advanced audio processing, and real-time presence tracking.
+A voice chat platform built with Next.js 15, Agora RTC, and Supabase. Features Xbox-inspired interface, audio processing, and real-time presence tracking.
 
 ## Core Features
 
-- 🎙️ **Advanced Voice Communication**
-  - High-fidelity audio streaming powered by Agora RTC
-  - AI-powered noise cancellation with Agora AI Denoiser
-  - Voice activity detection (VAD) for intelligent audio processing
+- 🎙️ **Voice Communication**
+  - Audio streaming with Agora RTC
+  - AI noise cancellation with Agora AI Denoiser
+  - Voice activity detection (VAD)
   - Automatic gain control and echo cancellation
-  - Real-time volume level visualization
-  - Individual volume controls for party members
+  - Volume level visualization
+  - Individual volume controls
 
 - 👥 **Party System**
-  - Seamless party creation and management
-  - Real-time member presence tracking
-  - Dynamic voice status indicators (speaking/silent/muted)
-  - Rich user profiles with avatars and game status
-  - Party chat with real-time messaging
-  - Xbox-style party interface
+  - Party creation and management
+  - Real-time presence tracking
+  - Voice status indicators (speaking/silent/muted)
+  - User profiles with avatars and game status
+  - Party chat
+  - Xbox-style interface
 
-- 🎮 **Modern UI/UX**
-  - Responsive design optimized for both desktop and mobile
-  - Xbox-inspired interface elements and animations
-  - Beautiful component library built with shadcn/ui
-  - Smooth transitions powered by Framer Motion
-  - Toast notifications for important events
-  - Dark mode support
+- 🎮 **UI/UX**
+  - Desktop and mobile support
+  - Xbox-inspired design
+  - shadcn/ui components
+  - Framer Motion animations
+  - Toast notifications
 
 - 🔒 **Security & Performance**
-  - Token-based voice channel authentication
-  - End-to-end encrypted communication
-  - Optimized bundle size with Next.js
-  - Efficient state management with Zustand
-  - Type-safe development with TypeScript
+  - Token-based authentication
+  - Encrypted communication
+  - Optimized bundle size
+  - State management with Zustand
+  - TypeScript
 
 ## Tech Stack
 
