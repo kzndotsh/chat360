@@ -18,6 +18,7 @@ export const TopBar = memo(() => {
         </span>
       </div>
       <div className="absolute bottom-0 left-1/2 -translate-x-1/2 md:bottom-auto md:top-0">
+
         <Image
           alt={currentMember?.name ?? 'Default Avatar'}
           className="h-[50px] w-[50px] object-cover md:h-[65px] md:w-[65px]"
@@ -25,9 +26,12 @@ export const TopBar = memo(() => {
           src={currentMember?.avatar ?? AVATARS[0]!}
           width={65}
         />
+
       </div>
       <div className="flex items-center">
+
         <Clock />
+
       </div>
     </div>
   );

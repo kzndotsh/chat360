@@ -14,9 +14,9 @@ import { Chat360Icon } from './icons/Chat360Icon';
 import { UserIcon } from './icons/UserIcon';
 
 const HEADER_CONFIG = {
-  COPY_CA_VALUE: '',
+  COPY_CA_VALUE: 'CHATTqNRPorPpKpp1nmbxzwtAjcd4CGPoKAHrfNfcHaq',
   TWITTER_URL: 'https://x.com/chat360fun',
-  CHART_URL: '',
+  CHART_URL: 'https://pump.fun/CHATTqNRPorPpKpp1nmbxzwtAjcd4CGPoKAHrfNfcHaq',
 } as const;
 
 const MemoizedUserIcon = React.memo(UserIcon);
@@ -164,6 +164,7 @@ export const PartyHeader = React.memo(
       try {
         await navigator.clipboard.writeText(HEADER_CONFIG.COPY_CA_VALUE);
         setCopyStatus('success');
+
         loggerRef.current.info('Successfully copied party URL', {
           component: 'PartyHeader',
           action: 'copyURL',
@@ -173,6 +174,7 @@ export const PartyHeader = React.memo(
         if (timeoutRef.current) {
           clearTimeout(timeoutRef.current);
         }
+
         timeoutRef.current = setTimeout(() => {
           setCopyStatus('idle');
           loggerRef.current.debug('Reset copy status', {
@@ -181,6 +183,7 @@ export const PartyHeader = React.memo(
           });
         }, 2000);
       } catch (error) {
+
         loggerRef.current.error('Failed to copy URL to clipboard', {
           component: 'PartyHeader',
           action: 'copyURL',
@@ -189,11 +192,13 @@ export const PartyHeader = React.memo(
             url: HEADER_CONFIG.COPY_CA_VALUE,
           },
         });
+
         setCopyStatus('error');
 
         if (timeoutRef.current) {
           clearTimeout(timeoutRef.current);
         }
+
         timeoutRef.current = setTimeout(() => {
           setCopyStatus('idle');
           loggerRef.current.debug('Reset copy status', {
@@ -229,7 +234,9 @@ export const PartyHeader = React.memo(
         role="banner"
       >
         <div className="flex w-full flex-col sm:flex-row">
+
           <Logo />
+
           <div className="order-1 flex h-[70px] w-full flex-col gap-0 sm:order-2 sm:h-[40px] sm:w-auto sm:flex-row sm:gap-0">
             <MobileButtons membersCount={membersCount} />
             <DesktopButtons membersCount={membersCount} />
