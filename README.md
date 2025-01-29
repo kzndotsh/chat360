@@ -83,7 +83,7 @@ AGORA_APP_CERTIFICATE=your_agora_certificate
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/chat360.git
+   git clone https://github.com/kzndotsh/chat360.git
    cd chat360
    ```
 
