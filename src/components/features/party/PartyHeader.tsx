@@ -14,9 +14,9 @@ import { Chat360Icon } from './icons/Chat360Icon';
 import { UserIcon } from './icons/UserIcon';
 
 const HEADER_CONFIG = {
-  COPY_CA_VALUE: 'CHATTqNRPorPpKpp1nmbxzwtAjcd4CGPoKAHrfNfcHaq',
+  COPY_CA_VALUE: '$360',
   TWITTER_URL: 'https://x.com/chat360fun',
-  CHART_URL: 'https://pump.fun/CHATTqNRPorPpKpp1nmbxzwtAjcd4CGPoKAHrfNfcHaq',
+  CHART_URL: 'https://support.xbox.com/en-US/help/friends-social-activity/parties-chat/how-to-start-a-party',
 } as const;
 
 const MemoizedUserIcon = React.memo(UserIcon);
