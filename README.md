@@ -168,4 +168,3 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - [Supabase](https://supabase.com/) for backend infrastructure
 - [Next.js](https://nextjs.org/) team for the amazing framework
 - [shadcn/ui](https://ui.shadcn.com/) for beautiful components
-- All contributors who have helped shape this project
